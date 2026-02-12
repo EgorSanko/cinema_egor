@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_TMDB_BASE_URL;
+﻿const API_BASE_URL = process.env.NEXT_PUBLIC_TMDB_BASE_URL;
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const IMAGE_BASE_URL = process.env.NEXT_PUBLIC_TMDB_IMAGE_BASE_URL;
 const BACKDROP_BASE_URL = process.env.NEXT_PUBLIC_TMDB_BACKDROP_BASE_URL;
@@ -6,7 +6,7 @@ const VIDSRC_BASE_URL = process.env.NEXT_PUBLIC_VIDSRC_BASE_URL;
 
 if (!API_BASE_URL || !API_KEY) {
 	console.error(
-		"⚠️ TMDB API configuration is missing. Please check your .env file."
+		"вљ пёЏ TMDB API configuration is missing. Please check your .env file."
 	);
 }
 
@@ -17,7 +17,7 @@ async function fetchWithRetry(
 	retries = 3
 ) {
 	if (!API_KEY) {
-		console.error("❌ API Key is missing, skipping fetch.");
+		console.error("вќЊ API Key is missing, skipping fetch.");
 		throw new Error("API Key is missing");
 	}
 
@@ -48,12 +48,12 @@ async function fetchWithRetry(
 	} catch (error) {
 		if (retries > 0) {
 			console.warn(
-				`⚠️ Request failed, retrying... (${retries} attempts left). Error: ${error}`
+				`вљ пёЏ Request failed, retrying... (${retries} attempts left). Error: ${error}`
 			);
 			await new Promise((resolve) => setTimeout(resolve, 1000));
 			return fetchWithRetry(url, options, retries - 1);
 		}
-		console.error("❌ Fetch failed after retries:", error);
+		console.error("вќЊ Fetch failed after retries:", error);
 		throw error;
 	}
 }
@@ -84,10 +84,55 @@ export interface MovieDetails extends Movie {
 	revenue: number;
 }
 
+
+export interface TVShow {
+  id: number;
+  name: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  overview: string;
+  first_air_date: string;
+  genre_ids: number[];
+  popularity: number;
+  vote_average: number;
+  vote_count: number;
+}
+
+export interface TVSeason {
+  id: number;
+  name: string;
+  season_number: number;
+  episode_count: number;
+  air_date: string;
+  poster_path: string | null;
+  overview: string;
+}
+
+export interface TVEpisode {
+  id: number;
+  name: string;
+  episode_number: number;
+  season_number: number;
+  air_date: string;
+  overview: string;
+  still_path: string | null;
+  runtime: number;
+  vote_average: number;
+}
+
+export interface TVShowDetails extends TVShow {
+  genres: Genre[];
+  number_of_seasons: number;
+  number_of_episodes: number;
+  seasons: TVSeason[];
+  status: string;
+  episode_run_time: number[];
+}
+
 export async function getTrendingMovies(timeWindow: "day" | "week" = "week") {
 	try {
 		const response = await fetchWithRetry(
-			`${API_BASE_URL}/trending/movie/${timeWindow}?api_key=${API_KEY}`,
+			`${API_BASE_URL}/trending/movie/${timeWindow}?api_key=${API_KEY}&language=ru-RU`,
 			{
 				next: { revalidate: 3600 },
 			}
@@ -103,7 +148,7 @@ export async function getTrendingMovies(timeWindow: "day" | "week" = "week") {
 export async function getLatestMovies() {
 	try {
 		const response = await fetchWithRetry(
-			`${API_BASE_URL}/movie/now_playing?api_key=${API_KEY}&language=en-US&page=1`,
+			`${API_BASE_URL}/movie/now_playing?api_key=${API_KEY}&language=ru-RU&page=1`,
 			{
 				next: { revalidate: 3600 },
 			}
@@ -119,7 +164,7 @@ export async function getLatestMovies() {
 export async function getPopularMovies(page: number = 1) {
 	try {
 		const response = await fetchWithRetry(
-			`${API_BASE_URL}/movie/popular?api_key=${API_KEY}&language=en-US&page=${page}`,
+			`${API_BASE_URL}/movie/popular?api_key=${API_KEY}&language=ru-RU&page=${page}`,
 			{
 				next: { revalidate: 3600 },
 			}
@@ -135,7 +180,7 @@ export async function getPopularMovies(page: number = 1) {
 export async function getGenres() {
 	try {
 		const response = await fetchWithRetry(
-			`${API_BASE_URL}/genre/movie/list?api_key=${API_KEY}&language=en-US`,
+			`${API_BASE_URL}/genre/movie/list?api_key=${API_KEY}&language=ru-RU`,
 			{
 				next: { revalidate: 86400 },
 			}
@@ -154,7 +199,7 @@ export async function searchMovies(query: string, page = 1) {
 		const response = await fetchWithRetry(
 			`${API_BASE_URL}/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(
 				query
-			)}&language=en-US&page=${page}`,
+			)}&language=ru-RU&page=${page}`,
 			{ next: { revalidate: 300 } }
 		);
 		const data = await response.json();
@@ -169,7 +214,7 @@ export async function getMovieDetails(movieId: number) {
 	if (!movieId || isNaN(movieId)) return null;
 	try {
 		const response = await fetchWithRetry(
-			`${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=en-US`,
+			`${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=ru-RU`,
 			{
 				next: { revalidate: 3600 },
 			}
@@ -185,7 +230,7 @@ export async function getMovieDetails(movieId: number) {
 export async function getMoviesByGenre(genreId: number, page = 1) {
 	try {
 		const response = await fetchWithRetry(
-			`${API_BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=${genreId}&language=en-US&sort_by=popularity.desc&page=${page}`,
+			`${API_BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=${genreId}&language=ru-RU&sort_by=popularity.desc&page=${page}`,
 			{ next: { revalidate: 3600 } }
 		);
 		const data = await response.json();
@@ -196,12 +241,112 @@ export async function getMoviesByGenre(genreId: number, page = 1) {
 	}
 }
 
+
+export async function getTrendingTV(timeWindow: "day" | "week" = "week") {
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/trending/tv/${timeWindow}?api_key=${API_KEY}&language=ru-RU`,
+      { next: { revalidate: 3600 } }
+    );
+    const data = await response.json();
+    return data.results as TVShow[];
+  } catch (error) {
+    console.error("Error fetching trending TV:", error);
+    return [];
+  }
+}
+
+export async function getPopularTV(page: number = 1) {
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/tv/popular?api_key=${API_KEY}&language=ru-RU&page=${page}`,
+      { next: { revalidate: 3600 } }
+    );
+    const data = await response.json();
+    return data.results as TVShow[];
+  } catch (error) {
+    console.error("Error fetching popular TV:", error);
+    return [];
+  }
+}
+
+export async function getTVDetails(tvId: number) {
+  if (!tvId || isNaN(tvId)) return null;
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/tv/${tvId}?api_key=${API_KEY}&language=ru-RU`,
+      { next: { revalidate: 3600 } }
+    );
+    const data = await response.json();
+    return data as TVShowDetails;
+  } catch (error) {
+    console.error(`Error fetching TV details for ID ${tvId}:`, error);
+    return null;
+  }
+}
+
+export async function getTVSeasonEpisodes(tvId: number, seasonNumber: number) {
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/tv/${tvId}/season/${seasonNumber}?api_key=${API_KEY}&language=ru-RU`,
+      { next: { revalidate: 3600 } }
+    );
+    const data = await response.json();
+    return data.episodes as TVEpisode[];
+  } catch (error) {
+    console.error("Error fetching TV season episodes:", error);
+    return [];
+  }
+}
+
+export async function searchTV(query: string, page = 1) {
+  if (!query.trim()) return [];
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(query)}&language=ru-RU&page=${page}`,
+      { next: { revalidate: 300 } }
+    );
+    const data = await response.json();
+    return data.results as TVShow[];
+  } catch (error) {
+    console.error("Error searching TV:", error);
+    return [];
+  }
+}
+
+export async function getTVByGenre(genreId: number, page = 1) {
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=${genreId}&language=ru-RU&sort_by=popularity.desc&page=${page}`,
+      { next: { revalidate: 3600 } }
+    );
+    const data = await response.json();
+    return data.results as TVShow[];
+  } catch (error) {
+    console.error("Error fetching TV by genre:", error);
+    return [];
+  }
+}
+
+export async function getTVGenres() {
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/genre/tv/list?api_key=${API_KEY}&language=ru-RU`,
+      { next: { revalidate: 86400 } }
+    );
+    const data = await response.json();
+    return data.genres as Genre[];
+  } catch (error) {
+    console.error("Error fetching TV genres:", error);
+    return [];
+  }
+}
 export function getImageUrl(path: string | null, size = "w500") {
 	if (!path) return "/abstract-movie-poster.png";
 
 	const envBase =
 		process.env.NEXT_PUBLIC_TMDB_IMAGE_BASE_URL ||
-		"https://image.tmdb.org/t/p/w500";
+		"/tmdb-img/w500";
 
 	// If the requested size matches the env var's implied size (w500), just use it.
 	if (size === "w500" && envBase.endsWith("/w500")) {
@@ -222,7 +367,7 @@ export function getBackdropUrl(path: string | null) {
 	if (!path) return "/movie-backdrop.png";
 	const envBase =
 		process.env.NEXT_PUBLIC_TMDB_BACKDROP_BASE_URL ||
-		"https://image.tmdb.org/t/p/w1280";
+		"/tmdb-img/w1280";
 	return `${envBase}${path}`;
 }
 
@@ -242,3 +387,8 @@ export function getVidSrcUrl(
 	}
 	return "#";
 }
+
+
+
+
+

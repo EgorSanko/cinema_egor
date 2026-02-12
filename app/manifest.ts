@@ -1,25 +1,20 @@
-import type { MetadataRoute } from "next";
+﻿import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
-	return {
-		name: "Free Streaming",
-		short_name: "Free Streaming",
-		description: "Stream your favorite movies for free, no login required",
-		start_url: "/",
-		display: "standalone",
-		background_color: "#0f1419",
-		theme_color: "#0f1419",
-		icons: [
-			{
-				src: "/logo.png",
-				sizes: "192x192",
-				type: "image/png",
-			},
-			{
-				src: "/logo.png",
-				sizes: "512x512",
-				type: "image/png",
-			},
-		],
-	};
+  return {
+    name: 'РљРёРЅРѕС‚РµР°С‚СЂ Р•РіРѕСЂР°',
+    short_name: 'РљРёРЅРѕС‚РµР°С‚СЂ',
+    description: 'РЎРјРѕС‚СЂРёС‚Рµ С„РёР»СЊРјС‹ Рё СЃРµСЂРёР°Р»С‹ РѕРЅР»Р°Р№РЅ Р±РµСЃРїР»Р°С‚РЅРѕ РІ HD',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#0a0a0a',
+    theme_color: '#e11d48',
+    orientation: 'any',
+    categories: ['entertainment'],
+    icons: [
+      { src: '/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
+      { src: '/icon-512.svg', sizes: '512x512', type: 'image/svg+xml' },
+      { src: '/icon-512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'maskable' },
+    ],
+  }
 }

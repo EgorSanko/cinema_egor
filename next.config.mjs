@@ -1,5 +1,6 @@
-/** @type {import('next').NextConfig} */
+﻿/** @type {import('next').NextConfig} */
 const nextConfig = {
+	output: 'standalone',
 	// Prevent cross-origin warnings/errors when accessing dev server from a phone on LAN.
 	// Add your machine's LAN origin here if it changes.
 	allowedDevOrigins: [
@@ -11,6 +12,7 @@ const nextConfig = {
 		ignoreBuildErrors: true,
 	},
 	images: {
+		unoptimized: true,
 		remotePatterns: [
 			{
 				protocol: "https",
