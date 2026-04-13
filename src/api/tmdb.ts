@@ -1,6 +1,7 @@
 import { API_BASE, TMDB_IMG } from '../constants/theme';
 
-const TMDB_API = 'https://api.themoviedb.org/3';
+// Proxied through our server to bypass TMDB block in Russia
+const TMDB_API = `${API_BASE}/tmdb-api`;
 const API_KEY = '275c9d09780aadb4b13ff57a731eda00';
 
 export interface Movie {
