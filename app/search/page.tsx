@@ -12,7 +12,7 @@ export async function generateMetadata({ searchParams }: SearchPageProps): Promi
   const params = await searchParams;
   const query = params.q || "";
   return {
-    title: `Результаты поиска "${query}" - Кинотеатр Егора`,
+    title: `Результаты поиска "${query}" - sapkeflykino`,
     description: `Результаты поиска по запросу "${query}"`,
   };
 }

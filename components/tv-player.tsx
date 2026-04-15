@@ -2,7 +2,8 @@
 import { SendToTV } from './send-to-tv';
 
 import type { TVShowDetails } from "@/lib/tmdb";
-import { Play, Film, ChevronDown, Mic } from "lucide-react";
+import { Play, Film, ChevronDown, Mic, Users } from "lucide-react";
+import Link from "next/link";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
@@ -383,6 +384,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
         {showPlayer && (
           <div className="mt-4 flex items-center gap-3 flex-wrap">
             {streamData && <SendToTV streamData={{ stream: streamData.stream, quality: selectedQuality, streams: streamData.streams, title: show.name + " S" + selectedSeason + "E" + selectedEpisode, translators, selectedTranslator, searchQuery: show.name, year: show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : "", season: selectedSeason, episode: selectedEpisode, isSeries: true, totalSeasons: validSeasons.length, totalEpisodes: episodes.length, mediaId: show.id, mediaType: "tv", poster_path: show.poster_path, vote_average: show.vote_average, first_air_date: show.first_air_date, episodeName: episodes.find(e => e.episode_number === selectedEpisode)?.name || "" }} />}
+            <Link href={`/watch/create?q=${encodeURIComponent(show.name)}&id=${show.id}&type=tv&year=${show.first_air_date ? new Date(show.first_air_date).getFullYear() : ""}&poster=${show.poster_path || ""}`}
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 hover:bg-purple-500/20 rounded-xl text-sm font-medium text-purple-300 transition-colors border border-purple-500/20">
+              <Users size={16} />
+              Вместе
+            </Link>
             {translators.length > 1 && (
               <div className="relative" ref={translatorRef}>
                 <button onClick={() => { setShowTranslators(!showTranslators); setShowSeasons(false); setShowEpisodes(false); }}

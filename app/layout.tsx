@@ -1,6 +1,6 @@
 ﻿import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Righteous } from "next/font/google";
 import type React from "react";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth-context";
@@ -10,22 +10,23 @@ import { ThemeProvider } from "@/components/theme-provider";
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const righteous = Righteous({ subsets: ["latin"], weight: "400", variable: "--font-brand" });
 
 export const metadata: Metadata = {
-title: "Кинотеатр Егора - Смотреть фильмы онлайн",
-description: "Кинотеатр Егора: Смотрите фильмы онлайн бесплатно в HD качестве с русской озвучкой.",
+title: "sapkeflykino — смотреть фильмы онлайн",
+description: "sapkeflykino: Смотрите фильмы онлайн бесплатно в HD качестве с русской озвучкой.",
 generator: "v0.app",
 openGraph: {
-title: "Кинотеатр Егора - Смотреть фильмы онлайн",
+title: "sapkeflykino — смотреть фильмы онлайн",
 description: "Смотрите любимые фильмы бесплатно без регистрации",
 type: "website",
-images: ["/logo.png"],
+images: ["/logo-512.png"],
 },
 twitter: {
 card: "summary_large_image",
-title: "Кинотеатр Егора - Смотреть фильмы онлайн",
+title: "sapkeflykino — смотреть фильмы онлайн",
 description: "Смотрите любимые фильмы бесплатно без регистрации",
-images: ["/logo.png"],
+images: ["/logo-512.png"],
 },
 icons: {
 icon: "/logo.png",
@@ -48,7 +49,7 @@ children,
 children: React.ReactNode;
 }>) {
 return (
-<html lang="ru" suppressHydrationWarning>
+<html lang="ru" className={righteous.variable} suppressHydrationWarning>
 <head>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script dangerouslySetInnerHTML={{__html: `

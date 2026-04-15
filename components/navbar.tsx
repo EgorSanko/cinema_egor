@@ -67,6 +67,7 @@ export function Navbar() {
     { label: "\u0421\u0435\u0440\u0438\u0430\u043B\u044B", href: "/tv" },
     { label: "\u041F\u043E\u0434\u0431\u043E\u0440\u043A\u0438", href: "/collections" },
     { label: "\uD83D\uDD25 \u0421\u0432\u0430\u0439\u043F", href: "/swipe" },
+    { label: "\uD83D\uDC65 \u0412\u043C\u0435\u0441\u0442\u0435", href: "/watch" },
     { label: "\u0416\u0430\u043D\u0440\u044B", href: "/genres" },
   ];
 
@@ -75,8 +76,8 @@ export function Navbar() {
       <nav className="sticky top-0 z-50 bg-background/95 backdrop-blur-lg border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <Link href="/" className="flex-shrink-0 font-bold text-xl text-primary hover:text-accent transition-all duration-300">
-              {"\u041A\u0438\u043D\u043E\u0442\u0435\u0430\u0442\u0440 \u0415\u0433\u043E\u0440\u0430"}
+            <Link href="/" className="flex-shrink-0 flex items-center hover:opacity-80 transition-all duration-300">
+              <img src="/logo.png" alt="sapkeflykino" className="h-10 w-auto" />
             </Link>
             <div className="hidden md:flex items-center gap-6">
               {navLinks.map((link) => (
@@ -164,7 +165,8 @@ export function Navbar() {
             </button>
           </div>
           {isOpen && (
-            <div className="md:hidden border-t border-border p-4 space-y-4 animate-in slide-in-from-top-5 duration-300">
+            <div className="md:hidden border-t border-border p-4 pb-20 space-y-4 animate-in slide-in-from-top-5 duration-300 max-h-[calc(100vh-4rem)] overflow-y-auto"
+              style={{ overscrollBehavior: "contain" }}>
               <form onSubmit={handleSearch}>
                 <div className="relative">
                   <input type="text" placeholder={"\u041F\u043E\u0438\u0441\u043A..."} value={searchQuery}

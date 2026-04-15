@@ -4,7 +4,7 @@ import { getGenres } from "@/lib/tmdb"
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Жанры - Кинотеатр Егора",
+  title: "Жанры - sapkeflykino",
   description: "Выбирайте фильмы по жанрам. Найдите любимые фильмы по категориям.",
 }
 

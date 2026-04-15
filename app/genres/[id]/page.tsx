@@ -14,8 +14,8 @@ const genres = await getGenres();
 const genre = genres.find((g) => g.id === genreId);
 if (!genre) return { title: "Жанр не найден" };
 return {
-title: `${genre.name} - Кинотеатр Егора`,
-description: `Фильмы жанра ${genre.name} на Кинотеатр Егора`,
+title: `${genre.name} - sapkeflykino`,
+description: `Фильмы жанра ${genre.name} на sapkeflykino`,
 };
 }
 

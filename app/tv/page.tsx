@@ -4,7 +4,7 @@ import { getTrendingTV, getPopularTV } from "@/lib/tmdb";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Сериалы - Кинотеатр Егора",
+  title: "Сериалы - sapkeflykino",
   description: "Смотрите популярные сериалы онлайн бесплатно в HD качестве",
 };
 

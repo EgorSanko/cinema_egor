@@ -7,7 +7,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_TMDB_BASE_URL;
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
 export const metadata: Metadata = {
-  title: "Подборки - Кинотеатр Егора",
+  title: "Подборки - sapkeflykino",
   description: "Тематические подборки фильмов и сериалов",
 };
 

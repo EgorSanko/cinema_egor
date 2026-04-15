@@ -1,19 +1,22 @@
 "use client";
 
-import { Home, Tv, Heart, Clock, Grid3X3 } from "lucide-react";
+import { Home, Tv, Heart, Clock, Grid3X3, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tabs = [
   { href: "/", icon: Home, label: "Главная" },
   { href: "/tv", icon: Tv, label: "Сериалы" },
+  { href: "/watch", icon: Users, label: "Вместе" },
   { href: "/collections", icon: Grid3X3, label: "Подборки" },
   { href: "/favorites", icon: Heart, label: "Избранное" },
-  { href: "/history", icon: Clock, label: "История" },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
+
+  // Hide on watch room pages (not /watch or /watch/create)
+  if (pathname.match(/^\/watch\/[A-Z0-9]{4,}$/i)) return null;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-t border-border sm:hidden">

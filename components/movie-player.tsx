@@ -2,7 +2,8 @@
 
 import type { MovieDetails } from "@/lib/tmdb";
 import { SendToTV } from './send-to-tv';
-import { Play, Film, ChevronDown, Mic, Clock, CalendarDays } from "lucide-react";
+import { Play, Film, ChevronDown, Mic, Clock, CalendarDays, Users } from "lucide-react";
+import Link from "next/link";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
@@ -368,6 +369,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               </div>
             )}
             {streamData && <SendToTV streamData={{ stream: streamData.stream, quality: selectedQuality, streams: streamData.streams, title: streamData.title, translators, selectedTranslator, searchQuery: movie.title, year: movie.release_date ? new Date(movie.release_date).getFullYear().toString() : "", isSeries: false, mediaId: movie.id, mediaType: "movie", poster_path: movie.poster_path, vote_average: movie.vote_average, release_date: movie.release_date }} />}
+            <Link href={`/watch/create?q=${encodeURIComponent(movie.title)}&id=${movie.id}&type=movie&year=${movie.release_date ? new Date(movie.release_date).getFullYear() : ""}&poster=${movie.poster_path || ""}`}
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 hover:bg-purple-500/20 rounded-xl text-sm font-medium text-purple-300 transition-colors border border-purple-500/20">
+              <Users size={16} />
+              Вместе
+            </Link>
             {streamData.streams && Object.keys(streamData.streams).map((q: string) => (
               <button key={q} onClick={() => changeQuality(q)}
                 className={"px-4 py-2.5 rounded-xl text-sm font-medium transition-colors border " +

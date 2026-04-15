@@ -429,8 +429,7 @@ export function TVHome({ trendingMovies, popularMovies, latestMovies, trendingTV
       <nav className="fixed left-0 top-0 bottom-0 z-[100] flex flex-col pt-4 transition-all duration-300"
         style={{ width: so ? SB_EX : SB_W, background: so ? "rgba(9,9,11,0.98)" : "rgba(9,9,11,0.88)", backdropFilter: "blur(20px)", borderRight: `1px solid rgba(255,255,255,${so ? 0.08 : 0.04})` }}>
         <div className="flex items-center gap-3 mb-2 h-[52px]" style={{ justifyContent: so ? "flex-start" : "center", padding: so ? "0 20px" : 0 }}>
-          <div className="w-[34px] h-[34px] rounded-[10px] bg-primary flex items-center justify-center text-[16px] font-black text-white shrink-0">К</div>
-          {so && <span className="text-[15px] font-bold whitespace-nowrap">Кинотеатр Егора</span>}
+          <img src="/logo.png" alt="sapkeflykino" className="h-[38px] w-[38px] object-contain shrink-0" />
         </div>
         <div className="flex-1 flex flex-col gap-0.5 px-1.5">
           {SIDEBAR.map((it, i) => {

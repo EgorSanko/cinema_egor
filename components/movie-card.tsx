@@ -20,7 +20,7 @@ export function MovieCard({ movie }: MovieCardProps) {
             alt={movie.title}
             fill
             className="object-cover group-hover:scale-110 transition-all duration-300 ease-in-out"
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            sizes="(max-width: 640px) 45vw, (max-width: 1024px) 25vw, 185px"
           />
           {/* Favorite button */}
           <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">

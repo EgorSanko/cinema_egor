@@ -3,7 +3,7 @@
 import type React from "react";
 
 export const metadata = {
-  title: "Кинотеатр Егора — TV",
+  title: "sapkeflykino — TV",
   description: "Смотрите фильмы на большом экране с пульта",
 };
 

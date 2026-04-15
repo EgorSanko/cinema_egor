@@ -15,7 +15,7 @@ const movieId = (await params).id;
 const movie = await getMovieDetails(Number(movieId));
 if (!movie) return { title: "Фильм не найден" };
 return {
-title: `${movie.title} - Смотреть онлайн | Кинотеатр Егора`,
+title: `${movie.title} - Смотреть онлайн | sapkeflykino`,
 description: movie.overview || "Смотрите этот фильм онлайн бесплатно",
 openGraph: {
 title: movie.title,

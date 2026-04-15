@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: TVPageProps): Promise<Metadat
   const show = await getTVDetails(Number(id));
   if (!show) return { title: "Сериал не найден" };
   return {
-    title: `${show.name} — Кинотеатр Егора`,
+    title: `${show.name} — sapkeflykino`,
     description: show.overview?.slice(0, 160),
   };
 }
