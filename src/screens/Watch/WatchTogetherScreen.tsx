@@ -388,7 +388,7 @@ export function WatchTogetherScreen() {
     if (!room) return;
     try {
       await Share.share({
-        message: `Присоединяйся к просмотру "${room.movieTitle}" в Кинотеатре Егора!\nОткрой kino.lead-seek.ru/watch и введи код: ${room.code}`,
+        message: `Присоединяйся к просмотру "${room.movieTitle}" в sapkeflykino!\nОткрой sapkeflykino.ru/watch и введи код: ${room.code}`,
       });
     } catch {}
   };
@@ -508,7 +508,7 @@ export function WatchTogetherScreen() {
           <Animated.View entering={FadeInDown.duration(400).delay(500)} style={styles.infoBlock}>
             <View style={styles.infoRow}>
               <Ionicons name="globe-outline" size={18} color={COLORS.textMuted} />
-              <Text style={styles.infoText}>Работает между приложением и сайтом kino.lead-seek.ru</Text>
+              <Text style={styles.infoText}>Работает между приложением и сайтом sapkeflykino.ru</Text>
             </View>
             <View style={styles.infoRow}>
               <Ionicons name="chatbubbles-outline" size={18} color={COLORS.textMuted} />

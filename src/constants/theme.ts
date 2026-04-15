@@ -3,10 +3,10 @@ export const COLORS = {
   bgCard: '#13131a',
   bgElevated: '#1a1a24',
   bgOverlay: 'rgba(0,0,0,0.85)',
-  primary: '#e11d48',
-  primaryDark: '#be123c',
-  primaryLight: '#fb7185',
-  accent: '#8b5cf6',
+  primary: '#a3e635',
+  primaryDark: '#84cc16',
+  primaryLight: '#bef264',
+  accent: '#a78bfa',
   text: '#f1f1f4',
   textSecondary: '#9ca3af',
   textMuted: '#6b7280',
@@ -60,5 +60,5 @@ export const SHADOWS = {
   },
 };
 
-export const API_BASE = 'https://kino.lead-seek.ru';
+export const API_BASE = 'https://sapkeflykino.ru';
 export const TMDB_IMG = `${API_BASE}/tmdb-img`;

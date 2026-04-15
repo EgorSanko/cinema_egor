@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet, Alert, KeyboardAvoidingView,
-  Platform, ScrollView, ActivityIndicator,
+  Platform, ScrollView, ActivityIndicator, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -65,10 +65,7 @@ export function AuthScreen({ onAuth }: Props) {
         >
           {/* Logo */}
           <Animated.View entering={FadeIn.duration(600)} style={styles.logoWrap}>
-            <View style={styles.logoCircle}>
-              <Ionicons name="film" size={48} color={COLORS.primary} />
-            </View>
-            <Text style={styles.logoText}>Кинотеатр Егора</Text>
+            <Image source={require('../../../assets/logo.png')} style={styles.logoImage} resizeMode="contain" />
             <Text style={styles.logoSubtext}>Кино и сериалы онлайн</Text>
           </Animated.View>
 
@@ -167,20 +164,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
-  logoCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: COLORS.primary + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING.lg,
-  },
-  logoText: {
-    color: COLORS.text,
-    fontSize: 32,
-    fontFamily: FONTS.extrabold,
-    letterSpacing: -0.5,
+  logoImage: {
+    width: 140,
+    height: 140,
+    marginBottom: SPACING.md,
   },
   logoSubtext: {
     color: COLORS.textMuted,

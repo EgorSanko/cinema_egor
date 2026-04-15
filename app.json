@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Кинотеатр Егора",
-    "slug": "kinotv-app",
+    "name": "sapkeflykino",
+    "slug": "sapkeflykino",
     "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -33,9 +33,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "53e3c459-19dc-416d-933e-0016e5da611f"
+        "projectId": "5868265a-82a9-4540-a5c6-b2124ce0fe29"
       }
     },
-    "owner": "papiros007"
+    "owner": "sapkefly09"
   }
 }

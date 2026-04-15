@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<body>
+<canvas id="c" width="1024" height="1024"></canvas>
+<canvas id="adaptive" width="1024" height="1024"></canvas>
+<script>
+// Main icon
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+
+// Background gradient
+const grad = ctx.createLinearGradient(0, 0, 1024, 1024);
+grad.addColorStop(0, '#1a0a1e');
+grad.addColorStop(0.5, '#0a0a0f');
+grad.addColorStop(1, '#0f0a1a');
+ctx.fillStyle = grad;
+ctx.beginPath();
+ctx.roundRect(0, 0, 1024, 1024, 200);
+ctx.fill();
+
+// Film reel circle
+ctx.strokeStyle = 'rgba(225,29,72,0.15)';
+ctx.lineWidth = 3;
+ctx.beginPath();
+ctx.arc(512, 512, 380, 0, Math.PI * 2);
+ctx.stroke();
+
+// Play triangle
+ctx.fillStyle = '#e11d48';
+ctx.shadowColor = '#e11d48';
+ctx.shadowBlur = 60;
+ctx.beginPath();
+ctx.moveTo(420, 340);
+ctx.lineTo(420, 684);
+ctx.lineTo(700, 512);
+ctx.closePath();
+ctx.fill();
+ctx.shadowBlur = 0;
+
+// "KinoTV" text
+ctx.fillStyle = '#f1f1f4';
+ctx.font = 'bold 96px Inter, -apple-system, sans-serif';
+ctx.textAlign = 'center';
+ctx.fillText('KinoTV', 512, 880);
+
+// Small accent line
+ctx.fillStyle = '#e11d48';
+ctx.fillRect(412, 895, 200, 4);
+
+// Download link
+const link = document.createElement('a');
+link.download = 'icon.png';
+link.href = c.toDataURL();
+link.textContent = 'Download Icon';
+document.body.appendChild(link);
+
+// Adaptive icon (foreground only, no background)
+const ac = document.getElementById('adaptive');
+const actx = ac.getContext('2d');
+// Transparent background
+actx.clearRect(0, 0, 1024, 1024);
+
+// Play triangle centered
+actx.fillStyle = '#e11d48';
+actx.shadowColor = '#e11d48';
+actx.shadowBlur = 40;
+actx.beginPath();
+actx.moveTo(380, 280);
+actx.lineTo(380, 744);
+actx.lineTo(720, 512);
+actx.closePath();
+actx.fill();
+actx.shadowBlur = 0;
+
+// "K" letter
+actx.fillStyle = '#f1f1f4';
+actx.font = 'bold 160px Inter, -apple-system, sans-serif';
+actx.textAlign = 'center';
+actx.fillText('K', 512, 900);
+
+const link2 = document.createElement('a');
+link2.download = 'adaptive-icon.png';
+link2.href = ac.toDataURL();
+link2.textContent = 'Download Adaptive';
+document.body.appendChild(document.createElement('br'));
+document.body.appendChild(link2);
+</script>
+</body>
+</html>

@@ -156,7 +156,7 @@ export function SwipeScreen() {
         await loadGenres();
         setPhase('genres');
         try {
-          await Share.share({ message: `Присоединяйся к свайпу в Кинотеатре Егора! Код: ${data.code}\nОткрой kino.lead-seek.ru/swipe и введи код` });
+          await Share.share({ message: `Присоединяйся к свайпу в sapkeflykino! Код: ${data.code}\nОткрой sapkeflykino.ru/swipe и введи код` });
         } catch {}
       } else {
         Alert.alert('Ошибка', data.error || 'Не удалось создать комнату');
