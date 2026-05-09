@@ -5,7 +5,7 @@ import { fetchMoviesBySearchAction, fetchTVBySearchAction } from "@/app/actions"
 import { useDebounce } from "@/hooks/use-debounce";
 import type { Movie, TVShow } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
-import { Menu, Search, X, User, LogOut, LogIn, Heart, Clock } from "lucide-react";
+import { Menu, Search, X, User, LogOut, LogIn, Heart, Clock, Award } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -139,7 +139,10 @@ export function Navbar() {
                         <p className="text-sm font-medium text-foreground">{user.name}</p>
                         <p className="text-xs text-muted-foreground">{user.email}</p>
                       </div>
-                      <Link href="/favorites" className="flex items-center gap-2 px-4 py-3 text-sm text-foreground hover:bg-primary/10 transition-colors border-b border-border">
+                      <Link href="/profile" className="flex items-center gap-2 px-4 py-3 text-sm text-foreground hover:bg-primary/10 transition-colors border-b border-border" onClick={() => setShowUserMenu(false)}>
+                        <User size={16} /> \u041F\u0440\u043E\u0444\u0438\u043B\u044C
+                      </Link>
+                      <Link href="/favorites" className="flex items-center gap-2 px-4 py-3 text-sm text-foreground hover:bg-primary/10 transition-colors border-b border-border" onClick={() => setShowUserMenu(false)}>
                         <Heart size={16} /> {"\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435"}
                       </Link>
                       <Link href="/history" className="flex items-center gap-2 px-4 py-3 text-sm text-foreground hover:bg-primary/10 transition-colors border-b border-border">
