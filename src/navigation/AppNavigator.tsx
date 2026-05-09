@@ -17,6 +17,7 @@ import { CollectionsScreen } from '../screens/Collections/CollectionsScreen';
 import { SwipeScreen } from '../screens/Swipe/SwipeScreen';
 import { WatchTogetherScreen } from '../screens/Watch/WatchTogetherScreen';
 import { AuthScreen } from '../screens/Auth/AuthScreen';
+import { ProfileScreen } from '../screens/Profile/ProfileScreen';
 import { getUser, onAuthChange, syncFromServer, type User } from '../utils/auth';
 
 const Tab = createBottomTabNavigator();
@@ -28,6 +29,7 @@ const TAB_ICONS: Record<string, { focused: keyof typeof Ionicons.glyphMap; unfoc
   SearchTab: { focused: 'search', unfocused: 'search-outline' },
   GenresTab: { focused: 'grid', unfocused: 'grid-outline' },
   FavoritesTab: { focused: 'heart', unfocused: 'heart-outline' },
+  ProfileTab: { focused: 'person-circle', unfocused: 'person-circle-outline' },
 };
 
 function HomeTabs() {
@@ -61,7 +63,8 @@ function HomeTabs() {
       <Tab.Screen name="TVTab" component={TVScreen} options={{ tabBarLabel: 'Сериалы' }} />
       <Tab.Screen name="SearchTab" component={SearchScreen} options={{ tabBarLabel: 'Поиск' }} />
       <Tab.Screen name="GenresTab" component={GenresScreen} options={{ tabBarLabel: 'Жанры' }} />
-      <Tab.Screen name="FavoritesTab" component={FavoritesScreen} options={{ tabBarLabel: 'Моё' }} />
+      <Tab.Screen name="FavoritesTab" component={FavoritesScreen} options={{ tabBarLabel: 'Избранное' }} />
+      <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ tabBarLabel: 'Профиль' }} />
     </Tab.Navigator>
   );
 }
