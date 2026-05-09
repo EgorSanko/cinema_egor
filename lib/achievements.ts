@@ -122,8 +122,17 @@ export function computeStats(
     // Quality
     if (h.vote_average && h.vote_average >= 9) stats.highRatedWatched++;
 
-    // Translators
+    // Translators (collect from history items)
     if ((h as any).translatorName) translatorSet.add((h as any).translatorName);
+  }
+
+  // Also pull in translators saved via "tried translators" set (kept fresh by saveLastTranslator)
+  // — this catches translators tried without finishing a 60-second watch threshold.
+  if (typeof window !== "undefined") {
+    try {
+      const tried: string[] = JSON.parse(localStorage.getItem("kino_tried_translators") || "[]");
+      for (const t of tried) translatorSet.add(t);
+    } catch {}
   }
 
   // Series considered "completed" if user finished at least 5 episodes (heuristic)

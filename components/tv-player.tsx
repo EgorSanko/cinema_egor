@@ -50,13 +50,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
   const [showTranslators, setShowTranslators] = useState(false);
   const [translatorLoading, setTranslatorLoading] = useState(false);
-  const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
-  const autoplayTimerRef = useRef<any>(null);
   const autoplayTriggeredRef = useRef(false);
 
   const validSeasons = show.seasons?.filter(s => s.season_number > 0) || [];
@@ -299,54 +297,48 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }
   };
 
-  // === Autoplay countdown (10s overlay before next episode) ===
-  const startAutoplayCountdown = () => {
-    if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
-    setAutoplayCountdown(10);
-    autoplayTimerRef.current = setInterval(() => {
-      setAutoplayCountdown(prev => {
-        if (prev === null) return null;
-        if (prev <= 1) {
-          if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
-          setTimeout(() => nextEpisode(), 0);
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
-  const cancelAutoplay = () => {
-    if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
-    autoplayTimerRef.current = null;
-    setAutoplayCountdown(null);
-  };
-
-  // Keep hasNextEpisode in a ref so the (rarely-rerun) ended listener always
-  // sees the current value when it fires later.
+  // Keep hasNextEpisode in a ref so listeners attached once read the latest value.
   const hasNextEpisodeRef = useRef(hasNextEpisode);
   useEffect(() => { hasNextEpisodeRef.current = hasNextEpisode; }, [hasNextEpisode]);
 
-  // Trigger autoplay countdown ONLY on natural end of video.
-  // Avoids the "30s before end" predictive trigger which fires during long credits
-  // AND fires unwantedly on cliffhanger episodes that just cut off.
+  // Auto-advance to the next episode when the current one ends.
+  // No countdown overlay — just immediate transition. Native fullscreen on
+  // <video> hides custom overlays anyway, so a no-UI auto-jump is more reliable
+  // and matches what the user wants.
+  // Also covers a case where some browsers loop-back to time 0 instead of firing
+  // a clean ended event after fullscreen: a timeupdate watcher catches that too.
   useEffect(() => {
     if (!showPlayer) return;
     let cleanupFn: (() => void) | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastTime = 0;
     const attach = () => {
       const v = videoRef.current;
       if (!v) {
         retryTimer = setTimeout(attach, 200);
         return;
       }
-      const onEnded = () => {
+      const triggerNext = () => {
         if (autoplayTriggeredRef.current) return;
+        if (!hasNextEpisodeRef.current) return;
         autoplayTriggeredRef.current = true;
-        if (hasNextEpisodeRef.current) startAutoplayCountdown();
+        nextEpisode();
+      };
+      const onEnded = () => triggerNext();
+      const onTime = () => {
+        // Detect fullscreen-loopback: was near end, now jumped back to 0 → end already happened
+        const ct = v.currentTime, dur = v.duration || 0;
+        if (lastTime > dur - 1.5 && lastTime > 5 && ct < 1 && dur > 60) {
+          triggerNext();
+        }
+        lastTime = ct;
       };
       v.addEventListener("ended", onEnded);
-      cleanupFn = () => v.removeEventListener("ended", onEnded);
+      v.addEventListener("timeupdate", onTime);
+      cleanupFn = () => {
+        v.removeEventListener("ended", onEnded);
+        v.removeEventListener("timeupdate", onTime);
+      };
     };
     attach();
     return () => {
@@ -356,16 +348,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPlayer, selectedSeason, selectedEpisode, streamData]);
 
-  // Reset autoplay state when episode changes
+  // Reset trigger when episode changes
   useEffect(() => {
     autoplayTriggeredRef.current = false;
-    cancelAutoplay();
   }, [selectedSeason, selectedEpisode]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => { if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current); };
-  }, []);
 
   const toggleFullscreen = () => {
     const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -486,16 +472,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
               )}
               {cssFullscreen && (
                 <button onClick={() => setCssFullscreen(false)} className="fixed top-3 right-3 z-[10000] bg-black/70 backdrop-blur text-white px-3 py-2 rounded-lg text-sm">{"\u2715 Закрыть"}</button>
-              )}
-              {autoplayCountdown !== null && hasNextEpisode && (
-                <div className={(cssFullscreen ? "fixed" : "absolute") + " bottom-20 right-4 z-[10001] bg-black/90 border border-white/15 rounded-xl p-4 min-w-[220px] backdrop-blur"}>
-                  <p className="text-white/70 text-xs mb-1">Следующая серия через</p>
-                  <p className="text-primary text-4xl font-bold mb-3">{autoplayCountdown}</p>
-                  <div className="flex gap-2">
-                    <button onClick={() => { cancelAutoplay(); nextEpisode(); }} className="flex-1 px-3 py-2 bg-primary text-black rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors">{"▶ Сейчас"}</button>
-                    <button onClick={cancelAutoplay} className="flex-1 px-3 py-2 bg-white/10 text-white rounded-lg text-sm hover:bg-white/20 transition-colors">Отмена</button>
-                  </div>
-                </div>
               )}
             </>
           ) : null}

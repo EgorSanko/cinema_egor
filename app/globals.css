@@ -4,25 +4,26 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	/* LIGHT theme — applies when html does NOT have .dark class */
-	--background: #ffffff;
-	--foreground: #0f1419;
-	--card: #f7f8fa;
-	--card-foreground: #0f1419;
+	/* LIGHT theme — soft slate-gray palette, NOT pure white (easier on eyes,
+	   matches the bluish dark theme but inverted). */
+	--background: #eef2f7;
+	--foreground: #1e293b;
+	--card: #ffffff;
+	--card-foreground: #1e293b;
 	--popover: #ffffff;
-	--popover-foreground: #0f1419;
+	--popover-foreground: #1e293b;
 	--primary: #6db509;
 	--primary-foreground: #ffffff;
-	--secondary: #e4e6eb;
-	--secondary-foreground: #0f1419;
-	--muted: #e4e6eb;
-	--muted-foreground: #4a5568;
+	--secondary: #dbe2ec;
+	--secondary-foreground: #1e293b;
+	--muted: #dbe2ec;
+	--muted-foreground: #64748b;
 	--accent: #7c3aed;
 	--accent-foreground: #ffffff;
 	--destructive: #dc2626;
 	--destructive-foreground: #ffffff;
-	--border: #e2e5ea;
-	--input: #f7f8fa;
+	--border: #cbd5e1;
+	--input: #ffffff;
 	--ring: #6db509;
 	--chart-1: #6db509;
 	--chart-2: #7c3aed;
@@ -30,13 +31,13 @@
 	--chart-4: #22c55e;
 	--chart-5: #06b6d4;
 	--radius: 0.625rem;
-	--sidebar: #f7f8fa;
-	--sidebar-foreground: #0f1419;
+	--sidebar: #ffffff;
+	--sidebar-foreground: #1e293b;
 	--sidebar-primary: #6db509;
 	--sidebar-primary-foreground: #ffffff;
-	--sidebar-accent: #ececec;
-	--sidebar-accent-foreground: #0f1419;
-	--sidebar-border: #e2e5ea;
+	--sidebar-accent: #e2e8f0;
+	--sidebar-accent-foreground: #1e293b;
+	--sidebar-border: #cbd5e1;
 	--sidebar-ring: #6db509;
 }
 

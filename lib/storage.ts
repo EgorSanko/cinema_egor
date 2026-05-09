@@ -242,7 +242,20 @@ export function getLastEpisode(showId: number): { season: number; episode: numbe
 export function saveLastTranslator(mediaId: number, mediaType: "movie" | "tv", translatorId: number, translatorName?: string): void {
   try {
     localStorage.setItem(`last-tr-${mediaType}-${mediaId}`, JSON.stringify({ id: translatorId, name: translatorName || "" }));
+    // Also track unique translator NAMES the user has tried — used for achievements.
+    // Storing names (not ids) because the same dub studio has different IDs across titles.
+    if (translatorName) {
+      const set = new Set<string>(JSON.parse(localStorage.getItem("kino_tried_translators") || "[]"));
+      set.add(translatorName);
+      localStorage.setItem("kino_tried_translators", JSON.stringify(Array.from(set)));
+    }
   } catch {}
+}
+
+export function getTriedTranslators(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem("kino_tried_translators") || "[]");
+  } catch { return []; }
 }
 
 export function getLastTranslator(mediaId: number, mediaType: "movie" | "tv"): { id: number; name: string } | null {
