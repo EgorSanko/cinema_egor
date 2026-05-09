@@ -440,3 +440,50 @@ export function pickBestTrailer(videos: TmdbVideo[]): TmdbVideo | null {
 	if (anyTrailer) return anyTrailer;
 	return yt[0] || null;
 }
+
+// === People search ===
+export interface Person {
+	id: number;
+	name: string;
+	profile_path: string | null;
+	known_for_department: string;
+	popularity: number;
+	known_for?: { id: number; title?: string; name?: string; media_type: "movie" | "tv"; poster_path: string | null }[];
+}
+
+export async function searchPeople(query: string, page = 1): Promise<Person[]> {
+	if (!query.trim()) return [];
+	try {
+		const res = await fetchWithRetry(
+			`${API_BASE_URL}/search/person?api_key=${API_KEY}&query=${encodeURIComponent(query)}&language=ru-RU&page=${page}`,
+			{ next: { revalidate: 1800 } }
+		);
+		const data = await res.json();
+		return (data.results || []) as Person[];
+	} catch (e) {
+		console.error("searchPeople error:", e);
+		return [];
+	}
+}
+
+export async function getPersonDetails(id: number): Promise<{ details: any; credits: any } | null> {
+	if (!id) return null;
+	try {
+		const [d, c] = await Promise.all([
+			fetchWithRetry(`${API_BASE_URL}/person/${id}?api_key=${API_KEY}&language=ru-RU`, { next: { revalidate: 3600 } }),
+			fetchWithRetry(`${API_BASE_URL}/person/${id}/combined_credits?api_key=${API_KEY}&language=ru-RU`, { next: { revalidate: 3600 } }),
+		]);
+		const details = await d.json();
+		const credits = await c.json();
+		return { details, credits };
+	} catch (e) {
+		console.error("getPersonDetails error:", e);
+		return null;
+	}
+}
+
+export function profileUrl(path: string | null, size = "w185") {
+	if (!path) return null;
+	const envBase = process.env.NEXT_PUBLIC_TMDB_PROFILE_BASE_URL || `/tmdb-img/${size}`;
+	return `${envBase}${path}`;
+}
