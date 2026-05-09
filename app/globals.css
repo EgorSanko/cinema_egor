@@ -4,10 +4,9 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	/* LIGHT theme — final spec from user.
-	   Apple TV / Linear / Notion-style: clean, premium, not eye-stabbing. */
-	--background: #f3f4f6;
-	--surface: #f9fafb;
+	/* LIGHT theme — Apple TV / Linear / Notion-style. */
+	--background: #f5f5f4;
+	--surface: #fafaf9;
 	--foreground: #111827;
 	--card: #ffffff;
 	--card-foreground: #111827;
@@ -44,7 +43,7 @@
 
 /* === LIGHT MODE polish — only applied when html is NOT .dark === */
 html:not(.dark) body {
-	background: #f3f4f6;
+	background: #f5f5f4;
 }
 
 /* Translucent navbar with backdrop blur — sits on top of the page bg */
@@ -55,24 +54,43 @@ html:not(.dark) nav.sticky {
 	border-bottom: 1px solid #e5e7eb;
 }
 
-/* Soft fade on hero banners so giant posters don't blast the page */
+/* Soft fade on hero banners — softer overlay + frosted-glass blur so the
+   poster keeps its sochnost', text stays readable. */
 html:not(.dark) .group .object-cover ~ .absolute.inset-0,
 html:not(.dark) section.relative > div.absolute.inset-0 {
 	background: linear-gradient(
 		90deg,
-		rgba(243, 244, 246, 0.92) 0%,
-		rgba(243, 244, 246, 0.55) 35%,
-		rgba(243, 244, 246, 0.08) 70%,
+		rgba(245, 245, 244, 0.82) 0%,
+		rgba(245, 245, 244, 0.45) 35%,
+		rgba(245, 245, 244, 0.05) 70%,
 		transparent 100%
 	);
+	-webkit-backdrop-filter: blur(2px);
+	backdrop-filter: blur(2px);
 }
 
-/* Card lift on hover — subtle premium feel */
+/* Inset shadow at the bottom of the hero banner for cinematic transition
+   into the next section (Continue Watching, etc.) */
+html:not(.dark) section.relative:has(> div > div > .object-cover)::after {
+	content: "";
+	position: absolute;
+	left: 0; right: 0; bottom: 0; height: 120px;
+	pointer-events: none;
+	background: linear-gradient(to bottom, transparent, #f5f5f4 90%);
+	z-index: 1;
+}
+
+/* Card lift + scale on hover — Apple TV vibe */
+html:not(.dark) a[href^="/movie/"],
+html:not(.dark) a[href^="/tv/"],
+html:not(.dark) a[href^="/person/"] {
+	transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
 html:not(.dark) a[href^="/movie/"]:hover,
 html:not(.dark) a[href^="/tv/"]:hover,
 html:not(.dark) a[href^="/person/"]:hover {
-	transform: translateY(-4px);
-	transition: transform 0.25s ease;
+	transform: translateY(-4px) scale(1.015);
+	box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
 }
 
 .dark {
