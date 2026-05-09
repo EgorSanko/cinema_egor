@@ -140,7 +140,7 @@ export function Navbar() {
                         <p className="text-xs text-muted-foreground">{user.email}</p>
                       </div>
                       <Link href="/profile" className="flex items-center gap-2 px-4 py-3 text-sm text-foreground hover:bg-primary/10 transition-colors border-b border-border" onClick={() => setShowUserMenu(false)}>
-                        <User size={16} /> \u041F\u0440\u043E\u0444\u0438\u043B\u044C
+                        <User size={16} /> {"\u041F\u0440\u043E\u0444\u0438\u043B\u044C"}
                       </Link>
                       <Link href="/favorites" className="flex items-center gap-2 px-4 py-3 text-sm text-foreground hover:bg-primary/10 transition-colors border-b border-border" onClick={() => setShowUserMenu(false)}>
                         <Heart size={16} /> {"\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435"}
