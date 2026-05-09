@@ -30,7 +30,13 @@ export function MovieDetailScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { id } = route.params;
+  const { id, startSeason, startEpisode, startProgress, autoPlay: shouldAutoPlay } = route.params as {
+    id: number;
+    startSeason?: number;
+    startEpisode?: number;
+    startProgress?: number;
+    autoPlay?: boolean;
+  };
   const isTV = route.name === 'TVDetail';
 
   const [movie, setMovie] = useState<MovieDetails | null>(null);
@@ -43,9 +49,10 @@ export function MovieDetailScreen() {
   const [streamLoading, setStreamLoading] = useState(false);
 
   // TV episode
-  const [selectedSeason, setSelectedSeason] = useState(1);
-  const [selectedEpisode, setSelectedEpisode] = useState(1);
+  const [selectedSeason, setSelectedSeason] = useState(startSeason ?? 1);
+  const [selectedEpisode, setSelectedEpisode] = useState(startEpisode ?? 1);
   const [showSeasonPicker, setShowSeasonPicker] = useState(false);
+  const [autoPlayConsumed, setAutoPlayConsumed] = useState(false);
 
   // Comment form
   const [commentText, setCommentText] = useState('');
@@ -92,6 +99,14 @@ export function MovieDetailScreen() {
   const origSearch = ((isTV ? (tvShow as any)?.original_name : (movie as any)?.original_title) || '').replace(/["'«»""]/g, "").trim();
   const searchTitle = origSearch && /[a-z]/i.test(origSearch) ? origSearch : (detailTitle || '');
   const detailDate = isTV ? tvShow?.first_air_date : movie?.release_date;
+
+  // Auto-play when navigated from "Continue Watching" with autoPlay flag
+  useEffect(() => {
+    if (!shouldAutoPlay || autoPlayConsumed || !detail || streamLoading) return;
+    setAutoPlayConsumed(true);
+    handlePlay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, shouldAutoPlay, autoPlayConsumed]);
 
   const handleFavorite = async () => {
     if (!detail) return;

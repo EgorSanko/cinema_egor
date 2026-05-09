@@ -15,22 +15,42 @@ import { getHistory, type HistoryItem } from '../../utils/storage';
 import type { Movie } from '../../api/tmdb';
 import { COLORS, RADIUS, FONTS, SPACING } from '../../constants/theme';
 
-const ContinueCard = ({ item, onPress }: { item: HistoryItem; onPress: () => void }) => {
+type ContinueItem = HistoryItem & {
+  // Where to actually launch when card is tapped (may differ from item.season/episode
+  // if last watched episode is completed — then we suggest the next one)
+  launchSeason?: number;
+  launchEpisode?: number;
+  launchProgress?: number;
+  isNextEpisode?: boolean; // true when card represents the NEXT (not last watched) episode
+};
+
+const ContinueCard = ({ item, onPress }: { item: ContinueItem; onPress: () => void }) => {
   const img = posterUrl(item.poster_path);
-  const progress = item.duration > 0 ? Math.min(item.progress / item.duration, 1) : 0;
+  const progress = item.isNextEpisode
+    ? 0
+    : item.duration > 0 ? Math.min(item.progress / item.duration, 1) : 0;
   const remaining = Math.max(0, item.duration - item.progress);
   const mins = Math.ceil(remaining / 60);
+  const showSeason = item.launchSeason ?? item.season;
+  const showEpisode = item.launchEpisode ?? item.episode;
   return (
     <Pressable onPress={onPress} style={styles.continueCard}>
       <View style={styles.continuePoster}>
         {img && <Image source={{ uri: img }} style={{ width: '100%', height: '100%' }} contentFit="cover" />}
         <View style={styles.continueProgress}><View style={[styles.continueProgressFill, { width: `${progress * 100}%` }]} /></View>
+        {item.isNextEpisode && (
+          <View style={styles.continueNextBadge}>
+            <Text style={styles.continueNextBadgeText}>СЛЕД.</Text>
+          </View>
+        )}
       </View>
       <Text style={styles.continueTitle} numberOfLines={2}>{item.title}</Text>
-      {item.season && item.episode && (
-        <Text style={styles.continueEpisode}>S{item.season}E{item.episode}</Text>
+      {showSeason && showEpisode && (
+        <Text style={styles.continueEpisode}>S{showSeason}E{showEpisode}</Text>
       )}
-      <Text style={styles.continueTime}>{mins} мин осталось</Text>
+      <Text style={styles.continueTime}>
+        {item.isNextEpisode ? 'Начать следующую' : `${mins} мин осталось`}
+      </Text>
     </Pressable>
   );
 };
@@ -42,7 +62,7 @@ export function HomeScreen() {
   const [popular, setPopular] = useState<Movie[]>([]);
   const [latest, setLatest] = useState<Movie[]>([]);
   const [topRated, setTopRated] = useState<Movie[]>([]);
-  const [continueWatching, setContinueWatching] = useState<HistoryItem[]>([]);
+  const [continueWatching, setContinueWatching] = useState<ContinueItem[]>([]);
   const [recommendations, setRecommendations] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -66,16 +86,47 @@ export function HomeScreen() {
       try {
         const hist = await getHistory();
         if (cancelled) return;
-        // Group TV episodes — only show latest episode per show
-        const seen = new Set<string>();
-        const unfinished = hist.filter(h => {
-          if (h.duration <= 0 || (h.progress / h.duration) >= 0.95) return false;
+
+        // Build "Continue Watching" with smart logic:
+        // - Movies: show only if not finished (<95%)
+        // - TV series: always show latest watched episode of each show.
+        //   If that episode is completed, show NEXT episode card (with progress 0).
+        const items: ContinueItem[] = [];
+        const seenShows = new Set<string>();
+        for (const h of hist) {
+          if (h.duration <= 0) continue;
           const key = `${h.type}_${h.id}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        setContinueWatching(unfinished.slice(0, 10));
+          if (seenShows.has(key)) continue;
+          seenShows.add(key);
+
+          const ratio = h.progress / h.duration;
+          const isFinished = ratio >= 0.95;
+
+          if (h.type === 'movie') {
+            if (!isFinished) items.push({ ...h });
+          } else {
+            // TV series
+            if (!isFinished) {
+              items.push({
+                ...h,
+                launchSeason: h.season,
+                launchEpisode: h.episode,
+                launchProgress: h.progress,
+              });
+            } else if (h.season && h.episode) {
+              // Suggest next episode (we don't know runtime/title yet — generic "next")
+              items.push({
+                ...h,
+                launchSeason: h.season,
+                launchEpisode: h.episode + 1,
+                launchProgress: 0,
+                isNextEpisode: true,
+              });
+            }
+          }
+        }
+        setContinueWatching(items.slice(0, 10));
+
         // Build recommendations from last 3 watched
         const unique = hist.slice(0, 3);
         if (unique.length > 0) {
@@ -92,9 +143,17 @@ export function HomeScreen() {
   }, []));
 
   const goToMovie = (movie: Movie) => nav.navigate('MovieDetail', { id: movie.id, title: movie.title });
-  const goToHistoryItem = (item: HistoryItem) => {
+  const goToHistoryItem = (item: ContinueItem) => {
     const screen = item.type === 'movie' ? 'MovieDetail' : 'TVDetail';
-    nav.navigate(screen, { id: item.id, title: item.title });
+    nav.navigate(screen, {
+      id: item.id,
+      title: item.title,
+      // Pass startup hints — MovieDetailScreen will pre-select season/episode and auto-play
+      startSeason: item.launchSeason,
+      startEpisode: item.launchEpisode,
+      startProgress: item.launchProgress,
+      autoPlay: true,
+    });
   };
 
   if (loading) return <HomeSkeleton />;
@@ -159,6 +218,15 @@ const styles = StyleSheet.create({
   continuePoster: { width: 130, height: 195, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: COLORS.bgCard },
   continueProgress: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, backgroundColor: 'rgba(255,255,255,0.2)' },
   continueProgressFill: { height: '100%', backgroundColor: COLORS.primary },
+  continueNextBadge: {
+    position: 'absolute', top: 6, right: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 4,
+  },
+  continueNextBadgeText: {
+    color: '#000', fontSize: 9, fontFamily: FONTS.bold, letterSpacing: 0.5,
+  },
   continueTitle: { color: COLORS.text, fontSize: 12, fontFamily: FONTS.medium, marginTop: SPACING.xs, lineHeight: 16 },
   continueEpisode: { color: COLORS.primary, fontSize: 11, fontFamily: FONTS.bold, marginTop: 2 },
   continueTime: { color: COLORS.textMuted, fontSize: 11, fontFamily: FONTS.regular, marginTop: 2 },
