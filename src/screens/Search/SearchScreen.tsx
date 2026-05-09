@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import { searchMovies, searchTV, posterUrl } from '../../api/tmdb';
+import { searchMovies, searchTV, searchPeople, posterUrl, profileUrl, type Person } from '../../api/tmdb';
 import { COLORS, RADIUS, FONTS, SPACING } from '../../constants/theme';
 
 type ResultItem = {
@@ -26,6 +26,7 @@ export function SearchScreen() {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ResultItem[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,6 +45,7 @@ export function SearchScreen() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (text.trim().length < 2) {
       setResults([]);
+      setPeople([]);
       setSearched(false);
       return;
     }
@@ -52,9 +54,10 @@ export function SearchScreen() {
       setLoading(true);
       setSearched(true);
       try {
-        const [movies, tvShows] = await Promise.all([
+        const [movies, tvShows, persons] = await Promise.all([
           searchMovies(text),
           searchTV(text),
+          searchPeople(text),
         ]);
         if (!mountedRef.current) return;
         const combined: ResultItem[] = [
@@ -62,8 +65,9 @@ export function SearchScreen() {
           ...tvShows.map(t => ({ ...t, title: t.name, type: 'tv' as const })),
         ].sort((a, b) => b.vote_average - a.vote_average);
         setResults(combined);
+        setPeople(persons.slice(0, 12));
       } catch {
-        if (mountedRef.current) setResults([]);
+        if (mountedRef.current) { setResults([]); setPeople([]); }
       } finally {
         if (mountedRef.current) setLoading(false);
       }
@@ -144,7 +148,7 @@ export function SearchScreen() {
         <View style={styles.center}>
           <Text style={styles.statusText}>Ищу...</Text>
         </View>
-      ) : results.length > 0 ? (
+      ) : (results.length > 0 || people.length > 0) ? (
         <FlatList
           data={results}
           renderItem={renderResult}
@@ -152,6 +156,35 @@ export function SearchScreen() {
           contentContainerStyle={styles.list}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            people.length > 0 ? (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={styles.peopleHeader}>Люди</Text>
+                <FlatList
+                  horizontal
+                  data={people}
+                  showsHorizontalScrollIndicator={false}
+                  keyExtractor={p => `person-${p.id}`}
+                  contentContainerStyle={{ paddingHorizontal: SPACING.lg, gap: 12 }}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      onPress={() => { Keyboard.dismiss(); nav.navigate('Person', { id: item.id, name: item.name }); }}
+                      style={styles.personItem}
+                    >
+                      {item.profile_path ? (
+                        <Image source={{ uri: profileUrl(item.profile_path) || '' }} style={styles.personAvatar} contentFit="cover" />
+                      ) : (
+                        <View style={[styles.personAvatar, styles.personAvatarFallback]}>
+                          <Text style={{ color: '#fff', fontSize: 24, fontFamily: FONTS.bold }}>{item.name.charAt(0)}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.personName} numberOfLines={2}>{item.name}</Text>
+                    </Pressable>
+                  )}
+                />
+              </View>
+            ) : null
+          }
         />
       ) : searched ? (
         <View style={styles.center}>
@@ -295,5 +328,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: FONTS.regular,
     marginTop: 4,
+  },
+  peopleHeader: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontFamily: FONTS.bold,
+    paddingHorizontal: SPACING.lg,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  personItem: {
+    width: 80,
+    alignItems: 'center',
+  },
+  personAvatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: COLORS.bgCard,
+  },
+  personAvatarFallback: {
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  personName: {
+    color: COLORS.text,
+    fontSize: 11,
+    fontFamily: FONTS.medium,
+    marginTop: 6,
+    textAlign: 'center',
   },
 });

@@ -233,3 +233,36 @@ export function pickBestTrailer(videos: TmdbVideo[]): TmdbVideo | null {
   if (anyTrailer) return anyTrailer;
   return yt[0] || null;
 }
+
+// === People ===
+export interface Person {
+  id: number;
+  name: string;
+  profile_path: string | null;
+  known_for_department: string;
+  popularity: number;
+  known_for?: { id: number; title?: string; name?: string; media_type: 'movie' | 'tv'; poster_path: string | null }[];
+}
+
+export async function searchPeople(query: string): Promise<Person[]> {
+  if (!query.trim()) return [];
+  try {
+    const data = await tmdbFetch<{ results: Person[] }>(`/search/person?query=${encodeURIComponent(query)}`);
+    return (data.results || []).filter(p => p.profile_path || (p.known_for && p.known_for.length > 0));
+  } catch {
+    return [];
+  }
+}
+
+export async function getPersonDetails(id: number) {
+  if (!id) return null;
+  try {
+    const [details, credits] = await Promise.all([
+      tmdbFetch<any>(`/person/${id}`),
+      tmdbFetch<any>(`/person/${id}/combined_credits`),
+    ]);
+    return { details, credits };
+  } catch {
+    return null;
+  }
+}

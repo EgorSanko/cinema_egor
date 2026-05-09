@@ -337,7 +337,11 @@ export function MovieDetailScreen() {
               <Text style={styles.sectionLabel}>Актёры</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {cast.slice(0, 12).map(c => (
-                  <View key={c.id} style={styles.castCard}>
+                  <Pressable
+                    key={c.id}
+                    style={styles.castCard}
+                    onPress={() => nav.navigate('Person', { id: c.id, name: c.name })}
+                  >
                     <View style={styles.castPhoto}>
                       {c.profile_path ? (
                         <Image source={{ uri: profileUrl(c.profile_path)! }} style={StyleSheet.absoluteFill} contentFit="cover" />
@@ -347,7 +351,7 @@ export function MovieDetailScreen() {
                     </View>
                     <Text style={styles.castName} numberOfLines={1}>{c.name}</Text>
                     <Text style={styles.castChar} numberOfLines={1}>{c.character}</Text>
-                  </View>
+                  </Pressable>
                 ))}
               </ScrollView>
             </Animated.View>

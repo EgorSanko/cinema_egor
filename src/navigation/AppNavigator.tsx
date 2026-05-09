@@ -18,6 +18,7 @@ import { SwipeScreen } from '../screens/Swipe/SwipeScreen';
 import { WatchTogetherScreen } from '../screens/Watch/WatchTogetherScreen';
 import { AuthScreen } from '../screens/Auth/AuthScreen';
 import { ProfileScreen } from '../screens/Profile/ProfileScreen';
+import { PersonScreen } from '../screens/Person/PersonScreen';
 import { getUser, onAuthChange, syncFromServer, type User } from '../utils/auth';
 
 const Tab = createBottomTabNavigator();
@@ -96,6 +97,7 @@ export function AppNavigator() {
           <Stack.Screen name="Collections" component={CollectionsScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Swipe" component={SwipeScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="WatchTogether" component={WatchTogetherScreen} options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="Person" component={PersonScreen} options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>
