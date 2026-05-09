@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
+import { TrailerButton } from "./trailer-modal";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode } from "@/lib/storage";
 
 interface TVPlayerProps {
@@ -413,10 +414,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
               </div>
               <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black/90 to-transparent">
                 <h2 className="text-white font-bold text-2xl mb-3">{show.name}</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="bg-primary text-white text-xs px-3 py-1 rounded-md font-bold">HD</span>
                   <span className="bg-white/10 backdrop-blur text-white/80 text-xs px-3 py-1 rounded-md">{"" + show.number_of_seasons + " сезон(ов)"}</span>
                   <span className="bg-white/10 backdrop-blur text-white/80 text-xs px-3 py-1 rounded-md">{show.vote_average.toFixed(1)}</span>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <TrailerButton mediaId={show.id} mediaType="tv" />
+                  </div>
                 </div>
               </div>
               <div className="absolute top-4 right-4 z-10">

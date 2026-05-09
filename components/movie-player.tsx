@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
+import { TrailerButton } from "./trailer-modal";
 import { savePosition, getPosition, addToHistory } from "@/lib/storage";
 
 interface MoviePlayerProps {
@@ -277,7 +278,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               </div>
               <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black/90 to-transparent">
                 <h2 className="text-white font-bold text-2xl mb-3">{movie.title}</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {isNotReleased ? (
                     <span className="bg-amber-600/80 text-white text-xs px-3 py-1 rounded-md font-bold">Скоро</span>
                   ) : (
@@ -285,6 +286,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   )}
                   {movie.runtime > 0 && <span className="bg-white/10 backdrop-blur text-white/80 text-xs px-3 py-1 rounded-md">{Math.round(movie.runtime) + " мин"}</span>}
                   <span className="bg-white/10 backdrop-blur text-white/80 text-xs px-3 py-1 rounded-md">{movie.vote_average.toFixed(1)}</span>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <TrailerButton mediaId={movie.id} mediaType="movie" />
+                  </div>
                 </div>
               </div>
               <div className="absolute top-4 right-4 z-10">

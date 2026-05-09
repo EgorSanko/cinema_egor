@@ -392,3 +392,51 @@ export function getVidSrcUrl(
 
 
 
+
+// === Trailers ===
+export interface TmdbVideo {
+	id: string;
+	key: string;          // YouTube video ID (when site === "YouTube")
+	name: string;
+	site: string;         // "YouTube" usually
+	type: string;         // "Trailer" | "Teaser" | "Clip" | "Featurette"
+	official: boolean;
+	published_at: string;
+}
+
+async function getVideos(type: "movie" | "tv", id: number): Promise<TmdbVideo[]> {
+	if (!id) return [];
+	try {
+		// Try Russian first, fall back to English (most trailers are in EN)
+		const ru = await fetchWithRetry(
+			`${API_BASE_URL}/${type}/${id}/videos?api_key=${API_KEY}&language=ru-RU`,
+			{ next: { revalidate: 3600 } }
+		);
+		const ruData = await ru.json();
+		const ruResults = (ruData.results || []) as TmdbVideo[];
+		if (ruResults.length > 0) return ruResults;
+		const en = await fetchWithRetry(
+			`${API_BASE_URL}/${type}/${id}/videos?api_key=${API_KEY}&language=en-US`,
+			{ next: { revalidate: 3600 } }
+		);
+		const enData = await en.json();
+		return (enData.results || []) as TmdbVideo[];
+	} catch (e) {
+		console.error("getVideos error:", e);
+		return [];
+	}
+}
+
+export const getMovieVideos = (id: number) => getVideos("movie", id);
+export const getTVVideos = (id: number) => getVideos("tv", id);
+
+// Pick the best trailer: prefer official YouTube Trailer
+export function pickBestTrailer(videos: TmdbVideo[]): TmdbVideo | null {
+	if (!videos || videos.length === 0) return null;
+	const yt = videos.filter(v => v.site === "YouTube");
+	const officialTrailer = yt.find(v => v.type === "Trailer" && v.official);
+	if (officialTrailer) return officialTrailer;
+	const anyTrailer = yt.find(v => v.type === "Trailer");
+	if (anyTrailer) return anyTrailer;
+	return yt[0] || null;
+}
