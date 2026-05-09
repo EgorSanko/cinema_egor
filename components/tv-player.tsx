@@ -49,10 +49,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
   const [showTranslators, setShowTranslators] = useState(false);
   const [translatorLoading, setTranslatorLoading] = useState(false);
+  const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
+  const autoplayTimerRef = useRef<any>(null);
+  const autoplayTriggeredRef = useRef(false);
 
   const validSeasons = show.seasons?.filter(s => s.season_number > 0) || [];
 
@@ -268,16 +271,88 @@ export function TVPlayer({ show }: TVPlayerProps) {
     fetchStream(season, episode, selectedTranslator);
   };
 
+  // Released episodes only (filter unaired ones — TMDB sometimes lists future episodes
+  // which HDRezka cannot resolve and falls back to episode 1 = duplicate content bug)
+  const releasedEpisodes = episodes.filter(e => !e.air_date || new Date(e.air_date) <= new Date());
+
+  const hasNextEpisode = (() => {
+    const idx = releasedEpisodes.findIndex(e => e.episode_number === selectedEpisode);
+    if (idx >= 0 && idx < releasedEpisodes.length - 1) return true;
+    return selectedSeason < validSeasons.length;
+  })();
+
   const nextEpisode = () => {
-    const currentEpIndex = episodes.findIndex(e => e.episode_number === selectedEpisode);
-    if (currentEpIndex < episodes.length - 1) {
-      selectEpisode(selectedSeason, episodes[currentEpIndex + 1].episode_number);
+    const currentEpIndex = releasedEpisodes.findIndex(e => e.episode_number === selectedEpisode);
+    if (currentEpIndex >= 0 && currentEpIndex < releasedEpisodes.length - 1) {
+      selectEpisode(selectedSeason, releasedEpisodes[currentEpIndex + 1].episode_number);
     } else if (selectedSeason < validSeasons.length) {
       setSelectedSeason(selectedSeason + 1);
       setSelectedEpisode(1);
       fetchStream(selectedSeason + 1, 1, selectedTranslator);
     }
   };
+
+  // === Autoplay countdown (10s overlay before next episode) ===
+  const startAutoplayCountdown = () => {
+    if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
+    setAutoplayCountdown(10);
+    autoplayTimerRef.current = setInterval(() => {
+      setAutoplayCountdown(prev => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
+          setTimeout(() => nextEpisode(), 0);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const cancelAutoplay = () => {
+    if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
+    autoplayTimerRef.current = null;
+    setAutoplayCountdown(null);
+  };
+
+  // Listen to video timeupdate / ended to trigger countdown
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !showPlayer) return;
+    const onTime = () => {
+      if (autoplayTriggeredRef.current || !hasNextEpisode) return;
+      const dur = v.duration;
+      if (!dur || dur < 60) return;
+      const remaining = dur - v.currentTime;
+      if (remaining > 0 && remaining <= 30) {
+        autoplayTriggeredRef.current = true;
+        startAutoplayCountdown();
+      }
+    };
+    const onEnded = () => {
+      if (autoplayTriggeredRef.current) return;
+      autoplayTriggeredRef.current = true;
+      if (hasNextEpisode) startAutoplayCountdown();
+    };
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("ended", onEnded);
+    return () => {
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("ended", onEnded);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPlayer, hasNextEpisode, selectedSeason, selectedEpisode]);
+
+  // Reset autoplay state when episode changes
+  useEffect(() => {
+    autoplayTriggeredRef.current = false;
+    cancelAutoplay();
+  }, [selectedSeason, selectedEpisode]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current); };
+  }, []);
 
   const toggleFullscreen = () => {
     const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -393,6 +468,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
               )}
               {cssFullscreen && (
                 <button onClick={() => setCssFullscreen(false)} className="fixed top-3 right-3 z-[10000] bg-black/70 backdrop-blur text-white px-3 py-2 rounded-lg text-sm">{"\u2715 Закрыть"}</button>
+              )}
+              {autoplayCountdown !== null && hasNextEpisode && (
+                <div className={(cssFullscreen ? "fixed" : "absolute") + " bottom-20 right-4 z-[10001] bg-black/90 border border-white/15 rounded-xl p-4 min-w-[220px] backdrop-blur"}>
+                  <p className="text-white/70 text-xs mb-1">Следующая серия через</p>
+                  <p className="text-primary text-4xl font-bold mb-3">{autoplayCountdown}</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => { cancelAutoplay(); nextEpisode(); }} className="flex-1 px-3 py-2 bg-primary text-black rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors">{"▶ Сейчас"}</button>
+                    <button onClick={cancelAutoplay} className="flex-1 px-3 py-2 bg-white/10 text-white rounded-lg text-sm hover:bg-white/20 transition-colors">Отмена</button>
+                  </div>
+                </div>
               )}
             </>
           ) : null}
