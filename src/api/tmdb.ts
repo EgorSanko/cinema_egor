@@ -197,3 +197,39 @@ export function formatBudget(amount: number): string {
   if (amount >= 1_000) return `$${(amount / 1_000).toFixed(0)} тыс`;
   return `$${amount}`;
 }
+
+// === Trailers ===
+export interface TmdbVideo {
+  id: string;
+  key: string;
+  name: string;
+  site: string;
+  type: string;
+  official: boolean;
+  published_at: string;
+}
+
+async function getVideos(type: 'movie' | 'tv', id: number): Promise<TmdbVideo[]> {
+  if (!id) return [];
+  try {
+    const ru = await tmdbFetch<{ results: TmdbVideo[] }>(`/${type}/${id}/videos?language=ru-RU`).catch(() => ({ results: [] }));
+    if (ru.results && ru.results.length > 0) return ru.results;
+    const en = await tmdbFetch<{ results: TmdbVideo[] }>(`/${type}/${id}/videos?language=en-US`).catch(() => ({ results: [] }));
+    return en.results || [];
+  } catch {
+    return [];
+  }
+}
+
+export const getMovieVideos = (id: number) => getVideos('movie', id);
+export const getTVVideos = (id: number) => getVideos('tv', id);
+
+export function pickBestTrailer(videos: TmdbVideo[]): TmdbVideo | null {
+  if (!videos || videos.length === 0) return null;
+  const yt = videos.filter(v => v.site === 'YouTube');
+  const officialTrailer = yt.find(v => v.type === 'Trailer' && v.official);
+  if (officialTrailer) return officialTrailer;
+  const anyTrailer = yt.find(v => v.type === 'Trailer');
+  if (anyTrailer) return anyTrailer;
+  return yt[0] || null;
+}

@@ -19,6 +19,7 @@ import type { MovieDetails, TVShowDetails, StreamData, CastMember, Movie, TVShow
 import { MovieDetailSkeleton } from '../../components/SkeletonLoader';
 import { toggleFavorite, isFavorite, getComments, addComment, deleteComment, type Comment } from '../../utils/storage';
 import { SectionRow } from '../../components/SectionRow';
+import { TrailerButton } from '../../components/TrailerButton';
 import { COLORS, RADIUS, FONTS, SPACING, SHADOWS } from '../../constants/theme';
 import { scheduleSyncToServer, getUser } from '../../utils/auth';
 
@@ -312,6 +313,9 @@ export function MovieDetailScreen() {
               </LinearGradient>
             </AnimatedPressable>
           </Animated.View>
+
+          {/* Trailer */}
+          <TrailerButton mediaId={detail.id} mediaType={isTV ? 'tv' : 'movie'} />
 
           {/* Favorite */}
           <Pressable onPress={handleFavorite} style={styles.favBtn}>
