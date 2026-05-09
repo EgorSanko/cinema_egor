@@ -47,7 +47,7 @@ export function emptyStats(): UserStats {
   };
 }
 
-export function computeStats(history: HistoryItem[], favorites: FavoriteItem[]): UserStats {
+export function computeStats(history: HistoryItem[], favorites: FavoriteItem[], triedTranslators: string[] = []): UserStats {
   const stats = emptyStats();
   const seenMovies = new Set<number>();
   const seenSeriesEpisodes = new Set<string>();
@@ -100,6 +100,10 @@ export function computeStats(history: HistoryItem[], favorites: FavoriteItem[]):
     if (h.vote_average && h.vote_average >= 9) stats.highRatedWatched++;
     if ((h as any).translatorName) translatorSet.add((h as any).translatorName);
   }
+
+  // Pull in translators tracked separately (covers single-tap translator changes
+  // that don't clear the 60-second history-write threshold)
+  for (const t of triedTranslators) translatorSet.add(t);
 
   for (const count of completedSeriesEpisodes.values()) {
     if (count >= 5) stats.completedTvSeries++;

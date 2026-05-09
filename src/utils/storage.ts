@@ -168,8 +168,27 @@ export async function setComments(comments: Comment[]) {
 }
 
 // === LAST TRANSLATOR ===
+const TRIED_TRANSLATORS_KEY = 'kino_tried_translators';
+
 export async function saveLastTranslator(mediaId: number, mediaType: 'movie' | 'tv', translatorId: number, translatorName?: string) {
   await AsyncStorage.setItem(`last-tr-${mediaType}-${mediaId}`, JSON.stringify({ id: translatorId, name: translatorName || '' }));
+  if (translatorName) {
+    try {
+      const raw = await AsyncStorage.getItem(TRIED_TRANSLATORS_KEY);
+      const list: string[] = raw ? JSON.parse(raw) : [];
+      if (!list.includes(translatorName)) {
+        list.push(translatorName);
+        await AsyncStorage.setItem(TRIED_TRANSLATORS_KEY, JSON.stringify(list));
+      }
+    } catch {}
+  }
+}
+
+export async function getTriedTranslators(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(TRIED_TRANSLATORS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
 }
 
 export async function getLastTranslator(mediaId: number, mediaType: 'movie' | 'tv'): Promise<{ id: number; name: string } | null> {

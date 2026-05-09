@@ -6,7 +6,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, RADIUS, FONTS, SPACING } from '../../constants/theme';
 import { getUser, logout, type User } from '../../utils/auth';
-import { getHistory, getFavorites } from '../../utils/storage';
+import { getHistory, getFavorites, getTriedTranslators } from '../../utils/storage';
 import {
   computeStats, evaluateAchievements, type UserStats, type UnlockedAchievement,
 } from '../../utils/achievements';
@@ -18,9 +18,9 @@ export function ProfileScreen() {
   const [stats, setStats] = useState<UserStats>(() => computeStats([], []));
 
   const refresh = useCallback(async () => {
-    const [u, hist, favs] = await Promise.all([getUser(), getHistory(), getFavorites()]);
+    const [u, hist, favs, tried] = await Promise.all([getUser(), getHistory(), getFavorites(), getTriedTranslators()]);
     setUser(u);
-    setStats(computeStats(hist, favs));
+    setStats(computeStats(hist, favs, tried));
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
