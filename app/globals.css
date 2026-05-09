@@ -4,9 +4,10 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	/* LIGHT theme — visibly off-white with cards staying pure white for clear hierarchy. */
-	--background: #dde2e8;
-	--surface: #eaecf0;
+	/* LIGHT theme — final spec from user.
+	   Apple TV / Linear / Notion-style: clean, premium, not eye-stabbing. */
+	--background: #f3f4f6;
+	--surface: #f9fafb;
 	--foreground: #111827;
 	--card: #ffffff;
 	--card-foreground: #111827;
@@ -14,15 +15,15 @@
 	--popover-foreground: #111827;
 	--primary: #65a30d;
 	--primary-foreground: #ffffff;
-	--secondary: #cdd3da;
+	--secondary: #e5e7eb;
 	--secondary-foreground: #111827;
-	--muted: #cdd3da;
-	--muted-foreground: #4b5563;
+	--muted: #e5e7eb;
+	--muted-foreground: #6b7280;
 	--accent: #7c3aed;
 	--accent-foreground: #ffffff;
 	--destructive: #dc2626;
 	--destructive-foreground: #ffffff;
-	--border: #c3cad2;
+	--border: #e5e7eb;
 	--input: #ffffff;
 	--ring: #65a30d;
 	--chart-1: #65a30d;
@@ -31,25 +32,47 @@
 	--chart-4: #22c55e;
 	--chart-5: #06b6d4;
 	--radius: 0.625rem;
-	--sidebar: #ffffff;
+	--sidebar: #f9fafb;
 	--sidebar-foreground: #111827;
 	--sidebar-primary: #65a30d;
 	--sidebar-primary-foreground: #ffffff;
-	--sidebar-accent: #dde2e8;
+	--sidebar-accent: #f3f4f6;
 	--sidebar-accent-foreground: #111827;
-	--sidebar-border: #c3cad2;
+	--sidebar-border: #e5e7eb;
 	--sidebar-ring: #65a30d;
 }
 
-/* In light mode, the page body is the "background" layer — visibly grayer
-   than cards/content blocks. */
-:root body {
-	background-color: #dde2e8;
-	background-image: linear-gradient(to bottom, #d4dae1 0%, #dde2e8 280px, #e3e7eb 100%);
-	background-attachment: fixed;
+/* === LIGHT MODE polish — only applied when html is NOT .dark === */
+html:not(.dark) body {
+	background: #f3f4f6;
 }
-.dark body {
-	background: var(--background);
+
+/* Translucent navbar with backdrop blur — sits on top of the page bg */
+html:not(.dark) nav.sticky {
+	background: rgba(249, 250, 251, 0.75) !important;
+	-webkit-backdrop-filter: blur(14px);
+	backdrop-filter: blur(14px);
+	border-bottom: 1px solid #e5e7eb;
+}
+
+/* Soft fade on hero banners so giant posters don't blast the page */
+html:not(.dark) .group .object-cover ~ .absolute.inset-0,
+html:not(.dark) section.relative > div.absolute.inset-0 {
+	background: linear-gradient(
+		90deg,
+		rgba(243, 244, 246, 0.92) 0%,
+		rgba(243, 244, 246, 0.55) 35%,
+		rgba(243, 244, 246, 0.08) 70%,
+		transparent 100%
+	);
+}
+
+/* Card lift on hover — subtle premium feel */
+html:not(.dark) a[href^="/movie/"]:hover,
+html:not(.dark) a[href^="/tv/"]:hover,
+html:not(.dark) a[href^="/person/"]:hover {
+	transform: translateY(-4px);
+	transition: transform 0.25s ease;
 }
 
 .dark {
