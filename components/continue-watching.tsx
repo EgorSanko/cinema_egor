@@ -89,7 +89,7 @@ export function ContinueWatching() {
           const showEpisode = item.launchEpisode ?? item.episode;
           const baseHref = item.type === "tv" ? `/tv/${item.id}` : `/movie/${item.id}`;
           const href = item.type === "tv" && showSeason && showEpisode
-            ? `${baseHref}?s=${showSeason}&e=${showEpisode}&autoplay=1`
+            ? `${baseHref}?s=${showSeason}&e=${showEpisode}`
             : baseHref;
           return (
             <Link key={`${item.type}-${item.id}-${idx}`} href={href}>
@@ -123,7 +123,7 @@ export function ContinueWatching() {
                   {/* "Next" badge */}
                   {item.isNextEpisode && (
                     <div className="absolute bottom-2 right-2 bg-primary text-black text-[10px] font-bold px-2 py-1 rounded">
-                      \u0421\u041b\u0415\u0414.
+                      {"\u0421\u041b\u0415\u0414."}
                     </div>
                   )}
                   {item.type === "tv" && showSeason && showEpisode && (

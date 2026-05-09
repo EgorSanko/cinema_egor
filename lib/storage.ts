@@ -28,6 +28,8 @@ export interface HistoryItem {
   episode?: number;
   episodeName?: string;
   quality?: string;
+  translatorName?: string;
+  translatorId?: number;
 }
 
 export interface Comment {
@@ -229,6 +231,23 @@ export function saveLastEpisode(showId: number, season: number, episode: number)
 export function getLastEpisode(showId: number): { season: number; episode: number } | null {
   try {
     const data = localStorage.getItem("last-ep-" + showId);
+    if (!data) return null;
+    return JSON.parse(data);
+  } catch { return null; }
+}
+
+// === LAST TRANSLATOR (per show/movie) ===
+// Saved so user-preferred dubbing persists across sessions and episodes.
+
+export function saveLastTranslator(mediaId: number, mediaType: "movie" | "tv", translatorId: number, translatorName?: string): void {
+  try {
+    localStorage.setItem(`last-tr-${mediaType}-${mediaId}`, JSON.stringify({ id: translatorId, name: translatorName || "" }));
+  } catch {}
+}
+
+export function getLastTranslator(mediaId: number, mediaType: "movie" | "tv"): { id: number; name: string } | null {
+  try {
+    const data = localStorage.getItem(`last-tr-${mediaType}-${mediaId}`);
     if (!data) return null;
     return JSON.parse(data);
   } catch { return null; }

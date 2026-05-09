@@ -8,7 +8,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { TrailerButton } from "./trailer-modal";
-import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode } from "@/lib/storage";
+import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator } from "@/lib/storage";
 
 interface TVPlayerProps {
   show: TVShowDetails;
@@ -72,18 +72,19 @@ export function TVPlayer({ show }: TVPlayerProps) {
   }, []);
 
   useEffect(() => {
+    // Restore last used translator for this show
+    const lastTr = getLastTranslator(show.id, "tv");
+    if (lastTr) setSelectedTranslator(lastTr.id);
+
     // Query params override saved last-episode (e.g. from "Continue Watching" card)
     const params = new URLSearchParams(window.location.search);
     const qs = params.get("s");
     const qe = params.get("e");
-    const qAuto = params.get("autoplay");
     if (qs && qe) {
+      // From Continue Watching: pre-select correct season/episode but DO NOT auto-play.
+      // User clicks the big "Смотреть" overlay themselves.
       setSelectedSeason(parseInt(qs, 10));
       setSelectedEpisode(parseInt(qe, 10));
-      if (qAuto === "1") {
-        // Trigger auto-play after streamData/translators load
-        setTimeout(() => { setShowPlayer(true); fetchStream(parseInt(qs, 10), parseInt(qe, 10)); }, 100);
-      }
       return;
     }
     const last = getLastEpisode(show.id);
@@ -113,12 +114,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
           savePosition(show.id, "tv", ct, dur, selectedSeason, selectedEpisode);
           saveLastEpisode(show.id, selectedSeason, selectedEpisode);
           const epName = episodes.find(e => e.episode_number === selectedEpisode)?.name || "";
+          const trName = translators.find(t => t.id === selectedTranslator)?.name || "";
           addToHistory({
             id: show.id, type: "tv", title: show.name,
             poster_path: show.poster_path, vote_average: show.vote_average,
             first_air_date: show.first_air_date, watchedAt: Date.now(),
             progress: ct, duration: dur, season: selectedSeason,
             episode: selectedEpisode, episodeName: epName, quality: selectedQuality,
+            translatorName: trName, translatorId: selectedTranslator || undefined,
           });
         }
       }
@@ -200,6 +203,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const changeTranslator = async (trId: number) => {
     if (trId === selectedTranslator) { setShowTranslators(false); return; }
     setSelectedTranslator(trId);
+    const trName = translators.find(t => t.id === trId)?.name || "";
+    saveLastTranslator(show.id, "tv", trId, trName);
     setShowTranslators(false);
     setTranslatorLoading(true);
     const currentTime = videoRef.current?.currentTime || 0;
@@ -317,33 +322,39 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setAutoplayCountdown(null);
   };
 
-  // Listen to video timeupdate / ended to trigger countdown
+  // Keep hasNextEpisode in a ref so the (rarely-rerun) ended listener always
+  // sees the current value when it fires later.
+  const hasNextEpisodeRef = useRef(hasNextEpisode);
+  useEffect(() => { hasNextEpisodeRef.current = hasNextEpisode; }, [hasNextEpisode]);
+
+  // Trigger autoplay countdown ONLY on natural end of video.
+  // Avoids the "30s before end" predictive trigger which fires during long credits
+  // AND fires unwantedly on cliffhanger episodes that just cut off.
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v || !showPlayer) return;
-    const onTime = () => {
-      if (autoplayTriggeredRef.current || !hasNextEpisode) return;
-      const dur = v.duration;
-      if (!dur || dur < 60) return;
-      const remaining = dur - v.currentTime;
-      if (remaining > 0 && remaining <= 30) {
-        autoplayTriggeredRef.current = true;
-        startAutoplayCountdown();
+    if (!showPlayer) return;
+    let cleanupFn: (() => void) | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const attach = () => {
+      const v = videoRef.current;
+      if (!v) {
+        retryTimer = setTimeout(attach, 200);
+        return;
       }
+      const onEnded = () => {
+        if (autoplayTriggeredRef.current) return;
+        autoplayTriggeredRef.current = true;
+        if (hasNextEpisodeRef.current) startAutoplayCountdown();
+      };
+      v.addEventListener("ended", onEnded);
+      cleanupFn = () => v.removeEventListener("ended", onEnded);
     };
-    const onEnded = () => {
-      if (autoplayTriggeredRef.current) return;
-      autoplayTriggeredRef.current = true;
-      if (hasNextEpisode) startAutoplayCountdown();
-    };
-    v.addEventListener("timeupdate", onTime);
-    v.addEventListener("ended", onEnded);
+    attach();
     return () => {
-      v.removeEventListener("timeupdate", onTime);
-      v.removeEventListener("ended", onEnded);
+      if (retryTimer) clearTimeout(retryTimer);
+      if (cleanupFn) cleanupFn();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPlayer, hasNextEpisode, selectedSeason, selectedEpisode]);
+  }, [showPlayer, selectedSeason, selectedEpisode, streamData]);
 
   // Reset autoplay state when episode changes
   useEffect(() => {

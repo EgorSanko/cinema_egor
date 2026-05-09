@@ -8,7 +8,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { TrailerButton } from "./trailer-modal";
-import { savePosition, getPosition, addToHistory } from "@/lib/storage";
+import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator } from "@/lib/storage";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -55,6 +55,8 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     if (pos && pos.time > 10) {
       setResumeTime(pos.time);
     }
+    const lastTr = getLastTranslator(movie.id, "movie");
+    if (lastTr) setSelectedTranslator(lastTr.id);
   }, [movie.id]);
 
   const startSaving = useCallback(() => {
@@ -65,16 +67,18 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         const dur = videoRef.current.duration;
         if (ct > 0 && dur > 0) {
           savePosition(movie.id, "movie", ct, dur);
+          const trName = translators.find(t => t.id === selectedTranslator)?.name || "";
           addToHistory({
             id: movie.id, type: "movie", title: movie.title,
             poster_path: movie.poster_path, vote_average: movie.vote_average,
             release_date: movie.release_date, watchedAt: Date.now(),
             progress: ct, duration: dur, quality: selectedQuality,
+            translatorName: trName, translatorId: selectedTranslator || undefined,
           });
         }
       }
     }, 5000);
-  }, [movie, selectedQuality]);
+  }, [movie, selectedQuality, selectedTranslator, translators]);
 
   useEffect(() => {
     return () => { if (saveInterval.current) clearInterval(saveInterval.current); };
@@ -143,6 +147,8 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const changeTranslator = async (trId: number) => {
     if (trId === selectedTranslator) { setShowTranslators(false); return; }
     setSelectedTranslator(trId);
+    const trName = translators.find(t => t.id === trId)?.name || "";
+    saveLastTranslator(movie.id, "movie", trId, trName);
     setShowTranslators(false);
     setTranslatorLoading(true);
     const currentTime = videoRef.current?.currentTime || 0;
