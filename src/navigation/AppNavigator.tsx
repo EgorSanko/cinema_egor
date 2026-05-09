@@ -81,6 +81,17 @@ export function AppNavigator() {
     return onAuthChange(setUser);
   }, []);
 
+  // Periodic sync — pulls latest changes (history/favorites/positions) from server
+  // every 60 seconds while the app is foreground. Keeps app and web in sync after
+  // user makes changes on the website.
+  useEffect(() => {
+    if (!user?.email) return;
+    const id = setInterval(() => {
+      syncFromServer(user.email).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [user?.email]);
+
   if (user === undefined) return null;
 
   return (

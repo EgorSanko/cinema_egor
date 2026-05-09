@@ -14,10 +14,11 @@ import {
   getMovieDetails, getTVDetails, getMovieCredits, getTVCredits,
   getMovieRecommendations, getTVRecommendations,
   backdropUrl, posterUrl, profileUrl, getStream, formatBudget,
+  getSeasonEpisodes, isEpisodeReleased, type Episode,
 } from '../../api/tmdb';
 import type { MovieDetails, TVShowDetails, StreamData, CastMember, Movie, TVShow } from '../../api/tmdb';
 import { MovieDetailSkeleton } from '../../components/SkeletonLoader';
-import { toggleFavorite, isFavorite, getComments, addComment, deleteComment, type Comment } from '../../utils/storage';
+import { toggleFavorite, isFavorite, getComments, addComment, deleteComment, getLastTranslator, type Comment } from '../../utils/storage';
 import { SectionRow } from '../../components/SectionRow';
 import { TrailerButton } from '../../components/TrailerButton';
 import { COLORS, RADIUS, FONTS, SPACING, SHADOWS } from '../../constants/theme';
@@ -54,6 +55,17 @@ export function MovieDetailScreen() {
   const [selectedEpisode, setSelectedEpisode] = useState(startEpisode ?? 1);
   const [showSeasonPicker, setShowSeasonPicker] = useState(false);
   const [autoPlayConsumed, setAutoPlayConsumed] = useState(false);
+  const [seasonEpisodes, setSeasonEpisodes] = useState<Episode[]>([]);
+
+  // Load real episodes (with air_date) for the selected season — used to lock unaired ones
+  useEffect(() => {
+    if (!isTV || !id) return;
+    let cancelled = false;
+    getSeasonEpisodes(id, selectedSeason)
+      .then(eps => { if (!cancelled) setSeasonEpisodes(eps); })
+      .catch(() => { if (!cancelled) setSeasonEpisodes([]); });
+    return () => { cancelled = true; };
+  }, [id, selectedSeason, isTV]);
 
   // Comment form
   const [commentText, setCommentText] = useState('');
@@ -132,6 +144,9 @@ export function MovieDetailScreen() {
       const year = detailDate ? new Date(detailDate).getFullYear().toString() : '';
       const opts: any = {};
       if (isTV) { opts.season = selectedSeason; opts.episode = selectedEpisode; }
+      // Restore user's preferred translator for this title
+      const lastTr = await getLastTranslator(detail.id, isTV ? 'tv' : 'movie');
+      if (lastTr) opts.translator_id = lastTr.id;
       let data = await getStream(searchTitle, year, isTV ? 'tv' : 'movie', opts);
       if (!data.stream) {
         for (let i = 0; i < 3; i++) {
@@ -287,12 +302,31 @@ export function MovieDetailScreen() {
                 </View>
               )}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: SPACING.md }}>
-                {Array.from({ length: currentSeasonData?.episode_count || 1 }, (_, i) => i + 1).map(ep => (
-                  <Pressable key={ep} onPress={() => setSelectedEpisode(ep)}
-                    style={[styles.episodeBtn, ep === selectedEpisode && styles.episodeBtnActive]}>
-                    <Text style={[styles.episodeBtnText, ep === selectedEpisode && styles.episodeBtnTextActive]}>{ep}</Text>
-                  </Pressable>
-                ))}
+                {Array.from({ length: currentSeasonData?.episode_count || 1 }, (_, i) => i + 1).map(ep => {
+                  // Look up real episode data to check air_date. If TMDB hasn't returned
+                  // it yet, treat as released (fallback to old behavior).
+                  const epData = seasonEpisodes.find(e => e.episode_number === ep);
+                  const released = !epData || isEpisodeReleased(epData);
+                  return (
+                    <Pressable
+                      key={ep}
+                      onPress={() => released && setSelectedEpisode(ep)}
+                      disabled={!released}
+                      style={[
+                        styles.episodeBtn,
+                        ep === selectedEpisode && styles.episodeBtnActive,
+                        !released && { opacity: 0.4 },
+                      ]}
+                    >
+                      <Text style={[
+                        styles.episodeBtnText,
+                        ep === selectedEpisode && styles.episodeBtnTextActive,
+                      ]}>
+                        {!released ? '🔒' : ''}{ep}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </Animated.View>
           )}

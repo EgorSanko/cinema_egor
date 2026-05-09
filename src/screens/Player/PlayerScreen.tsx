@@ -13,7 +13,7 @@ import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, RADIUS, FONTS, SPACING } from '../../constants/theme';
-import { savePosition, addToHistory, getPosition } from '../../utils/storage';
+import { savePosition, addToHistory, getPosition, saveLastTranslator } from '../../utils/storage';
 import { scheduleSyncToServer } from '../../utils/auth';
 import { getStream, getSeasonEpisodes, isEpisodeReleased, type StreamData, type Episode } from '../../api/tmdb';
 import { getWatchSocket, setWatchSocket } from '../../utils/watchSocket';
@@ -190,6 +190,8 @@ export function PlayerScreen() {
           progress: pos / 1000, duration: dur / 1000,
           quality: qualityRef.current, addedAt: Date.now(),
           season: currentSeason, episode: currentEpisode,
+          translatorName: currentTranslator?.name,
+          translatorId: currentTranslator?.id,
         });
       }
     }, 15000);
@@ -321,12 +323,10 @@ export function PlayerScreen() {
     setDuration(status.durationMillis || 0);
 
     // === AUTOPLAY NEXT EPISODE ===
-    // Trigger countdown when remaining time <= 30s, OR on natural end
+    // Trigger countdown ONLY on natural end of playback. Avoids false-positives
+    // on cliffhanger episodes that cut off without long credits.
     if (mediaType === 'tv' && hasNextEpisodeRef.current && !autoplayTriggeredRef.current) {
-      const dur = status.durationMillis || 0;
-      const remaining = dur - status.positionMillis;
-      const justFinished = (status as any).didJustFinish;
-      if (justFinished || (remaining > 0 && remaining <= 30000 && dur > 60000)) {
+      if ((status as any).didJustFinish) {
         autoplayTriggeredRef.current = true;
         startAutoplayCountdown();
       }
@@ -454,6 +454,8 @@ export function PlayerScreen() {
         setStreamData(data);
         setCurrentQuality(data.quality);
         setCurrentTranslator(translator);
+        // Persist user's translator choice for this title
+        saveLastTranslator(movieId, mediaType || 'movie', translator.id, translator.name);
         setIsBuffering(true);
         // Restore position after stream loads
         setTimeout(async () => {

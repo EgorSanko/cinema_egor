@@ -18,6 +18,8 @@ export interface HistoryItem extends FavoriteItem {
   quality?: string;
   season?: number;
   episode?: number;
+  translatorName?: string;
+  translatorId?: number;
 }
 
 export interface Comment {
@@ -163,4 +165,17 @@ export async function setPositions(positions: Record<string, any>) {
 }
 export async function setComments(comments: Comment[]) {
   await AsyncStorage.setItem(COMMENTS_KEY, JSON.stringify(comments));
+}
+
+// === LAST TRANSLATOR ===
+export async function saveLastTranslator(mediaId: number, mediaType: 'movie' | 'tv', translatorId: number, translatorName?: string) {
+  await AsyncStorage.setItem(`last-tr-${mediaType}-${mediaId}`, JSON.stringify({ id: translatorId, name: translatorName || '' }));
+}
+
+export async function getLastTranslator(mediaId: number, mediaType: 'movie' | 'tv'): Promise<{ id: number; name: string } | null> {
+  try {
+    const data = await AsyncStorage.getItem(`last-tr-${mediaType}-${mediaId}`);
+    if (!data) return null;
+    return JSON.parse(data);
+  } catch { return null; }
 }
