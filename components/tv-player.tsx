@@ -67,11 +67,26 @@ export function TVPlayer({ show }: TVPlayerProps) {
   }, []);
 
   useEffect(() => {
+    // Query params override saved last-episode (e.g. from "Continue Watching" card)
+    const params = new URLSearchParams(window.location.search);
+    const qs = params.get("s");
+    const qe = params.get("e");
+    const qAuto = params.get("autoplay");
+    if (qs && qe) {
+      setSelectedSeason(parseInt(qs, 10));
+      setSelectedEpisode(parseInt(qe, 10));
+      if (qAuto === "1") {
+        // Trigger auto-play after streamData/translators load
+        setTimeout(() => { setShowPlayer(true); fetchStream(parseInt(qs, 10), parseInt(qe, 10)); }, 100);
+      }
+      return;
+    }
     const last = getLastEpisode(show.id);
     if (last) {
       setSelectedSeason(last.season);
       setSelectedEpisode(last.episode);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show.id]);
 
   useEffect(() => {

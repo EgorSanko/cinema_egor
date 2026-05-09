@@ -14,40 +14,57 @@ function formatTime(s: number) {
   return h > 0 ? `${h}:${m.toString().padStart(2,"0")}:${sec.toString().padStart(2,"0")}` : `${m}:${sec.toString().padStart(2,"0")}`;
 }
 
-export function ContinueWatching() {
-  const [items, setItems] = useState<HistoryItem[]>([]);
+type ContinueItem = HistoryItem & {
+  // For TV: when last watched episode is finished, suggest next episode
+  // (we don't fetch TMDB here for performance — just episode+1, plays will resolve at runtime)
+  launchSeason?: number;
+  launchEpisode?: number;
+  isNextEpisode?: boolean;
+};
 
-  useEffect(() => {
-    const history = getHistory();
-    // Show items that are not finished (< 95% watched)
-    const inProgress = history
-      .filter(h => h.duration > 0 && (h.progress / h.duration) < 0.95 && h.progress > 30);
+function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
+  const items: ContinueItem[] = [];
+  const seenShows = new Set<string>();
 
-    // Deduplicate: for series keep only the latest episode per show
-    const seen = new Map<string, HistoryItem>();
-    for (const h of inProgress) {
-      const key = `${h.type}-${h.id}`;
-      if (!seen.has(key) || h.watchedAt > (seen.get(key)!.watchedAt || 0)) {
-        seen.set(key, h);
+  // History is ordered by recency (latest first)
+  for (const h of history) {
+    if (h.duration <= 0) continue;
+    const key = `${h.type}-${h.id}`;
+    if (seenShows.has(key)) continue;
+    seenShows.add(key);
+
+    const ratio = h.progress / h.duration;
+    const isFinished = ratio >= 0.95;
+
+    if (h.type === "movie") {
+      if (!isFinished && h.progress > 30) items.push({ ...h });
+    } else {
+      // TV series
+      if (!isFinished && h.progress > 30) {
+        items.push({ ...h, launchSeason: h.season, launchEpisode: h.episode });
+      } else if (isFinished && h.season && h.episode) {
+        // Suggest next episode card
+        items.push({
+          ...h,
+          launchSeason: h.season,
+          launchEpisode: h.episode + 1,
+          isNextEpisode: true,
+        });
       }
     }
-    setItems(Array.from(seen.values()).slice(0, 12));
+  }
+  return items.slice(0, 12);
+}
+
+export function ContinueWatching() {
+  const [items, setItems] = useState<ContinueItem[]>([]);
+
+  useEffect(() => {
+    setItems(buildContinueItems(getHistory()));
   }, []);
 
   useEffect(() => {
-    const onSync = () => {
-      const history = getHistory();
-      const inProgress = history
-        .filter(h => h.duration > 0 && (h.progress / h.duration) < 0.95 && h.progress > 30);
-      const seen = new Map<string, HistoryItem>();
-      for (const h of inProgress) {
-        const key = `${h.type}-${h.id}`;
-        if (!seen.has(key) || h.watchedAt > (seen.get(key)!.watchedAt || 0)) {
-          seen.set(key, h);
-        }
-      }
-      setItems(Array.from(seen.values()).slice(0, 12));
-    };
+    const onSync = () => setItems(buildContinueItems(getHistory()));
     window.addEventListener("sync-complete", onSync);
     return () => window.removeEventListener("sync-complete", onSync);
   }, []);
@@ -67,8 +84,13 @@ export function ContinueWatching() {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
         {items.map((item, idx) => {
-          const progress = (item.progress / item.duration) * 100;
-          const href = item.type === "tv" ? `/tv/${item.id}` : `/movie/${item.id}`;
+          const progress = item.isNextEpisode ? 0 : (item.progress / item.duration) * 100;
+          const showSeason = item.launchSeason ?? item.season;
+          const showEpisode = item.launchEpisode ?? item.episode;
+          const baseHref = item.type === "tv" ? `/tv/${item.id}` : `/movie/${item.id}`;
+          const href = item.type === "tv" && showSeason && showEpisode
+            ? `${baseHref}?s=${showSeason}&e=${showEpisode}&autoplay=1`
+            : baseHref;
           return (
             <Link key={`${item.type}-${item.id}-${idx}`} href={href}>
               <div className="group cursor-pointer h-full">
@@ -92,13 +114,21 @@ export function ContinueWatching() {
                       <Play size={24} className="text-white ml-1" fill="white" />
                     </div>
                   </div>
-                  {/* Time remaining */}
-                  <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">
-                    {formatTime(item.duration - item.progress)}
-                  </div>
-                  {item.type === "tv" && item.season && item.episode && (
+                  {/* Time remaining (hidden for next-episode card) */}
+                  {!item.isNextEpisode && (
+                    <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">
+                      {formatTime(item.duration - item.progress)}
+                    </div>
+                  )}
+                  {/* "Next" badge */}
+                  {item.isNextEpisode && (
+                    <div className="absolute bottom-2 right-2 bg-primary text-black text-[10px] font-bold px-2 py-1 rounded">
+                      \u0421\u041b\u0415\u0414.
+                    </div>
+                  )}
+                  {item.type === "tv" && showSeason && showEpisode && (
                     <div className="absolute top-2 left-2 bg-primary/90 text-white text-[10px] font-bold px-2 py-1 rounded-md">
-                      S{item.season}E{item.episode}
+                      S{showSeason}E{showEpisode}
                     </div>
                   )}
                 </div>
@@ -107,8 +137,10 @@ export function ContinueWatching() {
                     {item.title}
                   </h3>
                   <p className="text-muted-foreground text-xs">
-                    {item.type === "tv" && item.season && item.episode
-                      ? `\u0421\u0435\u0437\u043e\u043d ${item.season}, \u0421\u0435\u0440\u0438\u044f ${item.episode}`
+                    {item.isNextEpisode
+                      ? `\u041d\u0430\u0447\u0430\u0442\u044c S${showSeason}E${showEpisode}`
+                      : item.type === "tv" && showSeason && showEpisode
+                      ? `\u0421\u0435\u0437\u043e\u043d ${showSeason}, \u0421\u0435\u0440\u0438\u044f ${showEpisode}`
                       : formatTime(item.progress) + " \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u043d\u043e"}
                   </p>
                 </div>
