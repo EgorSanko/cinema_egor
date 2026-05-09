@@ -258,6 +258,17 @@ export function getTriedTranslators(): string[] {
   } catch { return []; }
 }
 
+// Record any translator the user has been served — used for the Polyglot achievement.
+// Called whenever a stream is loaded so even default dubbings count toward unique tally.
+export function recordTranslatorTry(translatorName: string): void {
+  if (!translatorName) return;
+  try {
+    const set = new Set<string>(JSON.parse(localStorage.getItem("kino_tried_translators") || "[]"));
+    set.add(translatorName);
+    localStorage.setItem("kino_tried_translators", JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
 export function getLastTranslator(mediaId: number, mediaType: "movie" | "tv"): { id: number; name: string } | null {
   try {
     const data = localStorage.getItem(`last-tr-${mediaType}-${mediaId}`);

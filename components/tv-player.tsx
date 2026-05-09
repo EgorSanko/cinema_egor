@@ -8,7 +8,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { TrailerButton } from "./trailer-modal";
-import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator } from "@/lib/storage";
+import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 
 interface TVPlayerProps {
   show: TVShowDetails;
@@ -174,6 +174,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
             setSelectedTranslator(data.translators[0].id);
           }
         }
+        // Track which dub user is actually watching with — counts toward Polyglot
+        const activeId = translatorId ?? selectedTranslator ?? data.translators?.[0]?.id;
+        const activeName = data.translators?.find((t: any) => t.id === activeId)?.name;
+        if (activeName) recordTranslatorTry(activeName);
         return;
       }
       if (data.results && data.results.length > 0) {
@@ -189,6 +193,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 setSelectedTranslator(data2.translators[0].id);
               }
             }
+            const activeId2 = translatorId ?? selectedTranslator ?? data2.translators?.[0]?.id;
+            const activeName2 = data2.translators?.find((t: any) => t.id === activeId2)?.name;
+            if (activeName2) recordTranslatorTry(activeName2);
             return;
           }
         }

@@ -4,25 +4,24 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	/* LIGHT theme — soft slate-gray palette, NOT pure white (easier on eyes,
-	   matches the bluish dark theme but inverted). */
-	--background: #eef2f7;
-	--foreground: #1e293b;
+	/* LIGHT theme — warm cream/cinema palette: soft, not eye-stabbing. */
+	--background: #faf9f6;
+	--foreground: #1c1c1c;
 	--card: #ffffff;
-	--card-foreground: #1e293b;
+	--card-foreground: #1c1c1c;
 	--popover: #ffffff;
-	--popover-foreground: #1e293b;
+	--popover-foreground: #1c1c1c;
 	--primary: #6db509;
 	--primary-foreground: #ffffff;
-	--secondary: #dbe2ec;
-	--secondary-foreground: #1e293b;
-	--muted: #dbe2ec;
-	--muted-foreground: #64748b;
+	--secondary: #efece5;
+	--secondary-foreground: #1c1c1c;
+	--muted: #efece5;
+	--muted-foreground: #6b6b6b;
 	--accent: #7c3aed;
 	--accent-foreground: #ffffff;
 	--destructive: #dc2626;
 	--destructive-foreground: #ffffff;
-	--border: #cbd5e1;
+	--border: #e3dfd5;
 	--input: #ffffff;
 	--ring: #6db509;
 	--chart-1: #6db509;
@@ -32,12 +31,12 @@
 	--chart-5: #06b6d4;
 	--radius: 0.625rem;
 	--sidebar: #ffffff;
-	--sidebar-foreground: #1e293b;
+	--sidebar-foreground: #1c1c1c;
 	--sidebar-primary: #6db509;
 	--sidebar-primary-foreground: #ffffff;
-	--sidebar-accent: #e2e8f0;
-	--sidebar-accent-foreground: #1e293b;
-	--sidebar-border: #cbd5e1;
+	--sidebar-accent: #efece5;
+	--sidebar-accent-foreground: #1c1c1c;
+	--sidebar-border: #e3dfd5;
 	--sidebar-ring: #6db509;
 }
 
