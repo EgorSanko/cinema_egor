@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, RADIUS, FONTS, SPACING } from '../../constants/theme';
 import { savePosition, addToHistory, getPosition } from '../../utils/storage';
 import { scheduleSyncToServer } from '../../utils/auth';
-import { getStream, type StreamData } from '../../api/tmdb';
+import { getStream, getSeasonEpisodes, isEpisodeReleased, type StreamData, type Episode } from '../../api/tmdb';
 import { getWatchSocket, setWatchSocket } from '../../utils/watchSocket';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -25,7 +25,11 @@ const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 export function PlayerScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
-  const { streamData: initialStreamData, title, movieId, poster, season, episode, type: mediaType, roomCode } = route.params as {
+  const {
+    streamData: initialStreamData, title: initialTitle, movieId, poster,
+    season: initialSeason, episode: initialEpisode, type: mediaType, roomCode,
+    searchTitle, year, totalSeasons, baseTitle,
+  } = route.params as {
     streamData: StreamData;
     title: string;
     movieId: number;
@@ -34,7 +38,26 @@ export function PlayerScreen() {
     episode?: number;
     type?: 'movie' | 'tv';
     roomCode?: string;
+    searchTitle?: string;
+    year?: string;
+    totalSeasons?: number;
+    baseTitle?: string;
   };
+
+  // Episode/season as STATE (not route param) so switching doesn't reset speed/translator
+  const [currentSeason, setCurrentSeason] = useState<number | undefined>(initialSeason);
+  const [currentEpisode, setCurrentEpisode] = useState<number | undefined>(initialEpisode);
+  const [title, setTitle] = useState(initialTitle);
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [episodesLoading, setEpisodesLoading] = useState(false);
+  const [episodeSwitchLoading, setEpisodeSwitchLoading] = useState(false);
+  const [showEpisodesPanel, setShowEpisodesPanel] = useState(false);
+
+  // Autoplay countdown state (TV only)
+  const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
+  const autoplayTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoplayTriggeredRef = useRef(false);
+  const hasNextEpisodeRef = useRef(false);
 
   const videoRef = useRef<Video>(null);
   const [streamData, setStreamData] = useState<StreamData>(initialStreamData);
@@ -109,9 +132,8 @@ export function PlayerScreen() {
   // Check resume position
   useEffect(() => {
     if (resumeChecked) return;
-    const posKey = season && episode ? `tv_${movieId}_s${season}e${episode}` : `movie_${movieId}`;
     (async () => {
-      const saved = await getPosition(movieId, mediaType === 'tv' && season && episode ? `tv_s${season}e${episode}` : 'movie');
+      const saved = await getPosition(movieId, mediaType === 'tv' && currentSeason && currentEpisode ? `tv_s${currentSeason}e${currentEpisode}` : 'movie');
       if (saved && saved.time > 10 && saved.duration > 0) {
         const pct = (saved.time / saved.duration * 100).toFixed(0);
         if (Number(pct) < 95) {
@@ -155,7 +177,7 @@ export function PlayerScreen() {
 
   // Periodic save
   useEffect(() => {
-    const posType = mediaType === 'tv' && season && episode ? `tv_s${season}e${episode}` : 'movie';
+    const posType = mediaType === 'tv' && currentSeason && currentEpisode ? `tv_s${currentSeason}e${currentEpisode}` : 'movie';
     saveTimerRef.current = setInterval(() => {
       const pos = positionRef.current;
       const dur = durationRef.current;
@@ -167,14 +189,14 @@ export function PlayerScreen() {
           watchedAt: Date.now(),
           progress: pos / 1000, duration: dur / 1000,
           quality: qualityRef.current, addedAt: Date.now(),
-          season, episode,
+          season: currentSeason, episode: currentEpisode,
         });
       }
     }, 15000);
     return () => {
       if (saveTimerRef.current) clearInterval(saveTimerRef.current);
     };
-  }, [movieId, title, poster, season, episode, mediaType]);
+  }, [movieId, title, poster, currentSeason, currentEpisode, mediaType]);
 
   // Watch Together chat
   useEffect(() => {
@@ -265,7 +287,7 @@ export function PlayerScreen() {
   const handleBack = useCallback(() => {
     const pos = positionRef.current;
     const dur = durationRef.current;
-    const posType = mediaType === 'tv' && season && episode ? `tv_s${season}e${episode}` : 'movie';
+    const posType = mediaType === 'tv' && currentSeason && currentEpisode ? `tv_s${currentSeason}e${currentEpisode}` : 'movie';
     if (pos > 0 && dur > 0) {
       savePosition(movieId, posType, pos / 1000, dur / 1000);
     }
@@ -278,7 +300,7 @@ export function PlayerScreen() {
       setWatchSocket(null);
     }
     nav.goBack();
-  }, [movieId, nav, season, episode, mediaType, roomCode]);
+  }, [movieId, nav, currentSeason, currentEpisode, mediaType, roomCode]);
 
   const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
@@ -297,7 +319,55 @@ export function PlayerScreen() {
       setPosition(status.positionMillis);
     }
     setDuration(status.durationMillis || 0);
-  }, [isSeeking]);
+
+    // === AUTOPLAY NEXT EPISODE ===
+    // Trigger countdown when remaining time <= 30s, OR on natural end
+    if (mediaType === 'tv' && hasNextEpisodeRef.current && !autoplayTriggeredRef.current) {
+      const dur = status.durationMillis || 0;
+      const remaining = dur - status.positionMillis;
+      const justFinished = (status as any).didJustFinish;
+      if (justFinished || (remaining > 0 && remaining <= 30000 && dur > 60000)) {
+        autoplayTriggeredRef.current = true;
+        startAutoplayCountdown();
+      }
+    }
+  }, [isSeeking, mediaType]);
+
+  const startAutoplayCountdown = () => {
+    setAutoplayCountdown(10);
+    if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
+    autoplayTimerRef.current = setInterval(() => {
+      setAutoplayCountdown(prev => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
+          // Fire next episode
+          setTimeout(() => goToNextEpisode(), 0);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const cancelAutoplay = () => {
+    if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
+    autoplayTimerRef.current = null;
+    setAutoplayCountdown(null);
+  };
+
+  // Reset autoplay trigger when episode changes
+  useEffect(() => {
+    autoplayTriggeredRef.current = false;
+    cancelAutoplay();
+  }, [currentEpisode, currentSeason]);
+
+  // Cleanup autoplay timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
+    };
+  }, []);
 
   const toggleUI = () => {
     if (locked) return;
@@ -375,12 +445,11 @@ export function PlayerScreen() {
     setShowTranslatorPanel(false);
     const savedPos = position;
     try {
-      const year = '';
       const opts: any = { translator_id: translator.id };
-      if (season) opts.season = season;
-      if (episode) opts.episode = episode;
-      const titleClean = title.replace(/\sS\d+E\d+$/, '');
-      const data = await getStream(titleClean, year, mediaType || 'movie', opts);
+      if (currentSeason) opts.season = currentSeason;
+      if (currentEpisode) opts.episode = currentEpisode;
+      const searchQ = searchTitle || title.replace(/\sS\d+E\d+$/, '');
+      const data = await getStream(searchQ, year || '', mediaType || 'movie', opts);
       if (data.stream) {
         setStreamData(data);
         setCurrentQuality(data.quality);
@@ -409,6 +478,108 @@ export function PlayerScreen() {
     setShowSpeedPanel(false);
     setShowTranslatorPanel(false);
   };
+
+  // === Episode list loader (TV only) ===
+  useEffect(() => {
+    if (mediaType !== 'tv' || !currentSeason) return;
+    let cancelled = false;
+    setEpisodesLoading(true);
+    getSeasonEpisodes(movieId, currentSeason)
+      .then(eps => { if (!cancelled) setEpisodes(eps); })
+      .catch(() => { if (!cancelled) setEpisodes([]); })
+      .finally(() => { if (!cancelled) setEpisodesLoading(false); });
+    return () => { cancelled = true; };
+  }, [movieId, currentSeason, mediaType]);
+
+  // Released episodes only — filters out future air dates
+  const releasedEpisodes = episodes.filter(isEpisodeReleased);
+
+  const findNextEpisode = useCallback((): { season: number; episode: number } | null => {
+    if (mediaType !== 'tv' || !currentSeason || !currentEpisode) return null;
+    const idx = releasedEpisodes.findIndex(e => e.episode_number === currentEpisode);
+    if (idx >= 0 && idx < releasedEpisodes.length - 1) {
+      return { season: currentSeason, episode: releasedEpisodes[idx + 1].episode_number };
+    }
+    if (totalSeasons && currentSeason < totalSeasons) {
+      return { season: currentSeason + 1, episode: 1 };
+    }
+    return null;
+  }, [releasedEpisodes, currentSeason, currentEpisode, mediaType, totalSeasons]);
+
+  const findPrevEpisode = useCallback((): { season: number; episode: number } | null => {
+    if (mediaType !== 'tv' || !currentSeason || !currentEpisode) return null;
+    const idx = releasedEpisodes.findIndex(e => e.episode_number === currentEpisode);
+    if (idx > 0) {
+      return { season: currentSeason, episode: releasedEpisodes[idx - 1].episode_number };
+    }
+    if (currentSeason > 1) {
+      // Jump to previous season — we don't know last episode count, plumb through next time
+      return { season: currentSeason - 1, episode: 1 };
+    }
+    return null;
+  }, [releasedEpisodes, currentSeason, currentEpisode, mediaType]);
+
+  const goToEpisode = async (season: number, episode: number) => {
+    if (mediaType !== 'tv') return;
+    if (!searchTitle) {
+      Alert.alert('Ошибка', 'Не хватает данных для переключения серии. Перезайдите в фильм.');
+      return;
+    }
+    setEpisodeSwitchLoading(true);
+    setShowEpisodesPanel(false);
+    try {
+      const opts: any = { season, episode };
+      if (currentTranslator) opts.translator_id = currentTranslator.id;
+      const data = await getStream(searchTitle, year || '', 'tv', opts);
+      if (data.stream) {
+        // Save current position before switch
+        const pos = positionRef.current;
+        const dur = durationRef.current;
+        if (pos > 0 && dur > 0 && currentSeason && currentEpisode) {
+          savePosition(movieId, `tv_s${currentSeason}e${currentEpisode}`, pos / 1000, dur / 1000);
+        }
+
+        setStreamData(data);
+        setCurrentQuality(data.quality);
+        setCurrentSeason(season);
+        setCurrentEpisode(episode);
+        setTitle(`${baseTitle || initialTitle.replace(/\sS\d+E\d+$/, '')} S${season}E${episode}`);
+        setPosition(0);
+        setIsBuffering(true);
+        setResumeChecked(false); // re-check resume for new episode
+
+        // Try to keep the same translator if available in new stream
+        if (currentTranslator) {
+          const sameTr = data.translators.find(t => t.id === currentTranslator.id);
+          if (sameTr) setCurrentTranslator(sameTr);
+          else if (data.translators.length > 0) setCurrentTranslator(data.translators[0]);
+        }
+      } else {
+        Alert.alert('Серия недоступна', 'Не удалось найти этот эпизод. Возможно, он ещё не вышел.');
+      }
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось переключить серию');
+    } finally {
+      setEpisodeSwitchLoading(false);
+    }
+  };
+
+  const goToNextEpisode = () => {
+    const next = findNextEpisode();
+    if (next) goToEpisode(next.season, next.episode);
+    else Alert.alert('Конец', 'Это последняя доступная серия');
+  };
+
+  const goToPrevEpisode = () => {
+    const prev = findPrevEpisode();
+    if (prev) goToEpisode(prev.season, prev.episode);
+  };
+
+  const hasNextEpisode = findNextEpisode() !== null;
+  const hasPrevEpisode = findPrevEpisode() !== null;
+
+  // Keep ref in sync for use inside onPlaybackStatusUpdate callback
+  useEffect(() => { hasNextEpisodeRef.current = hasNextEpisode; }, [hasNextEpisode]);
 
   const formatTime = (ms: number) => {
     const totalSec = Math.floor(ms / 1000);
@@ -442,11 +613,35 @@ export function PlayerScreen() {
       />
 
       {/* Loading/buffering indicator */}
-      {(isBuffering || translatorLoading) && !videoError && (
+      {(isBuffering || translatorLoading || episodeSwitchLoading) && !videoError && (
         <View style={styles.bufferingOverlay}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           {translatorLoading && <Text style={styles.bufferingText}>Загрузка озвучки...</Text>}
+          {episodeSwitchLoading && <Text style={styles.bufferingText}>Загрузка серии...</Text>}
         </View>
+      )}
+
+      {/* Autoplay countdown overlay */}
+      {autoplayCountdown !== null && hasNextEpisode && (
+        <Animated.View entering={FadeIn.duration(200)} style={styles.autoplayOverlay}>
+          <View style={styles.autoplayCard}>
+            <Text style={styles.autoplayLabel}>Следующая серия через</Text>
+            <Text style={styles.autoplayCountdown}>{autoplayCountdown}</Text>
+            <View style={styles.autoplayActions}>
+              <Pressable
+                onPress={() => { cancelAutoplay(); goToNextEpisode(); }}
+                style={[styles.autoplayBtn, { backgroundColor: COLORS.primary }]}
+              >
+                <Ionicons name="play" size={16} color="#000" />
+                <Text style={[styles.autoplayBtnText, { color: '#000' }]}>Смотреть сейчас</Text>
+              </Pressable>
+              <Pressable onPress={cancelAutoplay} style={styles.autoplayBtn}>
+                <Ionicons name="close" size={16} color="#fff" />
+                <Text style={styles.autoplayBtnText}>Отмена</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Animated.View>
       )}
 
       {videoError && (
@@ -604,7 +799,7 @@ export function PlayerScreen() {
                   {/* Translator */}
                   {streamData.translators.length > 1 && (
                     <Pressable
-                      onPress={() => { setShowTranslatorPanel(!showTranslatorPanel); setShowQualityPanel(false); setShowSpeedPanel(false); }}
+                      onPress={() => { setShowTranslatorPanel(!showTranslatorPanel); setShowQualityPanel(false); setShowSpeedPanel(false); setShowEpisodesPanel(false); }}
                       style={styles.controlBtn}
                     >
                       <Ionicons name="mic-outline" size={14} color="#fff" />
@@ -612,6 +807,39 @@ export function PlayerScreen() {
                         {currentTranslator?.name || 'Озвучка'}
                       </Text>
                     </Pressable>
+                  )}
+
+                  {/* Episode navigation (TV only) */}
+                  {mediaType === 'tv' && currentSeason && currentEpisode && (
+                    <>
+                      <Pressable
+                        onPress={goToPrevEpisode}
+                        disabled={!hasPrevEpisode}
+                        style={[styles.controlBtn, !hasPrevEpisode && { opacity: 0.4 }]}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="play-skip-back" size={14} color="#fff" />
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => { setShowEpisodesPanel(!showEpisodesPanel); setShowQualityPanel(false); setShowSpeedPanel(false); setShowTranslatorPanel(false); }}
+                        style={styles.controlBtn}
+                      >
+                        <Ionicons name="list-outline" size={14} color="#fff" />
+                        <Text style={styles.controlText} numberOfLines={1}>
+                          S{currentSeason}E{currentEpisode}
+                        </Text>
+                      </Pressable>
+
+                      <Pressable
+                        onPress={goToNextEpisode}
+                        disabled={!hasNextEpisode}
+                        style={[styles.controlBtn, !hasNextEpisode && { opacity: 0.4 }]}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="play-skip-forward" size={14} color="#fff" />
+                      </Pressable>
+                    </>
                   )}
                 </View>
               </View>
@@ -667,6 +895,36 @@ export function PlayerScreen() {
                       </Text>
                     </Pressable>
                   ))}
+                </Animated.View>
+              )}
+
+              {/* Episodes panel (TV only) */}
+              {showEpisodesPanel && mediaType === 'tv' && (
+                <Animated.View entering={FadeIn.duration(150)} style={[styles.panel, { minWidth: 240, maxHeight: 280 }]}>
+                  <Text style={styles.panelTitle}>Сезон {currentSeason} — серии</Text>
+                  {episodesLoading ? (
+                    <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 12 }} />
+                  ) : (
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                      {episodes.map(ep => {
+                        const released = isEpisodeReleased(ep);
+                        const isActive = ep.episode_number === currentEpisode;
+                        return (
+                          <Pressable
+                            key={ep.id}
+                            onPress={() => released && goToEpisode(currentSeason!, ep.episode_number)}
+                            disabled={!released}
+                            style={[styles.panelItem, isActive && styles.panelItemActive, !released && { opacity: 0.4 }]}
+                          >
+                            <Text style={[styles.panelText, isActive && styles.panelTextActive]} numberOfLines={1}>
+                              {isActive ? '✓ ' : !released ? '🔒 ' : ''}E{ep.episode_number} {ep.name ? `· ${ep.name}` : ''}
+                              {!released && ep.air_date ? ` (${new Date(ep.air_date).toLocaleDateString('ru-RU')})` : ''}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
                 </Animated.View>
               )}
             </>
@@ -1024,4 +1282,51 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   chatSendBtn: { padding: 6 },
+
+  // Autoplay countdown overlay
+  autoplayOverlay: {
+    position: 'absolute',
+    bottom: 100,
+    right: 24,
+    zIndex: 30,
+  },
+  autoplayCard: {
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    borderRadius: RADIUS.lg,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    minWidth: 200,
+  },
+  autoplayLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    marginBottom: 4,
+  },
+  autoplayCountdown: {
+    color: COLORS.primary,
+    fontSize: 36,
+    fontFamily: FONTS.bold,
+    marginBottom: 12,
+  },
+  autoplayActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  autoplayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  autoplayBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+  },
 });

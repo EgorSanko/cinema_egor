@@ -131,6 +131,9 @@ export function MovieDetailScreen() {
           type: isTV ? 'tv' : 'movie',
           season: isTV ? selectedSeason : undefined,
           episode: isTV ? selectedEpisode : undefined,
+          searchTitle, year,
+          totalSeasons: isTV ? (detail as TVShowDetails).number_of_seasons : undefined,
+          baseTitle: detailTitle,
         });
       } else {
         Alert.alert('Пока недоступно', 'Этот контент ещё не вышел в онлайн-кинотеатрах. Ждём релиза!');

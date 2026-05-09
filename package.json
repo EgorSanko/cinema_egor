@@ -23,6 +23,7 @@
     "expo-font": "^55.0.6",
     "expo-haptics": "^55.0.14",
     "expo-image": "^55.0.8",
+    "expo-keep-awake": "~15.0.8",
     "expo-linear-gradient": "^55.0.13",
     "expo-navigation-bar": "~5.0.10",
     "expo-screen-orientation": "^55.0.13",
