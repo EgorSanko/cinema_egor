@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
-const DATA_DIR = path.join(process.cwd(), "user-data");
+const DATA_DIR = process.env.SYNC_DATA_DIR || path.join(process.cwd(), "user-data");
 
 // Ensure data directory exists
 function ensureDir() {
@@ -59,20 +59,24 @@ export async function POST(req: NextRequest) {
 
       // Merge favorites (by id+type, keep newest)
       const favMap = new Map<string, any>();
-      for (const f of (existing.favorites || [])) favMap.set(`${f.type}-${f.id}`, f);
-      for (const f of (data.favorites || [])) favMap.set(`${f.type}-${f.id}`, f);
+      const existFavs = Array.isArray(existing.favorites) ? existing.favorites : [];
+      const incomingFavs = Array.isArray(data.favorites) ? data.favorites : [];
+      for (const f of existFavs) favMap.set(`${f.type}-${f.id}`, f);
+      for (const f of incomingFavs) favMap.set(`${f.type}-${f.id}`, f);
       const mergedFavs = Array.from(favMap.values())
         .sort((a: any, b: any) => (b.addedAt || 0) - (a.addedAt || 0))
         .slice(0, 200);
 
       // Merge history (by id+type+season+episode, keep newest)
       const histMap = new Map<string, any>();
-      for (const h of (existing.history || [])) {
+      const existHist = Array.isArray(existing.history) ? existing.history : [];
+      const incomingHist = Array.isArray(data.history) ? data.history : [];
+      for (const h of existHist) {
         const key = `${h.type}-${h.id}-${h.season || 0}-${h.episode || 0}`;
         const prev = histMap.get(key);
         if (!prev || h.watchedAt > prev.watchedAt) histMap.set(key, h);
       }
-      for (const h of (data.history || [])) {
+      for (const h of incomingHist) {
         const key = `${h.type}-${h.id}-${h.season || 0}-${h.episode || 0}`;
         const prev = histMap.get(key);
         if (!prev || h.watchedAt > prev.watchedAt) histMap.set(key, h);
@@ -92,8 +96,10 @@ export async function POST(req: NextRequest) {
 
       // Merge comments (by id, deduplicate)
       const commentMap = new Map<string, any>();
-      for (const c of (existing.comments || [])) commentMap.set(c.id, c);
-      for (const c of (data.comments || [])) commentMap.set(c.id, c);
+      const existComments = Array.isArray(existing.comments) ? existing.comments : [];
+      const incomingComments = Array.isArray(data.comments) ? data.comments : [];
+      for (const c of existComments) commentMap.set(c.id, c);
+      for (const c of incomingComments) commentMap.set(c.id, c);
       const mergedComments = Array.from(commentMap.values())
         .sort((a: any, b: any) => b.createdAt - a.createdAt)
         .slice(0, 2000);

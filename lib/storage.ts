@@ -78,6 +78,7 @@ async function syncToServer(email: string) {
       const result = await res.json();
       if (result.data) {
         applyServerData(result.data);
+        window.dispatchEvent(new CustomEvent("sync-complete"));
       }
     }
   } catch (e) {

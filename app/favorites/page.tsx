@@ -18,7 +18,11 @@ export default function FavoritesPage() {
     load();
     const handler = () => load();
     window.addEventListener("favorites-changed", handler);
-    return () => window.removeEventListener("favorites-changed", handler);
+    window.addEventListener("sync-complete", handler);
+    return () => {
+      window.removeEventListener("favorites-changed", handler);
+      window.removeEventListener("sync-complete", handler);
+    };
   }, []);
 
   const remove = (item: FavoriteItem) => { toggleFavorite(item); load(); };

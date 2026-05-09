@@ -1,4 +1,3 @@
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
@@ -12,9 +11,10 @@ hdrezka_http.DEFAULT_CLIENT = httpx.AsyncClient(
 )
 
 from hdrezka.url import Request
-Request.HOST = "http://rezka.ag/"
+Request.HOST = "https://hdrezka.cm/"
 
 from hdrezka import Search
+from hdrezka.stream import PlayerSeries
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -24,23 +24,12 @@ logged_in = False
 async def ensure_login():
     global logged_in
     if not logged_in:
-        login = os.environ.get("HDREZKA_LOGIN", "")
-        password = os.environ.get("HDREZKA_PASSWORD", "")
-        if not login or not password:
-            print("Warning: HDREZKA_LOGIN / HDREZKA_PASSWORD not set, skipping login")
-            return
         try:
-            await hdrezka_http.get_response("POST", "http://rezka.ag/ajax/login/", data={
-                "login_name": login,
-                "login_password": password,
-                "login_not_save": "0",
-                "login": "submit"
-            })
+            await hdrezka_http.login_global("egorsanko@bk.ru", "Yachmen007")
             logged_in = True
-            print("Login successful!")
+            print(f"Login successful! HOST={Request.HOST}")
         except Exception as e:
             print(f"Login failed: {e}")
-
 @app.get("/api/search")
 async def search(q: str, year: str = None, type: str = None, season: str = None, episode: str = None, index: int = 0, translator_id: int = None):
     await ensure_login()
@@ -49,25 +38,52 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
         if not results:
             return {"error": "Not found", "results": []}
 
-        # Filter by type via URL (/series/ vs /films/)
-        if type in ('tv', 'series'):
-            filtered = [r for r in results if '/series/' in str(getattr(r, 'url', ''))]
-            if filtered:
-                results = filtered
-        elif type == 'movie':
-            filtered = [r for r in results if '/films/' in str(getattr(r, 'url', ''))]
-            if filtered:
-                results = filtered
-
+        import re as _re
         best = None
-        if year:
+        s_num = int(season or 1)
+
+        # Filter by type (movie vs series)
+        filtered = results
+        if type:
+            type_filtered = []
             for r in results:
+                url = str(getattr(r, 'url', ''))
                 info = str(getattr(r, 'info', '') or '')
-                if year in info or year in str(getattr(r, 'url', '')):
+                if type in ('tv', 'series'):
+                    if '/series/' in url or '/animation/' in url or 'сезон' in info.lower() or 'серия' in info.lower():
+                        type_filtered.append(r)
+                elif type == 'movie':
+                    if '/films/' in url or ('/series/' not in url and '/animation/' not in url and 'сезон' not in info.lower()):
+                        type_filtered.append(r)
+            if type_filtered:
+                filtered = type_filtered
+
+        # For split-season anime/series [ТВ-1], [ТВ-2] etc — match FIRST
+        if s_num >= 1:
+            for tag in [f"[ТВ-{s_num}]", f"[Сезон {s_num}]", f"ТВ-{s_num}", f"{s_num} сезон"]:
+                for r in filtered:
+                    if tag in str(getattr(r, 'name', '')):
+                        best = r
+                        break
+                if best:
+                    break
+
+        # Filter by year if no split-season match
+        if not best and year:
+            for r in filtered:
+                info = getattr(r, 'info', None)
+                info_year = getattr(info, 'year', None) if info else None
+                if info_year and str(info_year) == year:
                     best = r
                     break
+                elif year in str(info or '') or year in str(getattr(r, 'url', '')):
+                    best = r
+                    break
+
         if not best:
-            if index < len(results):
+            if index < len(filtered):
+                best = filtered[index]
+            elif index < len(results):
                 best = results[index]
             else:
                 return {"error": "Not found", "results": []}
@@ -84,16 +100,65 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
 
         s = int(season or 1)
         e = int(episode or 1)
+        # If matched a split-season entry [ТВ-N], reset season to 1 inside that entry
+        post_name = str(getattr(post, 'name', ''))
+        import re as _re
+        tv_match = _re.search(r'\[ТВ-(\d+)\]', post_name)
+        if tv_match and int(tv_match.group(1)) > 1:
+            s = 1
+        async def try_series(tid):
+            return await player.get_stream(s, e, tid)
+        async def try_movie(tid):
+            return await player.get_stream(tid)
+        is_series = isinstance(player, PlayerSeries)
+        try_fn = try_series if is_series else try_movie
+        stream = None
+        last_err = None
         try:
-            stream = await player.get_stream(s, e, translator_id)
-            is_series = True
-        except:
-            stream = await player.get_stream(translator_id)
-            is_series = False
+            stream = await try_fn(translator_id)
+        except Exception as ex:
+            last_err = ex
+        if stream is None:
+            for _, tid in list(player.post.translators.name_id.items())[:8]:
+                try:
+                    stream = await try_fn(tid)
+                    break
+                except Exception as ex:
+                    last_err = ex
+        # Fallback: parse streams from page HTML if AJAX fails
+        if stream is None:
+            try:
+                page_resp = await hdrezka_http.get_response('GET', str(post.url))
+                page_html = page_resp.text
+                # Extract streams directly from "streams":"[360p]https://..." pattern
+                streams_match = _re.search(r'"streams"\s*:\s*"((?:\[\d+p?\]https?:[^"]*)+)"', page_html)
+                if streams_match:
+                    streams_str = streams_match.group(1).replace("\\/", "/")
+                    raw_fallback = _re.findall(r'\[(\d+p)\](https?://[^\[,\s]+)', streams_str)
+                    if raw_fallback:
+                        streams = {}
+                        for q, u in raw_fallback:
+                            qn = int(q.replace('p',''))
+                            if qn <= 1080:
+                                streams[q] = u.replace("http://", "https://").strip()
+                        best_quality = list(streams.keys())[-1] if streams else ""
+                        best_url = streams.get(best_quality, "")
+                        print(f"OK (HTML fallback): {post.name}")
+                        return {
+                            "title": post.name, "stream": best_url, "quality": best_quality,
+                            "streams": streams, "qualities": list(streams.keys()),
+                            "translators": translators, "is_series": is_series, "url": str(post.url),
+                        }
+            except Exception as fb_err:
+                print(f"HTML fallback failed: {fb_err}")
+            raise last_err or Exception("No working translator")
 
         raw = stream.video.raw_data
         streams = {}
         for quality, urls in raw.items():
+            q_name_check = str(quality)
+            if "ultra" in q_name_check.lower() or int(quality) > 1080:
+                continue
             q_name = str(quality)
             u = urls[0] if isinstance(urls, tuple) else str(urls)
             if u.startswith("http"):

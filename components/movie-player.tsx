@@ -96,7 +96,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     if (!translatorId) setStreamData(null);
     try {
       const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
-      const q = encodeURIComponent(movie.title);
+      const origTitle = ((movie as any).original_title || "").replace(/["'«»""]/g, "").trim();
+      const searchTitle = origTitle && /[a-z]/i.test(origTitle) ? origTitle : movie.title;
+      const q = encodeURIComponent(searchTitle);
       const trParam = translatorId ? "&translator_id=" + translatorId : "";
       const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam);
       const data = await res.json();

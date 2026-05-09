@@ -138,7 +138,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
     if (!translatorId) setStreamData(null);
     try {
       const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
-      const q = encodeURIComponent(show.name);
+      const origName = ((show as any).original_name || "").replace(/["'«»""]/g, "").trim();
+      const searchName = origName && /[a-z]/i.test(origName) ? origName : show.name;
+      const q = encodeURIComponent(searchName);
       const trParam = translatorId ? "&translator_id=" + translatorId : "";
       const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam);
       const data = await res.json();

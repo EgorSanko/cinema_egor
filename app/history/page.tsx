@@ -32,7 +32,12 @@ export default function HistoryPage() {
   const [loaded, setLoaded] = useState(false);
 
   const load = () => { setHistory(getHistory()); setLoaded(true); };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const onSync = () => load();
+    window.addEventListener("sync-complete", onSync);
+    return () => window.removeEventListener("sync-complete", onSync);
+  }, []);
 
   const clearAll = () => { if (confirm("Очистить всю историю?")) { clearHistory(); load(); } };
 
