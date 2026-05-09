@@ -17,7 +17,7 @@ import { CollectionsScreen } from '../screens/Collections/CollectionsScreen';
 import { SwipeScreen } from '../screens/Swipe/SwipeScreen';
 import { WatchTogetherScreen } from '../screens/Watch/WatchTogetherScreen';
 import { AuthScreen } from '../screens/Auth/AuthScreen';
-import { getUser, onAuthChange, type User } from '../utils/auth';
+import { getUser, onAuthChange, syncFromServer, type User } from '../utils/auth';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -70,7 +70,10 @@ export function AppNavigator() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
 
   useEffect(() => {
-    getUser().then(setUser);
+    getUser().then(async (u) => {
+      setUser(u);
+      if (u?.email) { try { await syncFromServer(u.email); } catch {} }
+    });
     return onAuthChange(setUser);
   }, []);
 

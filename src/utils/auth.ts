@@ -79,18 +79,20 @@ export async function syncToServer(email: string) {
 
 export async function syncFromServer(email: string) {
   try {
+    const [favorites, history, positions, comments] = await Promise.all([
+      getFavorites(), getHistory(), getAllPositions(), getAllComments(),
+    ]);
     const res = await fetch(`${API_BASE}/api/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'load', email }),
+      body: JSON.stringify({ action: 'save', email, data: { favorites, history, positions, comments } }),
     });
     const data = await res.json();
     if (data.success && data.data) {
-      // Merge server data with local — server wins for newer items
-      if (data.data.favorites?.length) await setFavorites(data.data.favorites);
-      if (data.data.history?.length) await setHistory(data.data.history);
-      if (data.data.positions && Object.keys(data.data.positions).length) await setPositions(data.data.positions);
-      if (data.data.comments?.length) await setComments(data.data.comments);
+      if (data.data.favorites) await setFavorites(data.data.favorites);
+      if (data.data.history) await setHistory(data.data.history);
+      if (data.data.positions) await setPositions(data.data.positions);
+      if (data.data.comments) await setComments(data.data.comments);
     }
   } catch {}
 }

@@ -6,6 +6,7 @@ import {
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import Slider from '@react-native-community/slider';
@@ -78,6 +79,8 @@ export function PlayerScreen() {
   const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentUrl = streamData.streams[currentQuality] || streamData.stream;
+
+  useEffect(() => { activateKeepAwakeAsync(); return () => { deactivateKeepAwake(); }; }, []);
 
   // Keep refs in sync
   useEffect(() => { positionRef.current = position; }, [position]);

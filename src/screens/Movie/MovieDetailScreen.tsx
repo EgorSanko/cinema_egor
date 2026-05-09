@@ -89,6 +89,8 @@ export function MovieDetailScreen() {
 
   const detail = isTV ? tvShow : movie;
   const detailTitle = isTV ? tvShow?.name : movie?.title;
+  const origSearch = ((isTV ? (tvShow as any)?.original_name : (movie as any)?.original_title) || '').replace(/["'«»""]/g, "").trim();
+  const searchTitle = origSearch && /[a-z]/i.test(origSearch) ? origSearch : (detailTitle || '');
   const detailDate = isTV ? tvShow?.first_air_date : movie?.release_date;
 
   const handleFavorite = async () => {
@@ -114,10 +116,10 @@ export function MovieDetailScreen() {
       const year = detailDate ? new Date(detailDate).getFullYear().toString() : '';
       const opts: any = {};
       if (isTV) { opts.season = selectedSeason; opts.episode = selectedEpisode; }
-      let data = await getStream(detailTitle || '', year, isTV ? 'tv' : 'movie', opts);
+      let data = await getStream(searchTitle, year, isTV ? 'tv' : 'movie', opts);
       if (!data.stream) {
         for (let i = 0; i < 3; i++) {
-          data = await getStream(detailTitle || '', year, isTV ? 'tv' : 'movie', { ...opts, index: i });
+          data = await getStream(searchTitle, year, isTV ? 'tv' : 'movie', { ...opts, index: i });
           if (data.stream) break;
         }
       }
