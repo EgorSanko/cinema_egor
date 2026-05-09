@@ -52,6 +52,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [translatorLoading, setTranslatorLoading] = useState(false);
   const [autoplayCountdown, setAutoplayCountdown] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
@@ -359,8 +360,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
     const isTelegram = !!(window as any).Telegram?.WebApp;
     if (isTelegram) { try { (window as any).Telegram.WebApp.requestFullscreen(); } catch {} }
-    if (!isMobile && !isTelegram && videoRef.current?.requestFullscreen) {
-      videoRef.current.requestFullscreen().catch(() => setCssFullscreen(true));
+    // On desktop, fullscreen the WHOLE player container (not just <video>) so
+    // overlays like the autoplay countdown remain visible.
+    if (!isMobile && !isTelegram && containerRef.current?.requestFullscreen) {
+      containerRef.current.requestFullscreen().catch(() => setCssFullscreen(true));
       return;
     }
     setCssFullscreen(!cssFullscreen);
@@ -395,7 +398,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   return (
     <div className="relative w-full">
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className={cssFullscreen
+        <div ref={containerRef} className={cssFullscreen
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
@@ -544,13 +547,24 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 backdrop-blur border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 min-w-[300px] max-h-[300px] overflow-y-auto">
                   {loadingEpisodes ? (
                     <div className="px-4 py-6 text-center text-gray-400 text-sm">Загрузка...</div>
-                  ) : episodes.map(ep => (
-                    <button key={ep.episode_number} onClick={() => selectEpisode(selectedSeason, ep.episode_number)}
-                      className={"w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 " +
-                        (selectedEpisode === ep.episode_number ? "text-primary font-semibold" : "text-gray-300")}>
-                      {ep.episode_number + ". " + (ep.name || "Серия " + ep.episode_number)}
-                    </button>
-                  ))}
+                  ) : episodes.map(ep => {
+                    const released = !ep.air_date || new Date(ep.air_date) <= new Date();
+                    const airDateStr = ep.air_date ? new Date(ep.air_date).toLocaleDateString("ru-RU") : "";
+                    return (
+                      <button
+                        key={ep.episode_number}
+                        onClick={() => released && selectEpisode(selectedSeason, ep.episode_number)}
+                        disabled={!released}
+                        className={"w-full text-left px-4 py-3 text-sm transition-colors border-b border-white/5 last:border-0 " +
+                          (!released ? "text-gray-500 cursor-not-allowed" :
+                           selectedEpisode === ep.episode_number ? "text-primary font-semibold hover:bg-white/5" : "text-gray-300 hover:bg-white/5")}
+                      >
+                        {!released ? "🔒 " : ""}
+                        {ep.episode_number + ". " + (ep.name || "Серия " + ep.episode_number)}
+                        {!released && airDateStr ? ` · ${airDateStr}` : ""}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
