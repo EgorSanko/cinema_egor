@@ -13,7 +13,7 @@ import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, RADIUS, FONTS, SPACING } from '../../constants/theme';
-import { savePosition, addToHistory, getPosition, saveLastTranslator } from '../../utils/storage';
+import { savePosition, addToHistory, getPosition, saveLastTranslator, recordTranslatorTry } from '../../utils/storage';
 import { scheduleSyncToServer } from '../../utils/auth';
 import { getStream, getSeasonEpisodes, isEpisodeReleased, type StreamData, type Episode } from '../../api/tmdb';
 import { getWatchSocket, setWatchSocket } from '../../utils/watchSocket';
@@ -104,6 +104,11 @@ export function PlayerScreen() {
   const currentUrl = streamData.streams[currentQuality] || streamData.stream;
 
   useEffect(() => { activateKeepAwakeAsync(); return () => { deactivateKeepAwake(); }; }, []);
+
+  // Record current translator for Polyglot achievement whenever it changes
+  useEffect(() => {
+    if (currentTranslator?.name) recordTranslatorTry(currentTranslator.name);
+  }, [currentTranslator?.name]);
 
   // Keep refs in sync
   useEffect(() => { positionRef.current = position; }, [position]);
@@ -323,10 +328,15 @@ export function PlayerScreen() {
     setDuration(status.durationMillis || 0);
 
     // === AUTOPLAY NEXT EPISODE ===
-    // Trigger countdown ONLY on natural end of playback. Avoids false-positives
-    // on cliffhanger episodes that cut off without long credits.
+    // Show 10-second countdown when ≤10s remain (so user has chance to cancel)
+    // OR on natural end (covers cases where progress jumps over the threshold).
     if (mediaType === 'tv' && hasNextEpisodeRef.current && !autoplayTriggeredRef.current) {
-      if ((status as any).didJustFinish) {
+      const dur = status.durationMillis || 0;
+      const pos = status.positionMillis || 0;
+      const remaining = dur - pos;
+      const justFinished = (status as any).didJustFinish;
+      // Only trigger by-time on episodes longer than 90s (avoid trailers/clips)
+      if (justFinished || (remaining > 0 && remaining <= 10000 && dur > 90000)) {
         autoplayTriggeredRef.current = true;
         startAutoplayCountdown();
       }

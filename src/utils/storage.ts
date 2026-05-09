@@ -191,6 +191,20 @@ export async function getTriedTranslators(): Promise<string[]> {
   } catch { return []; }
 }
 
+// Record any translator the user has watched with — used for Polyglot achievement.
+// Called every time a stream loads so even default dubs count.
+export async function recordTranslatorTry(translatorName: string) {
+  if (!translatorName) return;
+  try {
+    const raw = await AsyncStorage.getItem(TRIED_TRANSLATORS_KEY);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(translatorName)) {
+      list.push(translatorName);
+      await AsyncStorage.setItem(TRIED_TRANSLATORS_KEY, JSON.stringify(list));
+    }
+  } catch {}
+}
+
 export async function getLastTranslator(mediaId: number, mediaType: 'movie' | 'tv'): Promise<{ id: number; name: string } | null> {
   try {
     const data = await AsyncStorage.getItem(`last-tr-${mediaType}-${mediaId}`);

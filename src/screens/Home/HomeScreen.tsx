@@ -148,11 +148,10 @@ export function HomeScreen() {
     nav.navigate(screen, {
       id: item.id,
       title: item.title,
-      // Pass startup hints — MovieDetailScreen will pre-select season/episode and auto-play
+      // Pre-select correct season/episode but don't auto-play. User taps play.
       startSeason: item.launchSeason,
       startEpisode: item.launchEpisode,
       startProgress: item.launchProgress,
-      autoPlay: true,
     });
   };
 

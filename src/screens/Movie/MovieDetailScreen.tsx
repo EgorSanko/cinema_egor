@@ -32,7 +32,7 @@ export function MovieDetailScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const { id, startSeason, startEpisode, startProgress, autoPlay: shouldAutoPlay } = route.params as {
+  const { id, startSeason, startEpisode } = route.params as {
     id: number;
     startSeason?: number;
     startEpisode?: number;
@@ -54,7 +54,6 @@ export function MovieDetailScreen() {
   const [selectedSeason, setSelectedSeason] = useState(startSeason ?? 1);
   const [selectedEpisode, setSelectedEpisode] = useState(startEpisode ?? 1);
   const [showSeasonPicker, setShowSeasonPicker] = useState(false);
-  const [autoPlayConsumed, setAutoPlayConsumed] = useState(false);
   const [seasonEpisodes, setSeasonEpisodes] = useState<Episode[]>([]);
 
   // Load real episodes (with air_date) for the selected season — used to lock unaired ones
@@ -113,13 +112,9 @@ export function MovieDetailScreen() {
   const searchTitle = origSearch && /[a-z]/i.test(origSearch) ? origSearch : (detailTitle || '');
   const detailDate = isTV ? tvShow?.first_air_date : movie?.release_date;
 
-  // Auto-play when navigated from "Continue Watching" with autoPlay flag
-  useEffect(() => {
-    if (!shouldAutoPlay || autoPlayConsumed || !detail || streamLoading) return;
-    setAutoPlayConsumed(true);
-    handlePlay();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail, shouldAutoPlay, autoPlayConsumed]);
+  // From "Continue Watching" we receive startSeason/startEpisode and pre-select
+  // them but DO NOT auto-play. User chooses to tap the play button when they're
+  // ready — matches the behavior on the website.
 
   const handleFavorite = async () => {
     if (!detail) return;
