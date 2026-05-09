@@ -126,6 +126,26 @@ export const getTVCredits = (id: number) =>
 export const getTVRecommendations = (id: number) =>
   tmdbFetch<{ results: TVShow[] }>(`/tv/${id}/recommendations`).then(d => d.results);
 
+export interface Episode {
+  id: number;
+  name: string;
+  overview: string;
+  air_date: string | null;
+  episode_number: number;
+  season_number: number;
+  still_path: string | null;
+  vote_average: number;
+  runtime: number | null;
+}
+
+export const getSeasonEpisodes = (tvId: number, seasonNumber: number) =>
+  tmdbFetch<{ episodes: Episode[] }>(`/tv/${tvId}/season/${seasonNumber}`).then(d => d.episodes || []);
+
+export function isEpisodeReleased(ep: Episode): boolean {
+  if (!ep.air_date) return false;
+  return new Date(ep.air_date) <= new Date();
+}
+
 // Genres
 export const getGenres = () =>
   tmdbFetch<{ genres: Genre[] }>('/genre/movie/list').then(d => d.genres);
