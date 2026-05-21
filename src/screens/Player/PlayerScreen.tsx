@@ -534,7 +534,14 @@ export function PlayerScreen() {
   const changeSpeed = async (s: number) => {
     setSpeed(s);
     setShowSpeedPanel(false);
-    await videoRef.current?.setRateAsync(s, true);
+    // expo-av occasionally swallows setRateAsync if called during a state-
+    // transition tick. Belt-and-suspenders: try now AND again after the
+    // next render flush. shouldCorrectPitch=true keeps voice natural at
+    // non-1x speeds.
+    try { await videoRef.current?.setRateAsync(s, true); } catch {}
+    setTimeout(() => {
+      videoRef.current?.setRateAsync(s, true).catch(() => {});
+    }, 150);
   };
 
   // Actually re-fetch the stream when translator changes
@@ -640,6 +647,19 @@ export function PlayerScreen() {
           savePosition(movieId, `tv_s${currentSeason}e${currentEpisode}`, pos / 1000, dur / 1000);
         }
 
+        // Reset position refs IMMEDIATELY so the periodic save timer (which
+        // runs on intervals and reads positionRef directly) doesn't write
+        // the previous episode's position under the new episode key. This
+        // was the root of "next episode starts from previous episode time"
+        // bug: timer fired between state updates and saved 120s under
+        // `tv_s${newSeason}e${newEpisode}`, then resume-modal asked to
+        // continue from 2 min on a freshly-opened episode.
+        positionRef.current = 0;
+        durationRef.current = 0;
+
+        // Mark resumeChecked=true so the resume modal does NOT fire for a
+        // brand-new episode the user just chose explicitly — autoplay /
+        // manual "next" both mean: start from 0.
         setStreamData(data);
         setCurrentQuality(data.quality);
         setCurrentSeason(season);
@@ -647,7 +667,8 @@ export function PlayerScreen() {
         setTitle(`${baseTitle || initialTitle.replace(/\sS\d+E\d+$/, '')} S${season}E${episode}`);
         setPosition(0);
         setIsBuffering(true);
-        setResumeChecked(false); // re-check resume for new episode
+        setResumeChecked(true); // skip resume modal — new episode = start from 0
+        autoplayTriggeredRef.current = false; // re-arm autoplay for this new ep
 
         // Try to keep the same translator if available in new stream
         if (currentTranslator) {
@@ -786,7 +807,7 @@ export function PlayerScreen() {
     <View style={styles.container}>
       <Video
         ref={videoRef}
-        key={`${currentQuality}_${currentTranslator?.id}`}
+        key={`${currentQuality}_${currentTranslator?.id}_${currentSeason}_${currentEpisode}`}
         source={{ uri: currentUrl }}
         style={StyleSheet.absoluteFill}
         resizeMode={ResizeMode.CONTAIN}
