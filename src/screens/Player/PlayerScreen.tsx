@@ -213,21 +213,30 @@ export function PlayerScreen() {
   useEffect(() => { durationRef.current = duration; }, [duration]);
   useEffect(() => { qualityRef.current = currentQuality; }, [currentQuality]);
 
-  // Orientation lock + immersive mode
+  // Orientation lock + immersive mode.
+  //
+  // CRITICAL: every native call below MUST be .catch()'d. On Android 15+
+  // (and after our MainActivity.finishAndRemoveTask() in PiP-close path),
+  // the platform sometimes rejects these calls when the activity's native
+  // state is inconsistent — and an unhandled promise rejection kills the
+  // JS engine, blanking the WHOLE app. Best-effort tweaks should never
+  // crash the app. Rejection telemetry was visible in GlitchTip:
+  //   "ExpoScreenOrientation.lockAsync has been rejected"
+  //   "ExpoNavigationBar.setVisibilityAsync has been rejected"
   useEffect(() => {
     mountedRef.current = true;
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-    StatusBar.setHidden(true);
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    try { StatusBar.setHidden(true); } catch {}
     if (Platform.OS === 'android') {
-      NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('overlay-swipe');
+      NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+      NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
     }
     return () => {
       mountedRef.current = false;
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      StatusBar.setHidden(false);
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+      try { StatusBar.setHidden(false); } catch {}
       if (Platform.OS === 'android') {
-        NavigationBar.setVisibilityAsync('visible');
+        NavigationBar.setVisibilityAsync('visible').catch(() => {});
       }
     };
   }, []);
