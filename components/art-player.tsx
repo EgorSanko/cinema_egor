@@ -168,13 +168,20 @@ function buildQualitySetting(
 }
 
 function buildSpeedSetting(art: Artplayer) {
+  // Pre-mark the current rate as `default: true` so ArtPlayer's setting
+  // shows the right initial tooltip + checkmark. Without this, the menu
+  // always opens with "Обычная" selected even after the user changed
+  // speed (because the SPEEDS array is shared and we mutate it below to
+  // keep state in sync).
+  const cur = art.playbackRate || 1;
+  const selector = SPEEDS.map(s => ({ ...s, default: s.value === cur }));
   return {
     name: "kino-speed",
     html: "Скорость",
-    tooltip: "Обычная",
+    tooltip: (selector.find(s => s.default) || SPEEDS[2]).html,
     icon: ICON_SPEED,
     width: 180,
-    selector: SPEEDS,
+    selector,
     onSelect: function (item: any) {
       art.playbackRate = item.value;
       return item.html;
@@ -313,6 +320,19 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     setTimeout(tryResume, 100);
     setTimeout(tryResume, 500);
 
+    // Keep the "Скорость" setting tooltip in sync with the actual playback
+    // rate. ArtPlayer's setting tooltip is set once at render — it doesn't
+    // auto-update on selector picks or external rate changes. We rebuild
+    // the whole setting on every ratechange so the parent row reflects
+    // the current speed (e.g. "1.5×" instead of stale "Обычная").
+    const onRateChange = () => {
+      try {
+        art.setting.remove("kino-speed");
+        art.setting.add(buildSpeedSetting(art));
+      } catch {}
+    };
+    art.video.addEventListener("ratechange", onRateChange);
+
     // Resume HLS load when tab becomes visible again
     const onVis = () => {
       if (document.visibilityState !== "visible") return;
@@ -329,6 +349,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
       art.video?.removeEventListener("loadedmetadata", tryResume);
       art.video?.removeEventListener("durationchange", tryResume);
       art.video?.removeEventListener("canplay", tryResume);
+      art.video?.removeEventListener("ratechange", onRateChange);
       onVideoUnmount?.();
       if (hlsRef.current) {
         try { hlsRef.current.destroy(); } catch {}
@@ -340,15 +361,22 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stream URL change — switch source preserving currentTime
+  // Stream URL change — switch source. Always start from 0 on a fresh
+  // source UNLESS the parent passes resumeTime (saved position to seek
+  // to). The previous behavior tried to preserve currentTime across
+  // switches, which caused the "next episode starts where previous one
+  // stopped" bug. Quality switches will now lose position too — accept
+  // this trade-off since quality changes are rare and the episode-switch
+  // bug was a much more visible regression.
   React.useEffect(() => {
     const art = artRef.current;
     if (!art || !streamUrl) return;
     if (art.url === streamUrl) return;
-    const t = art.currentTime;
     const wasPlaying = !art.video.paused;
+    // Reset resume guard so the loadedmetadata listener will re-seek to
+    // the new resumeTime (if any) when the fresh source loads.
+    resumeOnceRef.current = false;
     art.switchUrl(streamUrl).then(() => {
-      art.currentTime = t;
       if (wasPlaying) art.play().catch(() => {});
     });
   }, [streamUrl]);
