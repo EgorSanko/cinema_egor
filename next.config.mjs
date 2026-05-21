@@ -1,4 +1,6 @@
-﻿/** @type {import('next').NextConfig} */
+﻿import { withSentryConfig } from "@sentry/nextjs";
+
+/** @type {import('next').NextConfig} */
 const nextConfig = {
 	output: 'standalone',
 	// Prevent cross-origin warnings/errors when accessing dev server from a phone on LAN.
@@ -22,4 +24,13 @@ const nextConfig = {
 	},
 };
 
-export default nextConfig;
+// Sentry/GlitchTip wrapper — pulls sentry.client.config.ts into the client
+// bundle and wires up the SDK. Source-map upload disabled (GlitchTip
+// doesn't need it and it would require auth token).
+export default withSentryConfig(nextConfig, {
+	silent: true,
+	disableLogger: true,
+	sourcemaps: { disable: true },
+	tunnelRoute: undefined,
+	hideSourceMaps: true,
+});

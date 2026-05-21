@@ -2,13 +2,18 @@
 
 import type { MovieDetails } from "@/lib/tmdb";
 import { SendToTV } from './send-to-tv';
-import { Play, Film, ChevronDown, Mic, Clock, CalendarDays, Users } from "lucide-react";
+import {
+  Play, Film, ChevronDown, Mic, Clock, CalendarDays, Users,
+  Tv as TvIcon, Subtitles, Maximize,
+} from "lucide-react";
+import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { TrailerButton } from "./trailer-modal";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
+import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -17,6 +22,7 @@ interface MoviePlayerProps {
 interface Translator {
   id: number;
   name: string;
+  is_premium?: boolean;
 }
 
 export function MoviePlayer({ movie }: MoviePlayerProps) {
@@ -32,10 +38,25 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
   const [showTranslators, setShowTranslators] = useState(false);
   const [translatorLoading, setTranslatorLoading] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [subtitles, setSubtitles] = useState<ArtSubtitle[]>([]);
+  const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
+  const subsFetchedRef = useRef(false);
+
+  const fetchSubtitles = useCallback(async () => {
+    if (subsFetchedRef.current) return;
+    subsFetchedRef.current = true;
+    try {
+      const res = await fetch(`/api/subtitles?tmdb=${movie.id}`);
+      const data = await res.json();
+      setSubtitles(data.subs || []);
+    } catch {
+      setSubtitles([]);
+    }
+  }, [movie.id]);
 
   const isNotReleased = movie.release_date ? new Date(movie.release_date) > new Date() : false;
   const releaseStr = movie.release_date ? new Date(movie.release_date).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }) : "";
@@ -98,16 +119,39 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     if (isNotReleased) return;
     setLoading(true);
     setError("");
-    if (!translatorId) setStreamData(null);
+    // Fallback chain — explicit arg > state > localStorage. Storage read covers
+    // the race where the play button is tapped before the initial restore effect
+    // sets selectedTranslator state; without this the backend gets no
+    // translator_id and returns the default dub even though the label says
+    // "saved translator".
+    const effectiveTr = translatorId ?? selectedTranslator ?? getLastTranslator(movie.id, "movie")?.id ?? null;
+    if (effectiveTr && effectiveTr !== selectedTranslator) setSelectedTranslator(effectiveTr);
+    if (!effectiveTr) setStreamData(null);
     try {
       const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
-      const origTitle = ((movie as any).original_title || "").replace(/["'«»""]/g, "").trim();
-      const searchTitle = origTitle && /[a-z]/i.test(origTitle) ? origTitle : movie.title;
+      // HDRezka indexes Russian titles primarily — searching by the English
+      // `original_title` fails for Russian-language productions ("Normal" → no
+      // hit, "Нормал" → match). Use the localized title first, fall back to
+      // original only if the search returns nothing.
+      const origTitle = ((movie as any).original_title || "").replace(/["«»""]/g, "").trim();
+      const ruTitle = (movie.title || "").replace(/["«»""]/g, "").trim();
+      const searchTitle = ruTitle || origTitle;
       const q = encodeURIComponent(searchTitle);
-      const trParam = translatorId ? "&translator_id=" + translatorId : "";
+      const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
       const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam);
       const data = await res.json();
       if (data.stream) {
+        // Auto-skip HDRezka premium dubs on first play — they serve a 60-sec
+        // "buy subscription" pre-roll instead of the stream.
+        const playedId: number | undefined = effectiveTr ?? data.translators?.[0]?.id;
+        const playedIsPremium = data.translators?.find((t: any) => t.id === playedId)?.is_premium;
+        const freeAlt = data.translators?.find((t: any) => !t.is_premium);
+        if (!translatorId && playedIsPremium && freeAlt && freeAlt.id !== playedId) {
+          setTranslators(data.translators);
+          setSelectedTranslator(freeAlt.id);
+          saveLastTranslator(movie.id, "movie", freeAlt.id, freeAlt.name);
+          return fetchStream(freeAlt.id);
+        }
         setStreamData(data);
         setSelectedQuality(data.quality);
         if (data.translators && data.translators.length > 0 && translators.length === 0) {
@@ -116,7 +160,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
             setSelectedTranslator(data.translators[0].id);
           }
         }
-        const activeId = translatorId ?? selectedTranslator ?? data.translators?.[0]?.id;
+        const activeId = effectiveTr ?? data.translators?.[0]?.id;
         const activeName = data.translators?.find((t: any) => t.id === activeId)?.name;
         if (activeName) recordTranslatorTry(activeName);
         return;
@@ -134,11 +178,27 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                 setSelectedTranslator(data2.translators[0].id);
               }
             }
-            const activeId2 = translatorId ?? selectedTranslator ?? data2.translators?.[0]?.id;
+            const activeId2 = effectiveTr ?? data2.translators?.[0]?.id;
             const activeName2 = data2.translators?.find((t: any) => t.id === activeId2)?.name;
             if (activeName2) recordTranslatorTry(activeName2);
             return;
           }
+        }
+      }
+      // Fallback: if our primary (Russian) title returned nothing, retry with
+      // original_title. Covers titles HDRezka indexes only in English.
+      if (origTitle && origTitle !== ruTitle) {
+        const q2 = encodeURIComponent(origTitle);
+        const resAlt = await fetch("/hdrezka/api/search?q=" + q2 + "&year=" + year + "&type=movie" + trParam);
+        const dataAlt = await resAlt.json();
+        if (dataAlt.stream) {
+          setStreamData(dataAlt);
+          setSelectedQuality(dataAlt.quality);
+          if (dataAlt.translators && dataAlt.translators.length > 0 && translators.length === 0) {
+            setTranslators(dataAlt.translators);
+            if (!selectedTranslator) setSelectedTranslator(dataAlt.translators[0].id);
+          }
+          return;
         }
       }
       setError("Фильм пока недоступен для просмотра");
@@ -166,39 +226,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     }, 500);
   };
 
-  const loadStream = (url: string, seekTo?: number) => {
-    if (!videoRef.current) return;
-    const video = videoRef.current;
-    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-    if (url.includes(".m3u8") && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true });
-      hlsRef.current = hls;
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (seekTo && seekTo > 0) video.currentTime = seekTo;
-        video.play().catch(() => {});
-        startSaving();
-      });
-    } else {
-      video.src = url;
-      if (seekTo && seekTo > 0) video.currentTime = seekTo;
-      video.play().catch(() => {});
-      startSaving();
-    }
-  };
-
+  // HLS loading + recovery + visibilitychange resume live inside ArtPlayerView now.
   useEffect(() => {
-    if (streamData?.stream && videoRef.current) {
-      if (resumeTime && resumeTime > 10 && !translatorLoading) {
-        setShowResume(true);
-        loadStream(streamData.stream);
-      } else {
-        loadStream(streamData.stream);
-      }
-    }
-    return () => { if (hlsRef.current) hlsRef.current.destroy(); };
-  }, [streamData]);
+    if (!streamData?.stream) return;
+    if (resumeTime && resumeTime > 10 && !translatorLoading) setShowResume(true);
+  }, [streamData, resumeTime, translatorLoading]);
 
   const handleResume = () => {
     if (videoRef.current && resumeTime) {
@@ -214,9 +246,8 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
   const changeQuality = (q: string) => {
     if (!streamData?.streams?.[q]) return;
-    const time = videoRef.current?.currentTime || 0;
     setSelectedQuality(q);
-    loadStream(streamData.streams[q], time);
+    setStreamData((prev: any) => prev ? { ...prev, stream: prev.streams[q] } : prev);
   };
 
   const toggleFullscreen = () => {
@@ -256,7 +287,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
   return (
     <div className="relative w-full">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className={cssFullscreen
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
@@ -331,7 +362,26 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
             </div>
           ) : streamData ? (
             <>
-              <video ref={videoRef} className={cssFullscreen ? "w-full h-full" : "w-full h-full bg-black"} controls playsInline />
+              <ArtPlayerView
+                streamUrl={streamData.stream}
+                qualities={streamData.streams}
+                selectedQuality={selectedQuality}
+                onQualityChange={changeQuality}
+                translators={translators}
+                selectedTranslator={selectedTranslator}
+                onTranslatorChange={changeTranslator}
+                subtitles={subtitles}
+                selectedSubtitleId={selectedSubtitleId}
+                onSubtitleChange={setSelectedSubtitleId}
+                onLoadSubtitles={fetchSubtitles}
+                resumeTime={resumeTime || undefined}
+                onVideoReady={(v) => {
+                  videoRef.current = v;
+                  startSaving();
+                  // Resume is handled inside ArtPlayerView (loadedmetadata).
+                }}
+                onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
+              />
               {translatorLoading && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
                   <div className="flex flex-col items-center gap-3">
@@ -340,7 +390,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   </div>
                 </div>
               )}
-              {showResume && (
+              {false && showResume && (
                 <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 backdrop-blur-sm">
                   <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
                     <p className="text-white text-lg font-semibold">Продолжить просмотр?</p>
@@ -363,70 +413,119 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           ) : null}
         </div>
 
-        {showPlayer && streamData && !cssFullscreen && (
-          <div className="mt-4 flex items-center gap-3 flex-wrap">
-            {translators.length > 1 && (
-              <div className="relative" ref={translatorRef}>
-                <button onClick={() => setShowTranslators(!showTranslators)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-800/80 hover:bg-gray-700 rounded-xl text-sm font-medium text-white transition-colors border border-white/10 backdrop-blur">
-                  <Mic size={14} />
-                  <span className="max-w-[150px] truncate">{getTranslatorName()}</span>
-                  <ChevronDown size={14} className={"transition-transform " + (showTranslators ? "rotate-180" : "")} />
-                </button>
-                {showTranslators && (
-                  <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 backdrop-blur border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 min-w-[220px] max-h-[300px] overflow-y-auto">
-                    {translators.map((t) => (
-                      <button key={t.id + "-" + t.name} onClick={() => changeTranslator(t.id)}
-                        className={"w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 " +
-                          (selectedTranslator === t.id ? "text-primary bg-primary/5" : "text-gray-300")}>
-                        {selectedTranslator === t.id ? "\u2713 " : ""}{t.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {streamData && <SendToTV streamData={{ stream: streamData.stream, quality: selectedQuality, streams: streamData.streams, title: streamData.title, translators, selectedTranslator, searchQuery: movie.title, year: movie.release_date ? new Date(movie.release_date).getFullYear().toString() : "", isSeries: false, mediaId: movie.id, mediaType: "movie", poster_path: movie.poster_path, vote_average: movie.vote_average, release_date: movie.release_date }} />}
-            <Link href={`/watch/create?q=${encodeURIComponent(movie.title)}&id=${movie.id}&type=movie&year=${movie.release_date ? new Date(movie.release_date).getFullYear() : ""}&poster=${movie.poster_path || ""}`}
-              className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 hover:bg-purple-500/20 rounded-xl text-sm font-medium text-purple-300 transition-colors border border-purple-500/20">
-              <Users size={16} />
-              Вместе
-            </Link>
-            {streamData.streams && Object.keys(streamData.streams).map((q: string) => (
-              <button key={q} onClick={() => changeQuality(q)}
-                className={"px-4 py-2.5 rounded-xl text-sm font-medium transition-colors border " +
-                  (selectedQuality === q ? "bg-primary text-white border-primary" : "bg-gray-800/80 text-gray-300 border-white/10 hover:bg-gray-700")}>
-                {q}
-              </button>
-            ))}
-            <button onClick={toggleFullscreen}
-              className="px-4 py-2.5 rounded-xl text-sm font-medium bg-gray-800/80 text-gray-300 border border-white/10 hover:bg-gray-700 transition-colors">
-              На весь экран
-            </button>
-            {streamData?.title && <span className="px-4 py-2.5 bg-gray-800/50 rounded-xl text-sm text-gray-400 border border-white/5">{streamData.title}</span>}
-          </div>
-        )}
 
         {!cssFullscreen && (
-          <div className="mt-8 space-y-4">
-            <div className="flex items-center gap-4">
-              <h1 className="text-4xl font-bold text-foreground tracking-tight">{movie.title}</h1>
-              <FavoriteButton size="md" item={{
-                id: movie.id, type: "movie", title: movie.title,
-                poster_path: movie.poster_path, vote_average: movie.vote_average,
-                release_date: movie.release_date, addedAt: Date.now(),
-              }} />
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="bg-gray-800 px-4 py-2 rounded-xl text-gray-300">{new Date(movie.release_date).toLocaleDateString("ru-RU")}</span>
-              {movie.runtime > 0 && <span className="bg-gray-800 px-4 py-2 rounded-xl text-gray-300">{movie.runtime + " мин"}</span>}
-              <span className="bg-gray-800 px-4 py-2 rounded-xl text-gray-300">{movie.vote_average.toFixed(1) + "/10"}</span>
-            </div>
-          </div>
+          <>
+            {/* === INFO CARD === */}
+            <section className="mt-7 grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] gap-5 sm:gap-7">
+              <div className="rounded-2xl overflow-hidden ring-1 ring-white/[0.08] shadow-2xl shadow-black/40 aspect-[2/3] bg-foreground/[0.04]">
+                {movie.poster_path && (
+                  <img
+                    src={getImageUrl(movie.poster_path, "w342")}
+                    alt={movie.title}
+                    className="w-full h-full object-cover"
+                  />
+                )}
+              </div>
+              <div className="space-y-3.5 min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-2xl sm:text-4xl font-bold text-foreground tracking-tight">{movie.title}</h1>
+                  <FavoriteButton size="md" item={{
+                    id: movie.id, type: "movie", title: movie.title,
+                    poster_path: movie.poster_path, vote_average: movie.vote_average,
+                    release_date: movie.release_date, addedAt: Date.now(),
+                  }} />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                  {movie.release_date && (
+                    <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">
+                      {new Date(movie.release_date).getFullYear()}
+                    </span>
+                  )}
+                  {movie.runtime > 0 && (
+                    <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">
+                      {movie.runtime}{" мин"}
+                    </span>
+                  )}
+                  <span className="px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/25 font-semibold">
+                    {"★ " + movie.vote_average.toFixed(1)}
+                  </span>
+                  {movie.genres && movie.genres.slice(0, 2).map(g => (
+                    <span key={g.id} className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">{g.name}</span>
+                  ))}
+                </div>
+
+                {movie.overview && (
+                  <p className="text-foreground/65 text-[13px] sm:text-[14px] leading-relaxed line-clamp-2 max-w-2xl">{movie.overview}</p>
+                )}
+
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <button
+                    onClick={() => {
+                      if (isNotReleased) return;
+                      if (!showPlayer) { setShowPlayer(true); fetchStream(); }
+                      else if (resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
+                    }}
+                    disabled={isNotReleased}
+                    className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isNotReleased ? (
+                      <><CalendarDays size={15} /> {"Скоро в кино"}</>
+                    ) : (
+                      <><Play size={15} fill="currentColor" /> {resumeTime ? "Продолжить просмотр" : "Смотреть"}</>
+                    )}
+                  </button>
+                  {streamData && (
+                    <SendToTV
+                      streamData={{
+                        stream: streamData.stream, quality: selectedQuality, streams: streamData.streams,
+                        title: streamData.title || movie.title,
+                        translators, selectedTranslator,
+                        searchQuery: movie.title,
+                        year: movie.release_date ? new Date(movie.release_date).getFullYear().toString() : "",
+                        isSeries: false,
+                        mediaId: movie.id, mediaType: "movie",
+                        poster_path: movie.poster_path, vote_average: movie.vote_average,
+                        release_date: movie.release_date,
+                      }}
+                    />
+                  )}
+                  <Link
+                    href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
+                    className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
+                    title="Смотреть вместе"
+                  >
+                    <Users size={14} /> {"Вместе"}
+                  </Link>
+                </div>
+
+                {/* Progress bar if any */}
+                {resumeTime && resumeTime > 10 && (() => {
+                  const sp = getPosition(movie.id, "movie");
+                  if (!sp || sp.duration <= 0) return null;
+                  const progress = Math.min(100, (sp.time / sp.duration) * 100);
+                  const remainingMin = Math.ceil(Math.max(0, sp.duration - sp.time) / 60);
+                  return (
+                    <div className="pt-3 max-w-2xl">
+                      <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary rounded-full transition-all duration-500"
+                          style={{ width: progress + "%" }}
+                        />
+                      </div>
+                      <p className="mt-1.5 text-foreground/50 text-[11px] text-right">{"Осталось " + remainingMin + " мин"}</p>
+                    </div>
+                  );
+                })()}
+              </div>
+            </section>
+
+            {/* Player options (Озвучка / Субтитры / Качество / Скорость) moved INTO
+                the ArtPlayer settings menu (gear icon, bottom-right of the player). */}
+          </>
         )}
       </div>
     </div>
   );
 }
-
-

@@ -2,13 +2,19 @@
 import { SendToTV } from './send-to-tv';
 
 import type { TVShowDetails } from "@/lib/tmdb";
-import { Play, Film, ChevronDown, Mic, Users } from "lucide-react";
+import {
+  Play, Film, ChevronDown, Mic, Users, Tv as TvIcon, Subtitles, Settings, MoreHorizontal,
+  ChevronLeft, ChevronRight, Maximize, SkipForward, Heart, Plus,
+} from "lucide-react";
+import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { TrailerButton } from "./trailer-modal";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
+import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
 interface TVPlayerProps {
   show: TVShowDetails;
@@ -29,9 +35,12 @@ interface Episode {
 interface Translator {
   id: number;
   name: string;
+  is_premium?: boolean;
 }
 
 export function TVPlayer({ show }: TVPlayerProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [showPlayer, setShowPlayer] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -50,12 +59,15 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
   const [showTranslators, setShowTranslators] = useState(false);
   const [translatorLoading, setTranslatorLoading] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [subtitles, setSubtitles] = useState<ArtSubtitle[]>([]);
+  const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
   const autoplayTriggeredRef = useRef(false);
+  const subsFetchedKeyRef = useRef<string>("");
 
   const validSeasons = show.seasons?.filter(s => s.season_number > 0) || [];
 
@@ -150,22 +162,43 @@ export function TVPlayer({ show }: TVPlayerProps) {
       } catch { setEpisodes([]); }
       finally { setLoadingEpisodes(false); }
     };
-    if (showPlayer) loadEpisodes();
-  }, [selectedSeason, showPlayer, show.id]);
+    loadEpisodes();
+  }, [selectedSeason, show.id]);
 
   const fetchStream = async (season: number, episode: number, translatorId?: number | null) => {
     setLoading(true);
     setError("");
-    if (!translatorId) setStreamData(null);
+    // Fallback chain — explicit arg > state > localStorage. Storage read covers
+    // the race where the play button is tapped before the initial restore effect
+    // sets selectedTranslator; without this the backend gets no translator_id
+    // and returns the default dub even though the label shows the saved one.
+    const effectiveTr = translatorId ?? selectedTranslator ?? getLastTranslator(show.id, "tv")?.id ?? null;
+    if (effectiveTr && effectiveTr !== selectedTranslator) setSelectedTranslator(effectiveTr);
+    if (!effectiveTr) setStreamData(null);
     try {
       const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
-      const origName = ((show as any).original_name || "").replace(/["'«»""]/g, "").trim();
-      const searchName = origName && /[a-z]/i.test(origName) ? origName : show.name;
+      // HDRezka indexes Russian titles primarily — see the matching block in
+      // movie-player.tsx for full context. Use localized first, fallback to
+      // English original_name only if no result.
+      const origName = ((show as any).original_name || "").replace(/["«»""]/g, "").trim();
+      const ruName = (show.name || "").replace(/["«»""]/g, "").trim();
+      const searchName = ruName || origName;
       const q = encodeURIComponent(searchName);
-      const trParam = translatorId ? "&translator_id=" + translatorId : "";
+      const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
       const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam);
       const data = await res.json();
       if (data.stream) {
+        // If we got a premium dub by default (no explicit choice), retry with the
+        // first non-premium translator — avoids the 60-sec HDRezka "buy" pre-roll.
+        const playedId: number | undefined = effectiveTr ?? data.translators?.[0]?.id;
+        const playedIsPremium = data.translators?.find((t: any) => t.id === playedId)?.is_premium;
+        const freeAlt = data.translators?.find((t: any) => !t.is_premium);
+        if (!translatorId && playedIsPremium && freeAlt && freeAlt.id !== playedId) {
+          setTranslators(data.translators);
+          setSelectedTranslator(freeAlt.id);
+          saveLastTranslator(show.id, "tv", freeAlt.id, freeAlt.name);
+          return fetchStream(season, episode, freeAlt.id);
+        }
         setStreamData(data);
         setSelectedQuality(data.quality);
         if (data.translators && data.translators.length > 0 && translators.length === 0) {
@@ -175,7 +208,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
           }
         }
         // Track which dub user is actually watching with — counts toward Polyglot
-        const activeId = translatorId ?? selectedTranslator ?? data.translators?.[0]?.id;
+        const activeId = effectiveTr ?? data.translators?.[0]?.id;
         const activeName = data.translators?.find((t: any) => t.id === activeId)?.name;
         if (activeName) recordTranslatorTry(activeName);
         return;
@@ -193,7 +226,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 setSelectedTranslator(data2.translators[0].id);
               }
             }
-            const activeId2 = translatorId ?? selectedTranslator ?? data2.translators?.[0]?.id;
+            const activeId2 = effectiveTr ?? data2.translators?.[0]?.id;
             const activeName2 = data2.translators?.find((t: any) => t.id === activeId2)?.name;
             if (activeName2) recordTranslatorTry(activeName2);
             return;
@@ -204,6 +237,31 @@ export function TVPlayer({ show }: TVPlayerProps) {
     } catch { setError("Сервер не отвечает"); }
     finally { setLoading(false); setTranslatorLoading(false); }
   };
+
+  const fetchSubtitles = useCallback(async () => {
+    const key = `${show.id}/${selectedSeason}/${selectedEpisode}`;
+    if (subsFetchedKeyRef.current === key) return;
+    subsFetchedKeyRef.current = key;
+    try {
+      const params = new URLSearchParams({
+        tmdb: String(show.id),
+        season: String(selectedSeason),
+        episode: String(selectedEpisode),
+      });
+      const res = await fetch(`/api/subtitles?${params}`);
+      const data = await res.json();
+      setSubtitles(data.subs || []);
+    } catch {
+      setSubtitles([]);
+    }
+  }, [show.id, selectedSeason, selectedEpisode]);
+
+  // Reset subtitles on episode change
+  useEffect(() => {
+    setSelectedSubtitleId(null);
+    setSubtitles([]);
+    subsFetchedKeyRef.current = "";
+  }, [selectedSeason, selectedEpisode]);
 
   const changeTranslator = async (trId: number) => {
     if (trId === selectedTranslator) { setShowTranslators(false); return; }
@@ -221,40 +279,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }, 500);
   };
 
-  const loadStream = (url: string, seekTo?: number) => {
-    if (!videoRef.current) return;
-    const video = videoRef.current;
-    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-    if (url.includes(".m3u8") && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true });
-      hlsRef.current = hls;
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (seekTo && seekTo > 0) video.currentTime = seekTo;
-        video.play().catch(() => {});
-        startSaving();
-      });
-    } else {
-      video.src = url;
-      if (seekTo && seekTo > 0) video.currentTime = seekTo;
-      video.play().catch(() => {});
-      startSaving();
-    }
-  };
-
+  // HLS loading + recovery + visibilitychange resume all live inside ArtPlayerView now.
+  // The resume-time prompt still uses parent state — once stream is ready, ArtPlayer
+  // jumps to the saved position automatically via the `resumeTime` prop.
   useEffect(() => {
-    if (streamData?.stream && videoRef.current) {
-      const pos = getPosition(show.id, "tv", selectedSeason, selectedEpisode);
-      if (pos && pos.time > 10 && !translatorLoading) {
-        setShowResume(true);
-        loadStream(streamData.stream);
-      } else {
-        loadStream(streamData.stream);
-      }
+    if (!streamData?.stream) return;
+    const pos = getPosition(show.id, "tv", selectedSeason, selectedEpisode);
+    if (pos && pos.time > 10 && !translatorLoading) {
+      setShowResume(true);
     }
-    return () => { if (hlsRef.current) hlsRef.current.destroy(); };
-  }, [streamData]);
+  }, [streamData, show.id, selectedSeason, selectedEpisode, translatorLoading]);
 
   const handleResume = () => {
     if (videoRef.current && resumeTime) videoRef.current.currentTime = resumeTime;
@@ -268,9 +302,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
 
   const changeQuality = (q: string) => {
     if (!streamData?.streams?.[q]) return;
-    const time = videoRef.current?.currentTime || 0;
+    // ArtPlayer picks up the new stream URL via the streamUrl prop change.
     setSelectedQuality(q);
-    loadStream(streamData.streams[q], time);
+    setStreamData((prev: any) => prev ? { ...prev, stream: prev.streams[q] } : prev);
   };
 
   const selectEpisode = (season: number, episode: number) => {
@@ -280,6 +314,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setShowSeasons(false);
     setShowResume(false);
     setResumeTime(null);
+    // Sync URL so bookmarks/back-button match the currently-playing episode
+    try { router.replace(`${pathname}?s=${season}&e=${episode}`, { scroll: false }); } catch {}
     fetchStream(season, episode, selectedTranslator);
   };
 
@@ -298,9 +334,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     if (currentEpIndex >= 0 && currentEpIndex < releasedEpisodes.length - 1) {
       selectEpisode(selectedSeason, releasedEpisodes[currentEpIndex + 1].episode_number);
     } else if (selectedSeason < validSeasons.length) {
-      setSelectedSeason(selectedSeason + 1);
-      setSelectedEpisode(1);
-      fetchStream(selectedSeason + 1, 1, selectedTranslator);
+      selectEpisode(selectedSeason + 1, 1);
     }
   };
 
@@ -401,7 +435,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
 
   return (
     <div className="relative w-full">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div ref={containerRef} className={cssFullscreen
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
@@ -456,7 +490,29 @@ export function TVPlayer({ show }: TVPlayerProps) {
             </div>
           ) : streamData ? (
             <>
-              <video ref={videoRef} className={cssFullscreen ? "w-full h-full" : "w-full h-full bg-black"} controls playsInline />
+              <ArtPlayerView
+                streamUrl={streamData.stream}
+                qualities={streamData.streams}
+                selectedQuality={selectedQuality}
+                onQualityChange={changeQuality}
+                translators={translators}
+                selectedTranslator={selectedTranslator}
+                onTranslatorChange={changeTranslator}
+                subtitles={subtitles}
+                selectedSubtitleId={selectedSubtitleId}
+                onSubtitleChange={setSelectedSubtitleId}
+                onLoadSubtitles={fetchSubtitles}
+                resumeTime={resumeTime || undefined}
+                onVideoReady={(v) => {
+                  videoRef.current = v;
+                  startSaving();
+                  // Auto-resume now happens inside ArtPlayerView via the
+                  // `resumeTime` prop + a loadedmetadata listener. Setting
+                  // currentTime here used to fire too early (before MSE
+                  // attaches) and got reset to 0 by the source swap.
+                }}
+                onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
+              />
               {translatorLoading && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
                   <div className="flex flex-col items-center gap-3">
@@ -465,7 +521,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   </div>
                 </div>
               )}
-              {showResume && (
+              {false && showResume && (
                 <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 backdrop-blur-sm">
                   <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
                     <p className="text-white text-lg font-semibold">Продолжить просмотр?</p>
@@ -484,118 +540,239 @@ export function TVPlayer({ show }: TVPlayerProps) {
           ) : null}
         </div>
 
-        {showPlayer && (
-          <div className="mt-4 flex items-center gap-3 flex-wrap">
-            {streamData && <SendToTV streamData={{ stream: streamData.stream, quality: selectedQuality, streams: streamData.streams, title: show.name + " S" + selectedSeason + "E" + selectedEpisode, translators, selectedTranslator, searchQuery: show.name, year: show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : "", season: selectedSeason, episode: selectedEpisode, isSeries: true, totalSeasons: validSeasons.length, totalEpisodes: episodes.length, mediaId: show.id, mediaType: "tv", poster_path: show.poster_path, vote_average: show.vote_average, first_air_date: show.first_air_date, episodeName: episodes.find(e => e.episode_number === selectedEpisode)?.name || "" }} />}
-            <Link href={`/watch/create?q=${encodeURIComponent(show.name)}&id=${show.id}&type=tv&year=${show.first_air_date ? new Date(show.first_air_date).getFullYear() : ""}&poster=${show.poster_path || ""}`}
-              className="flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 hover:bg-purple-500/20 rounded-xl text-sm font-medium text-purple-300 transition-colors border border-purple-500/20">
-              <Users size={16} />
-              Вместе
-            </Link>
-            {translators.length > 1 && (
-              <div className="relative" ref={translatorRef}>
-                <button onClick={() => { setShowTranslators(!showTranslators); setShowSeasons(false); setShowEpisodes(false); }}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-800/80 hover:bg-gray-700 rounded-xl text-sm font-medium text-white transition-colors border border-white/10 backdrop-blur">
-                  <Mic size={14} />
-                  <span className="max-w-[150px] truncate">{getTranslatorName()}</span>
-                  <ChevronDown size={14} className={"transition-transform " + (showTranslators ? "rotate-180" : "")} />
-                </button>
-                {showTranslators && (
-                  <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 backdrop-blur border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 min-w-[220px] max-h-[300px] overflow-y-auto">
-                    {translators.map((t) => (
-                      <button key={t.id + "-" + t.name} onClick={() => changeTranslator(t.id)}
-                        className={"w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 " +
-                          (selectedTranslator === t.id ? "text-primary bg-primary/5" : "text-gray-300")}>
-                        {selectedTranslator === t.id ? "\u2713 " : ""}{t.name}
-                      </button>
-                    ))}
-                  </div>
+
+        {!cssFullscreen && (
+          <>
+            {/* === INFO CARD: poster + title + meta + buttons + current episode progress === */}
+            <section className="mt-7 grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] gap-5 sm:gap-7">
+              {/* Poster */}
+              <div className="rounded-2xl overflow-hidden ring-1 ring-white/[0.08] shadow-2xl shadow-black/40 aspect-[2/3] bg-foreground/[0.04]">
+                {show.poster_path && (
+                  <img
+                    src={getImageUrl(show.poster_path, "w342")}
+                    alt={show.name}
+                    className="w-full h-full object-cover"
+                  />
                 )}
               </div>
-            )}
-            <div className="relative">
-              <button onClick={() => { setShowSeasons(!showSeasons); setShowEpisodes(false); setShowTranslators(false); }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gray-800/80 hover:bg-gray-700 rounded-xl text-sm font-medium text-white transition-colors border border-white/10">
-                {"Сезон " + selectedSeason}
-                <ChevronDown size={16} className={"transition-transform " + (showSeasons ? "rotate-180" : "")} />
-              </button>
-              {showSeasons && (
-                <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 backdrop-blur border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 min-w-[180px] max-h-[300px] overflow-y-auto">
-                  {validSeasons.map(s => (
-                    <button key={s.season_number} onClick={() => { setSelectedSeason(s.season_number); setSelectedEpisode(1); setShowSeasons(false); }}
-                      className={"w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 " +
-                        (selectedSeason === s.season_number ? "text-primary font-semibold" : "text-gray-300")}>
-                      {"Сезон " + s.season_number + " (" + s.episode_count + " серий)"}
+
+              {/* Right column */}
+              <div className="space-y-3.5 min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-2xl sm:text-4xl font-bold text-foreground tracking-tight">{show.name}</h1>
+                  <FavoriteButton size="md" item={{
+                    id: show.id, type: "tv", title: show.name,
+                    poster_path: show.poster_path, vote_average: show.vote_average,
+                    first_air_date: show.first_air_date, addedAt: Date.now(),
+                  }} />
+                </div>
+
+                {/* Meta row */}
+                <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                  {show.first_air_date && (
+                    <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">
+                      {new Date(show.first_air_date).getFullYear()}
+                      {(show as any).last_air_date && new Date((show as any).last_air_date).getFullYear() !== new Date(show.first_air_date).getFullYear()
+                        ? " – " + new Date((show as any).last_air_date).getFullYear()
+                        : ""}
+                    </span>
+                  )}
+                  <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">
+                    {show.number_of_seasons}{" "}{show.number_of_seasons === 1 ? "сезон" : show.number_of_seasons < 5 ? "сезона" : "сезонов"}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">
+                    {show.number_of_episodes}{" серий"}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/25 font-semibold">
+                    {"★ " + show.vote_average.toFixed(1)}
+                  </span>
+                </div>
+
+                {show.overview && (
+                  <p className="text-foreground/65 text-[13px] sm:text-[14px] leading-relaxed line-clamp-2 max-w-2xl">{show.overview}</p>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <button
+                    onClick={() => {
+                      if (!showPlayer) {
+                        setShowPlayer(true);
+                        // fetchStream itself falls back to storage when translatorId
+                        // is null — covers fast-tap race before restore effect runs.
+                        fetchStream(selectedSeason, selectedEpisode, selectedTranslator);
+                      } else if (resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
+                    }}
+                    className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    <Play size={15} fill="currentColor" /> {resumeTime ? "Продолжить просмотр" : "Смотреть"}
+                  </button>
+                  <button
+                    onClick={() => { if (showPlayer) nextEpisode(); else { const n = nextEpisode; n(); setShowPlayer(true); } }}
+                    className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-foreground/[0.06] ring-1 ring-white/[0.08] text-foreground/85 hover:bg-foreground/[0.1] transition-colors text-[13px] font-medium"
+                  >
+                    <SkipForward size={15} /> {"Следующая серия"}
+                  </button>
+
+                  {/* Compact chips — feature shortcuts that used to live in the bottom options bar */}
+                  {streamData && (
+                    <SendToTV
+                      streamData={{
+                        stream: streamData.stream, quality: selectedQuality, streams: streamData.streams,
+                        title: show.name + " S" + selectedSeason + "E" + selectedEpisode,
+                        translators, selectedTranslator,
+                        searchQuery: show.name,
+                        year: show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : "",
+                        season: selectedSeason, episode: selectedEpisode, isSeries: true,
+                        totalSeasons: validSeasons.length, totalEpisodes: episodes.length,
+                        mediaId: show.id, mediaType: "tv",
+                        poster_path: show.poster_path, vote_average: show.vote_average,
+                        first_air_date: show.first_air_date,
+                        episodeName: episodes.find(e => e.episode_number === selectedEpisode)?.name || "",
+                      }}
+                    />
+                  )}
+                  <Link
+                    href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "")}
+                    className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
+                    title="Смотреть вместе"
+                  >
+                    <Users size={14} /> {"Вместе"}
+                  </Link>
+                </div>
+
+                {/* Current episode + progress */}
+                {(() => {
+                  const sp = getPosition(show.id, "tv", selectedSeason, selectedEpisode);
+                  const epName = episodes.find(e => e.episode_number === selectedEpisode)?.name || "";
+                  const progress = sp && sp.duration > 0 ? Math.min(100, (sp.time / sp.duration) * 100) : 0;
+                  const remainingSec = sp && sp.duration > 0 ? Math.max(0, sp.duration - sp.time) : 0;
+                  const remainingMin = Math.ceil(remainingSec / 60);
+                  return (
+                    <div className="pt-3 max-w-2xl">
+                      <p className="text-foreground/85 text-[13px] font-semibold">
+                        {"Сезон "}{selectedSeason}{", Серия "}{selectedEpisode}{epName ? ". " + epName : ""}
+                      </p>
+                      {progress > 0 && (
+                        <>
+                          <div className="mt-2 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all duration-500"
+                              style={{ width: progress + "%" }}
+                            />
+                          </div>
+                          <p className="mt-1.5 text-foreground/50 text-[11px] text-right">{"Осталось " + remainingMin + " мин"}</p>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </section>
+
+            {/* Player options (Озвучка / Субтитры / Качество / Скорость) moved INTO the ArtPlayer
+                settings menu (gear icon, bottom-right of the player). На ТВ + Вместе are above
+                next to "Смотреть". */}
+
+            {/* === EPISODES SECTION === */}
+            {validSeasons.length > 0 && (
+              <section className="mt-10">
+                <h2 className="text-2xl font-bold text-foreground tracking-tight mb-4">{"Эпизоды"}</h2>
+
+                {/* Season tabs */}
+                <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
+                  {validSeasons.map((s) => (
+                    <button
+                      key={s.season_number}
+                      onClick={() => selectEpisode(s.season_number, 1)}
+                      className={"flex-shrink-0 inline-flex items-center h-9 px-4 rounded-full text-[13px] transition-colors " + (
+                        selectedSeason === s.season_number
+                          ? "bg-primary/15 text-primary ring-1 ring-primary/30 font-semibold"
+                          : "bg-foreground/[0.04] text-foreground/65 ring-1 ring-white/[0.06] hover:bg-foreground/[0.07] hover:text-foreground"
+                      )}
+                    >
+                      {"Сезон "}{s.season_number}
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
-            <div className="relative">
-              <button onClick={() => { setShowEpisodes(!showEpisodes); setShowSeasons(false); setShowTranslators(false); }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gray-800/80 hover:bg-gray-700 rounded-xl text-sm font-medium text-white transition-colors border border-white/10">
-                {"Серия " + selectedEpisode + ": " + (currentEpisodeName.length > 20 ? currentEpisodeName.slice(0, 20) + "..." : currentEpisodeName)}
-                <ChevronDown size={16} className={"transition-transform " + (showEpisodes ? "rotate-180" : "")} />
-              </button>
-              {showEpisodes && (
-                <div className="absolute bottom-full left-0 mb-2 bg-gray-900/95 backdrop-blur border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 min-w-[300px] max-h-[300px] overflow-y-auto">
-                  {loadingEpisodes ? (
-                    <div className="px-4 py-6 text-center text-gray-400 text-sm">Загрузка...</div>
-                  ) : episodes.map(ep => {
-                    const released = !ep.air_date || new Date(ep.air_date) <= new Date();
-                    const airDateStr = ep.air_date ? new Date(ep.air_date).toLocaleDateString("ru-RU") : "";
-                    return (
-                      <button
-                        key={ep.episode_number}
-                        onClick={() => released && selectEpisode(selectedSeason, ep.episode_number)}
-                        disabled={!released}
-                        className={"w-full text-left px-4 py-3 text-sm transition-colors border-b border-white/5 last:border-0 " +
-                          (!released ? "text-gray-500 cursor-not-allowed" :
-                           selectedEpisode === ep.episode_number ? "text-primary font-semibold hover:bg-white/5" : "text-gray-300 hover:bg-white/5")}
-                      >
-                        {!released ? "🔒 " : ""}
-                        {ep.episode_number + ". " + (ep.name || "Серия " + ep.episode_number)}
-                        {!released && airDateStr ? ` · ${airDateStr}` : ""}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            <button onClick={nextEpisode} className="px-4 py-2.5 rounded-xl text-sm font-medium bg-gray-800/80 text-gray-300 border border-white/10 hover:bg-gray-700 transition-colors">{"\u25B6 Следующая"}</button>
-            {streamData?.streams && Object.keys(streamData.streams).map((q: string) => (
-              <button key={q} onClick={() => changeQuality(q)}
-                className={"px-4 py-2.5 rounded-xl text-sm font-medium transition-colors border " +
-                  (selectedQuality === q ? "bg-primary text-white border-primary" : "bg-gray-800/80 text-gray-300 border-white/10 hover:bg-gray-700")}>{q}</button>
-            ))}
-            <button onClick={toggleFullscreen} className="px-4 py-2.5 rounded-xl text-sm font-medium bg-gray-800/80 text-gray-300 border border-white/10 hover:bg-gray-700 transition-colors">На весь экран</button>
-            {streamData?.title && <span className="px-4 py-2.5 bg-gray-800/50 rounded-xl text-sm text-gray-400 border border-white/5">{streamData.title}</span>}
-          </div>
-        )}
 
-        {!cssFullscreen && (
-          <div className="mt-8 space-y-4">
-            <div className="flex items-center gap-4">
-              <h1 className="text-4xl font-bold text-foreground tracking-tight">{show.name}</h1>
-              <FavoriteButton size="md" item={{
-                id: show.id, type: "tv", title: show.name,
-                poster_path: show.poster_path, vote_average: show.vote_average,
-                first_air_date: show.first_air_date, addedAt: Date.now(),
-              }} />
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="bg-gray-800 px-4 py-2 rounded-xl text-gray-300">{show.first_air_date ? new Date(show.first_air_date).toLocaleDateString("ru-RU") : ""}</span>
-              <span className="bg-gray-800 px-4 py-2 rounded-xl text-gray-300">{show.number_of_seasons + " сезон(ов)"}</span>
-              <span className="bg-gray-800 px-4 py-2 rounded-xl text-gray-300">{show.number_of_episodes + " серий"}</span>
-              <span className="bg-gray-800 px-4 py-2 rounded-xl text-gray-300">{show.vote_average.toFixed(1) + "/10"}</span>
-            </div>
-          </div>
+                {/* Horizontal episode scroller */}
+                <div className="relative">
+                  <div
+                    id="ep-scroller"
+                    className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory -mx-1 px-1"
+                    style={{ scrollbarWidth: "thin" }}
+                  >
+                    {loadingEpisodes && episodes.length === 0 ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="snap-start flex-shrink-0 w-[200px] aspect-[16/10] rounded-xl bg-foreground/[0.04] animate-pulse" />
+                      ))
+                    ) : episodes.map((ep) => {
+                      const released = !ep.air_date || new Date(ep.air_date) <= new Date();
+                      const active = ep.episode_number === selectedEpisode;
+                      const stillUrl = ep.still_path ? getImageUrl(ep.still_path, "w300") : null;
+                      return (
+                        <button
+                          key={ep.episode_number}
+                          onClick={() => released && selectEpisode(selectedSeason, ep.episode_number)}
+                          disabled={!released}
+                          className="snap-start flex-shrink-0 w-[200px] text-left group disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <div className={"relative aspect-[16/10] rounded-xl overflow-hidden ring-2 transition-all duration-200 " + (
+                            active
+                              ? "ring-primary shadow-lg shadow-primary/30"
+                              : "ring-white/[0.06] group-hover:ring-white/15"
+                          )}>
+                            {stillUrl ? (
+                              <img src={stillUrl} alt={ep.name || ""} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-foreground/[0.04] flex items-center justify-center">
+                                <Film size={22} className="text-foreground/30" />
+                              </div>
+                            )}
+                            <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/65 backdrop-blur text-white text-[11px] font-bold leading-none ring-1 ring-white/15 flex items-center h-5">
+                              {ep.episode_number}
+                            </div>
+                            {!released && (
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white/80 text-xs">
+                                {"🔒 " + (ep.air_date ? new Date(ep.air_date).toLocaleDateString("ru-RU") : "")}
+                              </div>
+                            )}
+                          </div>
+                          <div className={"mt-2 px-0.5 " + (active ? "text-primary" : "text-foreground/85")}>
+                            <p className="text-[13px] font-semibold leading-tight line-clamp-1">
+                              {ep.name || ("Серия " + ep.episode_number)}
+                            </p>
+                            {ep.runtime > 0 && (
+                              <p className="text-foreground/50 text-[11px] mt-0.5">{ep.runtime}{" мин"}</p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Scroll arrows */}
+                  <button
+                    aria-label="Back"
+                    onClick={() => { const el = document.getElementById("ep-scroller"); if (el) el.scrollBy({ left: -700, behavior: "smooth" }); }}
+                    className="hidden sm:flex absolute left-0 top-[40%] -translate-y-1/2 -translate-x-2 w-9 h-9 rounded-full bg-background/85 ring-1 ring-white/15 backdrop-blur items-center justify-center text-foreground/80 hover:text-foreground hover:bg-background z-10 shadow-lg"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <button
+                    aria-label="Next"
+                    onClick={() => { const el = document.getElementById("ep-scroller"); if (el) el.scrollBy({ left: 700, behavior: "smooth" }); }}
+                    className="hidden sm:flex absolute right-0 top-[40%] -translate-y-1/2 translate-x-2 w-9 h-9 rounded-full bg-background/85 ring-1 ring-white/15 backdrop-blur items-center justify-center text-foreground/80 hover:text-foreground hover:bg-background z-10 shadow-lg"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </section>
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
-
-
-
-
