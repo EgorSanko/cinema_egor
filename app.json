@@ -2,7 +2,7 @@
   "expo": {
     "name": "sapkeflykino",
     "slug": "sapkeflykino",
-    "version": "2.0.0",
+    "version": "2.0.15",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -29,7 +29,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      "@sentry/react-native"
     ],
     "extra": {
       "eas": {

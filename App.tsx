@@ -2,6 +2,23 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Sentry from '@sentry/react-native';
+import Constants from 'expo-constants';
+
+// Sentry — silently swallows initialization when DSN is missing, so safe to
+// keep here without a guard. Set EXPO_PUBLIC_SENTRY_DSN in .env once you have
+// a project at sentry.io. Free tier covers 5k events/mo.
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
+  enabled: !!process.env.EXPO_PUBLIC_SENTRY_DSN,
+  release: (Constants.expoConfig?.version as string) || undefined,
+  // GlitchTip-friendly: low trace sampling (mobile makes many transactions),
+  // session tracking off (GlitchTip doesn't support sessions yet).
+  tracesSampleRate: 0.01,
+  autoSessionTracking: false,
+  // Don't spam from dev builds
+  enableInExpoDevelopment: false,
+});
 import {
   useFonts,
   Inter_400Regular,
@@ -12,6 +29,7 @@ import {
 } from '@expo-google-fonts/inter';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { VersionGate } from './src/components/VersionGate';
 import { COLORS } from './src/constants/theme';
 
 const DarkTheme = {
@@ -28,7 +46,7 @@ const DarkTheme = {
   },
 };
 
-export default function App() {
+function AppInner() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -49,11 +67,16 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <NavigationContainer theme={DarkTheme}>
         <StatusBar style="light" />
-        <AppNavigator />
+        <VersionGate>
+          <AppNavigator />
+        </VersionGate>
       </NavigationContainer>
     </GestureHandlerRootView>
   );
 }
+
+// Wrap with Sentry — only attaches if DSN is set (see init() above).
+export default Sentry.wrap(AppInner);
 
 const styles = StyleSheet.create({
   loading: {

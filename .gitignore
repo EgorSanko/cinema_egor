@@ -31,11 +31,27 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
+.env
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo
 
-# generated native folders
+# native build artifacts only — KEEP source under /android/app/src,
+# AndroidManifest, build.gradle files, etc. so PiP/native changes are
+# version-controlled. Excluding /ios entirely as we don't build for iOS yet.
 /ios
-/android
+/android/build/
+/android/.gradle/
+/android/.cxx/
+/android/app/build/
+/android/app/.cxx/
+/android/local.properties
+/android/captures/
+/android/.idea/
+/android/app/release/
+/android/app/debug/
+/android/app/*.keystore
+/android/app/.kotlin/
+/android/app/google-services.json

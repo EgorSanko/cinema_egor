@@ -21,6 +21,7 @@ import { MovieDetailSkeleton } from '../../components/SkeletonLoader';
 import { toggleFavorite, isFavorite, getComments, addComment, deleteComment, getLastTranslator, type Comment } from '../../utils/storage';
 import { SectionRow } from '../../components/SectionRow';
 import { TrailerButton } from '../../components/TrailerButton';
+import { SendToTV } from '../../components/SendToTV';
 import { COLORS, RADIUS, FONTS, SPACING, SHADOWS } from '../../constants/theme';
 import { scheduleSyncToServer, getUser } from '../../utils/auth';
 
@@ -49,6 +50,15 @@ export function MovieDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [fav, setFav] = useState(false);
   const [streamLoading, setStreamLoading] = useState(false);
+
+  // Send to TV — generated from the same selection (movie or chosen S/E)
+  const [tvLoading, setTvLoading] = useState(false);
+  const [tvStreamData, setTvStreamData] = useState<StreamData | null>(null);
+  const [showTV, setShowTV] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  useEffect(() => {
+    getUser().then(u => setUserEmail(u?.email || null));
+  }, []);
 
   // TV episode
   const [selectedSeason, setSelectedSeason] = useState(startSeason ?? 1);
@@ -108,8 +118,10 @@ export function MovieDetailScreen() {
 
   const detail = isTV ? tvShow : movie;
   const detailTitle = isTV ? tvShow?.name : movie?.title;
-  const origSearch = ((isTV ? (tvShow as any)?.original_name : (movie as any)?.original_title) || '').replace(/["'«»""]/g, "").trim();
-  const searchTitle = origSearch && /[a-z]/i.test(origSearch) ? origSearch : (detailTitle || '');
+  const origSearch = ((isTV ? (tvShow as any)?.original_name : (movie as any)?.original_title) || '').replace(/["«»""]/g, "").trim();
+  // HDRezka indexes Russian titles primarily — use the localized title first
+  // and fall back to English original only if that returns nothing.
+  const searchTitle = (detailTitle || '').replace(/["«»""]/g, "").trim() || origSearch;
   const detailDate = isTV ? tvShow?.first_air_date : movie?.release_date;
 
   // From "Continue Watching" we receive startSeason/startEpisode and pre-select
@@ -149,6 +161,10 @@ export function MovieDetailScreen() {
           if (data.stream) break;
         }
       }
+      // Fallback search with English original title if Russian didn't hit
+      if (!data.stream && origSearch && origSearch !== searchTitle) {
+        data = await getStream(origSearch, year, isTV ? 'tv' : 'movie', opts);
+      }
       if (data.stream) {
         nav.navigate('Player', {
           streamData: data,
@@ -166,6 +182,33 @@ export function MovieDetailScreen() {
       }
     } catch { Alert.alert('Пока недоступно', 'Не удалось найти этот контент. Возможно, он ещё не вышел в онлайн-кинотеатрах.'); }
     finally { setStreamLoading(false); }
+  };
+
+  const handleSendToTV = async () => {
+    if (!detail) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTvLoading(true);
+    try {
+      const year = detailDate ? new Date(detailDate).getFullYear().toString() : '';
+      const opts: any = {};
+      if (isTV) { opts.season = selectedSeason; opts.episode = selectedEpisode; }
+      const lastTr = await getLastTranslator(detail.id, isTV ? 'tv' : 'movie');
+      if (lastTr) opts.translator_id = lastTr.id;
+      let data = await getStream(searchTitle, year, isTV ? 'tv' : 'movie', opts);
+      if (!data.stream) {
+        for (let i = 0; i < 3; i++) {
+          data = await getStream(searchTitle, year, isTV ? 'tv' : 'movie', { ...opts, index: i });
+          if (data.stream) break;
+        }
+      }
+      if (data.stream) {
+        setTvStreamData(data);
+        setShowTV(true);
+      } else {
+        Alert.alert('Пока недоступно', 'Этот контент ещё не вышел в онлайн-кинотеатрах. Ждём релиза!');
+      }
+    } catch { Alert.alert('Ошибка', 'Не удалось получить поток для трансляции.'); }
+    finally { setTvLoading(false); }
   };
 
   const handleAddComment = async () => {
@@ -346,6 +389,14 @@ export function MovieDetailScreen() {
           {/* Trailer */}
           <TrailerButton mediaId={detail.id} mediaType={isTV ? 'tv' : 'movie'} />
 
+          {/* Send to TV */}
+          <Pressable onPress={handleSendToTV} disabled={tvLoading} style={[styles.tvBtn, tvLoading && { opacity: 0.6 }]}>
+            {tvLoading ? <ActivityIndicator color="#ef4444" /> : <Ionicons name="tv-outline" size={20} color="#ef4444" />}
+            <Text style={styles.tvBtnText}>
+              {isTV ? `На ТВ — S${selectedSeason}E${selectedEpisode}` : 'На ТВ'}
+            </Text>
+          </Pressable>
+
           {/* Favorite */}
           <Pressable onPress={handleFavorite} style={styles.favBtn}>
             <Ionicons name={fav ? 'heart' : 'heart-outline'} size={20} color={fav ? COLORS.primary : COLORS.textSecondary} />
@@ -443,6 +494,32 @@ export function MovieDetailScreen() {
           <View style={{ height: 100 }} />
         </View>
       </ScrollView>
+
+      {/* Send to TV modal — uses currently selected season/episode for TV */}
+      {tvStreamData && (
+        <SendToTV
+          visible={showTV}
+          onClose={() => setShowTV(false)}
+          userEmail={userEmail}
+          streamData={{
+            stream: tvStreamData.stream,
+            quality: tvStreamData.quality,
+            streams: tvStreamData.streams,
+            title: isTV ? `${detailTitle ?? ''} S${selectedSeason}E${selectedEpisode}` : (detailTitle ?? ''),
+            translators: tvStreamData.translators,
+            selectedTranslator: tvStreamData.translators[0]?.id ?? null,
+            searchQuery: searchTitle,
+            year: detailDate ? new Date(detailDate).getFullYear().toString() : '',
+            isSeries: isTV,
+            season: isTV ? selectedSeason : undefined,
+            episode: isTV ? selectedEpisode : undefined,
+            totalSeasons: isTV ? (detail as TVShowDetails).number_of_seasons : undefined,
+            mediaId: detail.id,
+            mediaType: isTV ? 'tv' : 'movie',
+            poster_path: detail.poster_path,
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -499,6 +576,8 @@ const styles = StyleSheet.create({
   playBtnText: { color: '#fff', fontSize: 17, fontFamily: FONTS.bold },
   favBtn: { backgroundColor: COLORS.bgElevated, paddingVertical: 14, borderRadius: RADIUS.lg, alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, marginBottom: SPACING.lg, flexDirection: 'row', justifyContent: 'center', gap: 8 },
   favBtnText: { color: COLORS.textSecondary, fontSize: 15, fontFamily: FONTS.semibold },
+  tvBtn: { backgroundColor: 'rgba(239,68,68,0.1)', paddingVertical: 14, borderRadius: RADIUS.lg, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', marginTop: 10, flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  tvBtnText: { color: '#ef4444', fontSize: 15, fontFamily: FONTS.semibold },
   overview: { color: COLORS.textSecondary, fontSize: 14, fontFamily: FONTS.regular, lineHeight: 22 },
 
   // Cast

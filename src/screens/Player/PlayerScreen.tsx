@@ -1,11 +1,20 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, Pressable, StyleSheet, Dimensions, BackHandler, StatusBar,
-  Alert, Platform, ActivityIndicator, TextInput, ScrollView,
+  Alert, Platform, ActivityIndicator, TextInput, ScrollView, PanResponder,
+  NativeModules,
 } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+
+// PiP bridge — Android only, no-op on iOS. Flagging true while the player is
+// mounted with a playing video gates whether MainActivity enters PiP on
+// home-press.
+const PipModule: { setPlaying?: (p: boolean) => void } = (NativeModules as any).PipModule || {};
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
+import { Video, ResizeMode, AVPlaybackStatus, Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as NavigationBar from 'expo-navigation-bar';
+import * as Brightness from 'expo-brightness';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -82,6 +91,19 @@ export function PlayerScreen() {
   const [translatorLoading, setTranslatorLoading] = useState(false);
   const [seekIndicator, setSeekIndicator] = useState<'left' | 'right' | null>(null);
 
+  // Gesture HUD state — vertical swipe on left half adjusts screen brightness,
+  // right half adjusts video volume (system volume isn't programmable on iOS).
+  const [brightnessHud, setBrightnessHud] = useState<number | null>(null);
+  const [volumeHud, setVolumeHud] = useState<number | null>(null);
+  const brightnessRef = useRef(0.8);
+  const volumeRef = useRef(1);
+  const hudTimerRef = useRef<any>(null);
+
+  // Capture starting values when finger touches down so we accumulate deltas
+  // rather than jumping to absolute positions.
+  const gestureStartBrightnessRef = useRef(0.8);
+  const gestureStartVolumeRef = useRef(1);
+
   // Watch Together chat & sync
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ id: string; author: string; text: string; timestamp: number; type: string }[]>([]);
@@ -104,6 +126,66 @@ export function PlayerScreen() {
   const currentUrl = streamData.streams[currentQuality] || streamData.stream;
 
   useEffect(() => { activateKeepAwakeAsync(); return () => { deactivateKeepAwake(); }; }, []);
+
+  // Mark player active for native PiP gating — only enter PiP on home-press
+  // when we're actually on the player screen with a playing video.
+  useEffect(() => {
+    PipModule.setPlaying?.(isPlaying);
+    return () => { PipModule.setPlaying?.(false); };
+  }, [isPlaying]);
+
+  // Detect PiP via window resize: in PiP Android resizes the activity to a
+  // small floating window (<500px wide). This is the most reliable signal
+  // across Android versions — DeviceEventEmitter from the Activity is
+  // unreliable on new architecture / Hermes. When in PiP we hide all UI
+  // overlays (controls, seek buttons, etc.) so the floating window shows
+  // only the raw video, like YouTube does.
+  const [windowW, setWindowW] = useState(Dimensions.get('window').width);
+  useEffect(() => {
+    const sub = Dimensions.addEventListener('change', ({ window }) => {
+      setWindowW(window.width);
+    });
+    return () => { sub?.remove?.(); };
+  }, []);
+  const isInPip = windowW < 500;
+
+  // Audio mode: keep playback alive when the activity goes background (so
+  // PiP keeps playing video instead of freezing). On unmount we MUST flip
+  // staysActiveInBackground back to false AND call pauseAsync+unloadAsync,
+  // otherwise the audio session leaks after the player screen is destroyed
+  // (this is what happened in 2.0.12 — audio kept playing after PiP close).
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      staysActiveInBackground: true,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+      interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+      playThroughEarpieceAndroid: false,
+      shouldDuckAndroid: true,
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+    }).catch(() => {});
+
+    return () => {
+      // Order matters: stop the source FIRST, then release the audio
+      // session. Otherwise expo-av may keep a stale buffer playing while
+      // we tear down the audio mode.
+      (async () => {
+        try { await videoRef.current?.pauseAsync(); } catch {}
+        try { await videoRef.current?.unloadAsync(); } catch {}
+        try {
+          await Audio.setAudioModeAsync({
+            staysActiveInBackground: false,
+            interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+            interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+            playThroughEarpieceAndroid: false,
+            shouldDuckAndroid: false,
+            allowsRecordingIOS: false,
+            playsInSilentModeIOS: false,
+          });
+        } catch {}
+      })();
+    };
+  }, []);
 
   // Record current translator for Polyglot achievement whenever it changes
   useEffect(() => {
@@ -405,7 +487,14 @@ export function PlayerScreen() {
 
   const seek = async (deltaMs: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const newPos = Math.max(0, Math.min(position + deltaMs, duration));
+    // Read the live position from the player itself — `position` in scope is
+    // captured by useCallback closures (e.g. the double-tap handler) and lags
+    // behind the actual playback time, which caused seek(-10000) at t=600s
+    // to use position=0 → newPos=0 → restart from start.
+    const status = await videoRef.current?.getStatusAsync();
+    const livePos = (status && 'positionMillis' in status) ? status.positionMillis : position;
+    const liveDur = (status && 'durationMillis' in status && status.durationMillis) ? status.durationMillis : duration;
+    const newPos = Math.max(0, Math.min(livePos + deltaMs, liveDur));
     await videoRef.current?.setPositionAsync(newPos);
     if (watchSocket && roomCode && !ignoreRemoteRef.current) {
       watchSocket.emit('player-seek', { time: newPos / 1000 });
@@ -602,6 +691,95 @@ export function PlayerScreen() {
     return `${m}:${String(s).padStart(2, '0')}`;
   };
 
+  // Read initial screen brightness once so the first swipe doesn't jump.
+  useEffect(() => {
+    (async () => {
+      try {
+        const cur = await Brightness.getBrightnessAsync();
+        brightnessRef.current = cur;
+      } catch {}
+    })();
+  }, []);
+
+  const showHud = (kind: 'brightness' | 'volume', value: number) => {
+    if (kind === 'brightness') setBrightnessHud(value);
+    else setVolumeHud(value);
+    if (hudTimerRef.current) clearTimeout(hudTimerRef.current);
+    hudTimerRef.current = setTimeout(() => {
+      setBrightnessHud(null);
+      setVolumeHud(null);
+    }, 700);
+  };
+
+  // Composed gesture: vertical pan adjusts brightness (left half) or volume
+  // (right half); single/double taps are handled by the same surface so they
+  // don't fight with the pan. Uses react-native-gesture-handler v2 — proper
+  // composition that PanResponder + absoluteFill <Pressable> couldn't deliver
+  // (the Pressable was eating touchdown before pan could claim).
+  const handleTapStart = useCallback((tapX: number) => {
+    const now = Date.now();
+    const last = lastTapRef.current;
+    const isDoubleTap = now - last.time < 300 && Math.abs(last.x - tapX) < 60;
+    if (isDoubleTap && !locked) {
+      if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
+      const screenW = Dimensions.get('window').width;
+      if (tapX < screenW / 2) {
+        seek(-10000);
+        setSeekIndicator('left');
+      } else {
+        seek(10000);
+        setSeekIndicator('right');
+      }
+      if (seekIndicatorTimer.current) clearTimeout(seekIndicatorTimer.current);
+      seekIndicatorTimer.current = setTimeout(() => setSeekIndicator(null), 700);
+      lastTapRef.current = { time: 0, x: 0 };
+    } else {
+      lastTapRef.current = { time: now, x: tapX };
+      singleTapTimer.current = setTimeout(() => {
+        toggleUI();
+      }, 300);
+    }
+  }, [locked]);
+
+  const handlePanStart = useCallback((x: number) => {
+    const screenW = Dimensions.get('window').width;
+    if (x < screenW / 2) {
+      gestureStartBrightnessRef.current = brightnessRef.current;
+    } else {
+      gestureStartVolumeRef.current = volumeRef.current;
+    }
+  }, []);
+
+  const handlePanUpdate = useCallback((x: number, translationY: number) => {
+    const screenW = Dimensions.get('window').width;
+    // Pixels-to-fraction: ~250px finger travel covers the full 0-1 range.
+    if (x < screenW / 2) {
+      const next = Math.max(0, Math.min(1, gestureStartBrightnessRef.current - translationY / 250));
+      brightnessRef.current = next;
+      Brightness.setBrightnessAsync(next).catch(() => {});
+      showHud('brightness', next);
+    } else {
+      const next = Math.max(0, Math.min(1, gestureStartVolumeRef.current - translationY / 250));
+      volumeRef.current = next;
+      videoRef.current?.setVolumeAsync(next).catch(() => {});
+      showHud('volume', next);
+    }
+  }, []);
+
+  const playerGesture = useMemo(() => {
+    const tap = Gesture.Tap()
+      .maxDuration(250)
+      .onEnd((e) => { runOnJS(handleTapStart)(e.x); });
+    const pan = Gesture.Pan()
+      .enabled(!locked)
+      // Require 10px of vertical movement before claiming — preserves taps
+      .activeOffsetY([-10, 10])
+      .failOffsetX([-20, 20])
+      .onStart((e) => { runOnJS(handlePanStart)(e.x); })
+      .onUpdate((e) => { runOnJS(handlePanUpdate)(e.x, e.translationY); });
+    return Gesture.Race(pan, tap);
+  }, [handleTapStart, handlePanStart, handlePanUpdate, locked]);
+
   const displayPosition = isSeeking ? seekPosition : position;
 
   return (
@@ -623,6 +801,35 @@ export function PlayerScreen() {
           if (mountedRef.current) setIsBuffering(false);
         }}
       />
+
+      {/* PiP-mode kills all overlays — Android shrinks our activity into a
+          floating window and the React Native controls (seek buttons, pause,
+          translator panel, etc.) would otherwise be visible inside it. In
+          PiP only the raw <Video> stays mounted; the native PiP frame draws
+          its own play/pause overlay when the user taps the window. */}
+      {!isInPip && (<>
+
+      {/* Brightness HUD */}
+      {brightnessHud !== null && (
+        <Animated.View entering={FadeIn.duration(120)} style={styles.gestureHud}>
+          <Ionicons name="sunny" size={26} color="#fff" />
+          <View style={styles.gestureBar}>
+            <View style={[styles.gestureBarFill, { width: `${Math.round(brightnessHud * 100)}%` }]} />
+          </View>
+          <Text style={styles.gestureHudText}>{Math.round(brightnessHud * 100)}%</Text>
+        </Animated.View>
+      )}
+
+      {/* Volume HUD */}
+      {volumeHud !== null && (
+        <Animated.View entering={FadeIn.duration(120)} style={[styles.gestureHud, { right: 32, left: undefined }]}>
+          <Ionicons name={volumeHud > 0.5 ? 'volume-high' : volumeHud > 0 ? 'volume-low' : 'volume-mute'} size={26} color="#fff" />
+          <View style={styles.gestureBar}>
+            <View style={[styles.gestureBarFill, { width: `${Math.round(volumeHud * 100)}%` }]} />
+          </View>
+          <Text style={styles.gestureHudText}>{Math.round(volumeHud * 100)}%</Text>
+        </Animated.View>
+      )}
 
       {/* Loading/buffering indicator */}
       {(isBuffering || translatorLoading || episodeSwitchLoading) && !videoError && (
@@ -672,40 +879,11 @@ export function PlayerScreen() {
         </View>
       )}
 
-      {/* Tap zones: double-tap left/right = seek, single tap = toggle UI */}
-      <Pressable
-        style={StyleSheet.absoluteFill}
-        onPress={(e) => {
-          const now = Date.now();
-          const tapX = e.nativeEvent.locationX;
-          const last = lastTapRef.current;
-          const isDoubleTap = now - last.time < 300;
-
-          if (isDoubleTap && !locked) {
-            // Cancel pending single-tap
-            if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
-            const screenW = Dimensions.get('window').width;
-            if (tapX < screenW / 2) {
-              // Double-tap left — rewind 10s
-              seek(-10000);
-              setSeekIndicator('left');
-            } else {
-              // Double-tap right — forward 10s
-              seek(10000);
-              setSeekIndicator('right');
-            }
-            if (seekIndicatorTimer.current) clearTimeout(seekIndicatorTimer.current);
-            seekIndicatorTimer.current = setTimeout(() => setSeekIndicator(null), 700);
-            lastTapRef.current = { time: 0, x: 0 };
-          } else {
-            lastTapRef.current = { time: now, x: tapX };
-            // Delay single-tap to wait for possible double-tap
-            singleTapTimer.current = setTimeout(() => {
-              toggleUI();
-            }, 300);
-          }
-        }}
-      />
+      {/* Unified touch surface: vertical pan = brightness/volume, taps = UI toggle
+          or double-tap seek. See playerGesture composition above. */}
+      <GestureDetector gesture={playerGesture}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-only" />
+      </GestureDetector>
 
       {/* Seek indicator overlay */}
       {seekIndicator && (
@@ -860,17 +1038,19 @@ export function PlayerScreen() {
               {showQualityPanel && (
                 <Animated.View entering={FadeIn.duration(150)} style={styles.panel}>
                   <Text style={styles.panelTitle}>Качество</Text>
-                  {streamData.qualities.map(q => (
-                    <Pressable
-                      key={q}
-                      onPress={() => changeQuality(q)}
-                      style={[styles.panelItem, q === currentQuality && styles.panelItemActive]}
-                    >
-                      <Text style={[styles.panelText, q === currentQuality && styles.panelTextActive]}>
-                        {q === currentQuality ? '✓ ' : ''}{q}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+                    {streamData.qualities.map(q => (
+                      <Pressable
+                        key={q}
+                        onPress={() => changeQuality(q)}
+                        style={[styles.panelItem, q === currentQuality && styles.panelItemActive]}
+                      >
+                        <Text style={[styles.panelText, q === currentQuality && styles.panelTextActive]}>
+                          {q === currentQuality ? '✓ ' : ''}{q}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
                 </Animated.View>
               )}
 
@@ -878,35 +1058,42 @@ export function PlayerScreen() {
               {showSpeedPanel && (
                 <Animated.View entering={FadeIn.duration(150)} style={[styles.panel, { left: undefined, right: SPACING.xl }]}>
                   <Text style={styles.panelTitle}>Скорость</Text>
-                  {SPEED_OPTIONS.map(s => (
-                    <Pressable
-                      key={s}
-                      onPress={() => changeSpeed(s)}
-                      style={[styles.panelItem, s === speed && styles.panelItemActive]}
-                    >
-                      <Text style={[styles.panelText, s === speed && styles.panelTextActive]}>
-                        {s === speed ? '✓ ' : ''}{s}x
-                      </Text>
-                    </Pressable>
-                  ))}
+                  <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+                    {SPEED_OPTIONS.map(s => (
+                      <Pressable
+                        key={s}
+                        onPress={() => changeSpeed(s)}
+                        style={[styles.panelItem, s === speed && styles.panelItemActive]}
+                      >
+                        <Text style={[styles.panelText, s === speed && styles.panelTextActive]}>
+                          {s === speed ? '✓ ' : ''}{s}x
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
                 </Animated.View>
               )}
 
               {/* Translator panel */}
               {showTranslatorPanel && (
-                <Animated.View entering={FadeIn.duration(150)} style={[styles.panel, { minWidth: 200 }]}>
+                <Animated.View entering={FadeIn.duration(150)} style={[styles.panel, { minWidth: 240 }]}>
                   <Text style={styles.panelTitle}>Озвучка</Text>
-                  {streamData.translators.map(t => (
-                    <Pressable
-                      key={t.id}
-                      onPress={() => changeTranslator(t)}
-                      style={[styles.panelItem, t.id === currentTranslator?.id && styles.panelItemActive]}
-                    >
-                      <Text style={[styles.panelText, t.id === currentTranslator?.id && styles.panelTextActive]} numberOfLines={1}>
-                        {t.id === currentTranslator?.id ? '✓ ' : ''}{t.name}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  <ScrollView showsVerticalScrollIndicator={true} bounces={false}>
+                    {/* Dedupe by id — backend occasionally returns the same translator
+                        twice (e.g. when HDRezka has theatrical + director's-cut entries
+                        with identical ids); without this, ✓ check shows on both rows. */}
+                    {Array.from(new Map(streamData.translators.map(t => [t.id, t])).values()).map(t => (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => changeTranslator(t)}
+                        style={[styles.panelItem, t.id === currentTranslator?.id && styles.panelItemActive]}
+                      >
+                        <Text style={[styles.panelText, t.id === currentTranslator?.id && styles.panelTextActive]} numberOfLines={1}>
+                          {t.id === currentTranslator?.id ? '✓ ' : ''}{(t as any).is_premium ? '🔒 ' : ''}{t.name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
                 </Animated.View>
               )}
 
@@ -999,6 +1186,8 @@ export function PlayerScreen() {
           </View>
         </Animated.View>
       )}
+
+      </>)}
     </View>
   );
 }
@@ -1011,6 +1200,39 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
+  },
+  gestureHud: {
+    position: 'absolute',
+    top: '50%',
+    left: 32,
+    transform: [{ translateY: -28 }],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 24,
+    minWidth: 200,
+    zIndex: 50,
+  },
+  gestureBar: {
+    flex: 1,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  gestureBarFill: {
+    height: '100%',
+    backgroundColor: COLORS.primary,
+  },
+  gestureHudText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    minWidth: 38,
+    textAlign: 'right',
   },
   bufferingOverlay: {
     ...StyleSheet.absoluteFillObject,
