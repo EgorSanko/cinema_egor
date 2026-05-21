@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
  */
 
 const MANIFEST = {
-  latest: "2.0.17",
+  latest: "2.0.18",
   // Lowered from 2.0.8 → 2.0.5 so all 2.0.5/2.0.6/2.0.7 users see a soft
   // "update available" banner instead of a blocking screen. Hard-block
   // only kicks in for builds older than that (none in the wild today).
