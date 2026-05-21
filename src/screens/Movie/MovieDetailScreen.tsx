@@ -176,6 +176,11 @@ export function MovieDetailScreen() {
           searchTitle, year,
           totalSeasons: isTV ? (detail as TVShowDetails).number_of_seasons : undefined,
           baseTitle: detailTitle,
+          // Pass the translator ID we actually requested so PlayerScreen
+          // can initialize currentTranslator correctly. Without this the
+          // UI would default to translators[0] even though the stream
+          // was fetched with a different translator (saved preference).
+          initialTranslatorId: lastTr?.id,
         });
       } else {
         Alert.alert('Пока недоступно', 'Этот контент ещё не вышел в онлайн-кинотеатрах. Ждём релиза!');

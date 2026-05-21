@@ -37,7 +37,7 @@ export function PlayerScreen() {
   const {
     streamData: initialStreamData, title: initialTitle, movieId, poster,
     season: initialSeason, episode: initialEpisode, type: mediaType, roomCode,
-    searchTitle, year, totalSeasons, baseTitle,
+    searchTitle, year, totalSeasons, baseTitle, initialTranslatorId,
   } = route.params as {
     streamData: StreamData;
     title: string;
@@ -51,6 +51,12 @@ export function PlayerScreen() {
     year?: string;
     totalSeasons?: number;
     baseTitle?: string;
+    // Parent screen passes which translator it ACTUALLY requested when
+    // calling getStream. Without this we defaulted to translators[0],
+    // which mismatched the audio when the backend used a different
+    // index (e.g. "Кураж Бомбей" was requested but translators[0] in
+    // the response was "ТВ-шоу" — UI lied about active voiceover).
+    initialTranslatorId?: number;
   };
 
   // Episode/season as STATE (not route param) so switching doesn't reset speed/translator
@@ -71,9 +77,19 @@ export function PlayerScreen() {
   const videoRef = useRef<Video>(null);
   const [streamData, setStreamData] = useState<StreamData>(initialStreamData);
   const [currentQuality, setCurrentQuality] = useState(initialStreamData.quality);
-  const [currentTranslator, setCurrentTranslator] = useState(
-    initialStreamData.translators.length > 0 ? initialStreamData.translators[0] : null
-  );
+  // Initialize translator state to whatever ID the parent ACTUALLY
+  // requested when building the stream URL — falls back to translators[0]
+  // only if the requested ID isn't in the list. Fixes the "UI says
+  // ТВ-шоу but audio is Кураж Бомбей" bug.
+  const [currentTranslator, setCurrentTranslator] = useState(() => {
+    const list = initialStreamData.translators;
+    if (list.length === 0) return null;
+    if (initialTranslatorId != null) {
+      const match = list.find(t => t.id === initialTranslatorId);
+      if (match) return match;
+    }
+    return list[0];
+  });
   const [showUI, setShowUI] = useState(true);
   const [showQualityPanel, setShowQualityPanel] = useState(false);
   const [showSpeedPanel, setShowSpeedPanel] = useState(false);
