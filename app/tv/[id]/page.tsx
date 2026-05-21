@@ -1,10 +1,12 @@
 import { Navbar } from "@/components/navbar";
 import { TVPlayer } from "@/components/tv-player";
 import { Comments } from "@/components/comments";
-import { getTVDetails } from "@/lib/tmdb";
+import { getTVDetails, getTVRecommendations } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
+import { clean, tvSchema } from "@/lib/schema";
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 interface TVPageProps {
@@ -15,9 +17,37 @@ export async function generateMetadata({ params }: TVPageProps): Promise<Metadat
   const { id } = await params;
   const show = await getTVDetails(Number(id));
   if (!show) return { title: "Сериал не найден" };
+
+  const ogImage = show.backdrop_path
+    ? getImageUrl(show.backdrop_path, "w1280")
+    : show.poster_path
+      ? getImageUrl(show.poster_path, "w780")
+      : undefined;
+  const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
+  const title = `${show.name}${year ? ` (${year})` : ""} — смотреть онлайн`;
+  const desc = show.overview?.slice(0, 200) || "Смотрите сериал бесплатно на sapkeflykino";
+
   return {
-    title: `${show.name} — sapkeflykino`,
-    description: show.overview?.slice(0, 160),
+    title,
+    description: desc,
+    openGraph: {
+      siteName: "sapkeflykino",
+      title: show.name,
+      description: desc,
+      type: "video.tv_show",
+      url: `/tv/${show.id}`,
+      locale: "ru_RU",
+      images: ogImage ? [{ url: ogImage, width: 1280, height: 720, alt: show.name }] : undefined,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: show.name,
+      description: desc,
+      images: ogImage ? [ogImage] : undefined,
+    },
+    alternates: {
+      canonical: `/tv/${show.id}`,
+    },
   };
 }
 
@@ -25,89 +55,73 @@ export default async function TVPage({ params }: TVPageProps) {
   const { id } = await params;
   const show = await getTVDetails(Number(id));
   if (!show) notFound();
+  const recommendations = await getTVRecommendations(show.id);
+  const recs = recommendations.filter(r => r.id !== show.id).slice(0, 6);
+
+  const schema = clean(tvSchema(show));
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <Navbar />
       <main className="bg-background min-h-screen pb-20 sm:pb-0">
         <TVPlayer show={show} />
 
-        <div className="max-w-7xl mx-auto px-4 pb-12">
-          {show.seasons && show.seasons.filter(s => s.season_number > 0).length > 0 && (
-            <section className="mt-10">
-              <h2 className="text-2xl font-bold text-foreground mb-4">Сезоны</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {show.seasons.filter(s => s.season_number > 0).map(season => (
-                  <div key={season.id} className="bg-card border border-border rounded-xl overflow-hidden">
-                    <div className="relative aspect-[2/3] bg-muted">
-                      <Image
-                        src={getImageUrl(season.poster_path || show.poster_path, "w342")}
-                        alt={season.name}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 640px) 50vw, 185px"
-                      />
-                    </div>
-                    <div className="p-3">
-                      <h3 className="text-sm font-semibold text-foreground">{season.name}</h3>
-                      <p className="text-xs text-muted-foreground mt-1">{season.episode_count} серий</p>
-                      {season.air_date && (
-                        <p className="text-xs text-muted-foreground">{new Date(season.air_date).getFullYear()}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {show.overview && (
-            <section className="mt-10">
-              <h2 className="text-2xl font-bold text-foreground mb-4">Описание</h2>
-              <p className="text-muted-foreground leading-relaxed text-lg">{show.overview}</p>
-            </section>
-          )}
-
-          <section className="mt-10 grid md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="text-sm font-semibold text-primary uppercase tracking-wider mb-2">Дата выхода</h3>
-              <p className="text-foreground">
-                {show.first_air_date ? new Date(show.first_air_date).toLocaleDateString("ru-RU", { year: "numeric", month: "long", day: "numeric" }) : "Неизвестно"}
-              </p>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-primary uppercase tracking-wider mb-2">Статус</h3>
-              <p className="text-foreground">{show.status}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-primary uppercase tracking-wider mb-2">Рейтинг</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl text-primary">⭐</span>
-                <span className="text-foreground text-lg">{show.vote_average.toFixed(1)}/10</span>
-                <span className="text-muted-foreground">({show.vote_count?.toLocaleString()} голосов)</span>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-primary uppercase tracking-wider mb-2">Сезоны / Серии</h3>
-              <p className="text-foreground">{show.number_of_seasons} сезон(ов), {show.number_of_episodes} серий</p>
-            </div>
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+          {/* Genres + status meta row */}
+          <section className="mt-10 flex flex-wrap items-center gap-2">
+            {show.genres && show.genres.map(genre => (
+              <span key={genre.id} className="px-3 py-1.5 rounded-full bg-foreground/[0.04] ring-1 ring-white/[0.08] text-foreground/75 text-[12px] font-medium">
+                {genre.name}
+              </span>
+            ))}
+            {show.status && (
+              <span className="px-3 py-1.5 rounded-full bg-foreground/[0.04] ring-1 ring-white/[0.08] text-foreground/55 text-[12px]">
+                {show.status}
+              </span>
+            )}
           </section>
 
-          {show.genres && show.genres.length > 0 && (
-            <section className="mt-8">
-              <h3 className="text-sm font-semibold text-primary uppercase tracking-wider mb-3">Жанры</h3>
-              <div className="flex flex-wrap gap-2">
-                {show.genres.map(genre => (
-                  <span key={genre.id} className="px-4 py-2 bg-card border border-border rounded-full text-foreground text-sm">
-                    {genre.name}
-                  </span>
+          {/* Recommendations */}
+          {recs.length > 0 && (
+            <section className="mt-10">
+              <h2 className="text-2xl font-bold text-foreground tracking-tight mb-5">Рекомендуем посмотреть</h2>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4">
+                {recs.map(r => (
+                  <Link key={r.id} href={`/tv/${r.id}`} className="group block">
+                    <div className="relative aspect-[2/3] rounded-xl overflow-hidden ring-1 ring-white/[0.06] bg-foreground/[0.04] shadow-md shadow-black/30 transition-all duration-300 group-hover:ring-white/15 group-hover:-translate-y-0.5 group-hover:shadow-xl group-hover:shadow-black/50">
+                      {r.poster_path ? (
+                        <Image
+                          src={getImageUrl(r.poster_path, "w342")}
+                          alt={r.name || ""}
+                          fill
+                          sizes="(max-width: 640px) 33vw, 200px"
+                          className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                        />
+                      ) : null}
+                      {r.number_of_seasons && (
+                        <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur text-white text-[10px] font-semibold ring-1 ring-white/15">
+                          {r.number_of_seasons} сезон.
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-2 px-0.5 text-foreground/85 text-[13px] font-semibold line-clamp-1 group-hover:text-primary transition-colors">
+                      {r.name}
+                    </p>
+                    {r.first_air_date && (
+                      <p className="px-0.5 text-foreground/50 text-[11px] mt-0.5">{new Date(r.first_air_date).getFullYear()}</p>
+                    )}
+                  </Link>
                 ))}
               </div>
             </section>
           )}
 
           {/* Comments */}
-          <section className="mt-10 pt-8 border-t border-border">
+          <section className="mt-12 pt-8 border-t border-white/[0.06]">
             <Comments mediaId={show.id} mediaType="tv" />
           </section>
         </div>
