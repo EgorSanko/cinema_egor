@@ -10,6 +10,7 @@ import {
   Flame, Flag, TrendingUp, AudioLines, ArrowRight, Play, Bookmark,
   Star, CheckCircle2, ChevronDown, Crown, Sparkles, Zap,
 } from "lucide-react";
+import { AchievementIcon } from "@/lib/achievement-icons";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -867,12 +868,14 @@ function AchievementCard({ ach, unlockedDate }: { ach: UnlockedAchievement; unlo
   const isUnlocked = ach.unlocked;
   const rarity = rarityFor(ach);
 
-  // Rarity → visual tier
+  // Rarity → visual tier (ring, glow, gradient, badge, AND icon color so
+  // legendary icons glow amber, epic glow purple, etc. — replaces emoji
+  // that all looked the same regardless of rarity).
   const tier = {
-    common: { ring: "ring-white/[0.06]", glow: "", grad: "from-foreground/[0.025] to-foreground/[0.01]", text: "text-foreground/50", badge: "bg-white/10 text-foreground/65" },
-    rare: { ring: "ring-blue-400/30", glow: "", grad: "from-blue-500/[0.10] to-blue-500/[0.02]", text: "text-blue-300", badge: "bg-blue-400/15 text-blue-300" },
-    epic: { ring: "ring-purple-400/40", glow: "[box-shadow:0_0_20px_rgba(168,85,247,0.20)]", grad: "from-purple-500/[0.12] to-purple-500/[0.02]", text: "text-purple-300", badge: "bg-purple-400/15 text-purple-300" },
-    legendary: { ring: "ring-amber-400/50", glow: "kino-legendary", grad: "from-amber-500/[0.18] to-amber-400/[0.04]", text: "text-amber-300", badge: "bg-amber-400/15 text-amber-300" },
+    common:    { ring: "ring-white/[0.06]",   glow: "",              grad: "from-foreground/[0.025] to-foreground/[0.01]", iconColor: "text-foreground/70",  iconBg: "bg-white/[0.06]",       text: "text-foreground/50",  badge: "bg-white/10 text-foreground/65" },
+    rare:      { ring: "ring-blue-400/30",    glow: "",              grad: "from-blue-500/[0.10] to-blue-500/[0.02]",      iconColor: "text-blue-300",       iconBg: "bg-blue-500/[0.15]",    text: "text-blue-300",       badge: "bg-blue-400/15 text-blue-300" },
+    epic:      { ring: "ring-purple-400/40",  glow: "[box-shadow:0_0_20px_rgba(168,85,247,0.20)]", grad: "from-purple-500/[0.12] to-purple-500/[0.02]",  iconColor: "text-purple-300",     iconBg: "bg-purple-500/[0.18]",  text: "text-purple-300",     badge: "bg-purple-400/15 text-purple-300" },
+    legendary: { ring: "ring-amber-400/50",   glow: "kino-legendary", grad: "from-amber-500/[0.18] to-amber-400/[0.04]",   iconColor: "text-amber-300",      iconBg: "bg-amber-500/[0.20]",   text: "text-amber-300",      badge: "bg-amber-400/15 text-amber-300" },
   }[rarity];
 
   const rarityLabel = { common: "обычное", rare: "редкое", epic: "эпическое", legendary: "легендарное" }[rarity];
@@ -905,11 +908,12 @@ function AchievementCard({ ach, unlockedDate }: { ach: UnlockedAchievement; unlo
 
       <div className="relative flex justify-center mt-1">
         <div
-          className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl leading-none transition-transform duration-300 group-hover:scale-110 ${
-            isUnlocked ? "" : "grayscale opacity-45 group-hover:grayscale-0 group-hover:opacity-90"
+          className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 ring-1 ${
+            isUnlocked ? `${tier.iconBg} ${tier.iconColor} ring-white/10` : "bg-white/[0.03] text-foreground/35 ring-white/[0.06]"
           }`}
+          style={isUnlocked && rarity === "legendary" ? { boxShadow: "0 0 14px rgba(250,204,21,0.35)" } : undefined}
         >
-          {ach.icon}
+          <AchievementIcon slug={ach.icon} size={22} />
         </div>
       </div>
 
