@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
  */
 
 const MANIFEST = {
-  latest: "2.0.18",
+  latest: "2.0.19",
   // Lowered from 2.0.8 → 2.0.5 so all 2.0.5/2.0.6/2.0.7 users see a soft
   // "update available" banner instead of a blocking screen. Hard-block
   // only kicks in for builds older than that (none in the wild today).
@@ -20,10 +20,10 @@ const MANIFEST = {
   downloadUrl: "https://sapkeflykino.ru/download/sapkefly.apk",
   downloadPage: "https://sapkeflykino.ru/download",
   releaseNotes: [
+    "Критический фикс: пустой экран на 2.0.17-2.0.18",
     "Новый кинематографичный профиль с достижениями по редкости",
-    "Иконки достижений — векторные, единый стиль на всех устройствах",
-    "Исправлено: озвучка отображалась неверно при «Продолжить просмотр»",
-    "Тепловая карта просмотров (12 недель), статистика и мои списки",
+    "Тепловая карта просмотров, статистика, мои списки",
+    "Исправлена озвучка при «Продолжить просмотр»",
   ],
 };
 
