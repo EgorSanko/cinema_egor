@@ -379,17 +379,16 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     const trItem = buildTranslatorSetting(translators, selectedTranslator, onTranslatorChange);
     if (trItem) art.setting.add(trItem);
 
-    const subItem = buildSubtitleSetting(
-      subtitles,
-      selectedSubtitleId,
-      onSubtitleChange,
-      () => {
-        if (subsLoadedRef.current) return;
-        subsLoadedRef.current = true;
-        onLoadSubtitles?.();
-      },
-    );
-    art.setting.add(subItem);
+    // Subtitle UI hidden by user request (2026-05) — wyzie integration
+    // wasn't reliably delivering tracks for our catalog and users weren't
+    // engaging with the feature. Keep buildSubtitleSetting code around in
+    // case we revive a curated subtitle source later, but don't surface
+    // the menu item.
+    void buildSubtitleSetting;
+    void subtitles;
+    void selectedSubtitleId;
+    void onSubtitleChange;
+    void onLoadSubtitles;
 
     const qItem = buildQualitySetting(qualities, selectedQuality, onQualityChange);
     if (qItem) art.setting.add(qItem);

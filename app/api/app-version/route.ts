@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
  */
 
 const MANIFEST = {
-  latest: "2.0.15",
+  latest: "2.0.16",
   // Lowered from 2.0.8 → 2.0.5 so all 2.0.5/2.0.6/2.0.7 users see a soft
   // "update available" banner instead of a blocking screen. Hard-block
   // only kicks in for builds older than that (none in the wild today).
@@ -20,11 +20,11 @@ const MANIFEST = {
   downloadUrl: "https://sapkeflykino.ru/download/sapkefly.apk",
   downloadPage: "https://sapkeflykino.ru/download",
   releaseNotes: [
-    "Picture-in-Picture: в маленьком окошке только видео, без панели управления",
+    "Скорость воспроизведения теперь надёжно меняется",
+    "Следующая серия больше не стартует с позиции предыдущей",
+    "Picture-in-Picture показывает только видео, без панели",
     "Видео продолжает играть когда сворачиваешь приложение",
-    "Синхронизация истории и избранного с сайтом",
-    "Жесты яркости/громкости в плеере",
-    "Премиум-озвучки помечены значком",
+    "Субтитры временно скрыты (источник не давал нормальных файлов)",
   ],
 };
 
