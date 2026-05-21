@@ -5,11 +5,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import Animated, { FadeIn, useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { COLORS, RADIUS, FONTS, SPACING } from '../../constants/theme';
 import { getUser, logout, type User } from '../../utils/auth';
 import { getHistory, getFavorites, getTriedTranslators } from '../../utils/storage';
@@ -124,20 +123,6 @@ export function ProfileScreen() {
     return data;
   }, [history]);
 
-  // Pulse animation for the avatar glow + featured Play button
-  const pulse = useSharedValue(1);
-  useEffect(() => {
-    pulse.value = withRepeat(
-      withSequence(
-        withTiming(1.08, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1,
-      true
-    );
-  }, []);
-  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
-
   const visibleAchievements = useMemo(() => {
     const sorted = [...achievements].sort((a, b) => {
       if (a.unlocked !== b.unlocked) return a.unlocked ? -1 : 1;
@@ -186,7 +171,7 @@ export function ProfileScreen() {
 
             <View style={styles.heroRow}>
               <View style={styles.avatarWrap}>
-                <Animated.View style={[styles.avatarGlow, pulseStyle]} />
+                <View style={styles.avatarGlow} />
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>{(user?.name || '?').charAt(0).toUpperCase()}</Text>
                 </View>
@@ -217,7 +202,7 @@ export function ProfileScreen() {
 
         {/* ── Featured Continue Watching (full-width cinematic) ───────── */}
         {featured && (
-          <FeaturedContinueHero item={featured} nav={nav} pulseStyle={pulseStyle} />
+          <FeaturedContinueHero item={featured} nav={nav} />
         )}
 
         {/* ── 4 BIG stat cards ───────────────────────────────────────── */}
@@ -354,7 +339,22 @@ export function ProfileScreen() {
 
 /* ────────────────────── Sub-components ────────────────────── */
 
-function FeaturedContinueHero({ item, nav, pulseStyle }: { item: any; nav: any; pulseStyle: any }) {
+function FeaturedContinueHero({ item, nav }: { item: any; nav: any }) {
+  // Pulse animation defined locally — passing animated styles between
+  // components in Reanimated 4 loses the worklet context and breaks
+  // (was the suspected blank-screen cause).
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1.08, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      true
+    );
+  }, []);
+  const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
   const pct = item.duration ? Math.min(100, Math.floor((item.progress / item.duration) * 100)) : 0;
   const remaining = item.duration ? Math.max(0, Math.floor((item.duration - item.progress) / 60)) : 0;
   const backdrop = backdropUrl(item.backdrop_path || item.poster_path);
@@ -651,7 +651,7 @@ const styles = StyleSheet.create({
   heroRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   avatarWrap: { position: 'relative', width: 84, height: 84 },
   avatarGlow: {
-    position: 'absolute', inset: -8, width: 100, height: 100, top: -8, left: -8,
+    position: 'absolute', width: 100, height: 100, top: -8, left: -8,
     borderRadius: 50, backgroundColor: 'rgba(163,230,53,0.20)', opacity: 0.7,
   },
   avatar: {
