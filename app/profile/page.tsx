@@ -207,17 +207,37 @@ export default function ProfilePage() {
           0%, 100% { box-shadow: 0 0 28px rgba(163,230,53,0.18), 0 0 0 rgba(163,230,53,0.0); }
           50% { box-shadow: 0 0 56px rgba(163,230,53,0.32), 0 0 8px rgba(163,230,53,0.08); }
         }
+        /* Legendary now uses true gold (richer than amber) with a brighter
+           outer glow + animated gradient border. Premium tier feel. */
         @keyframes legendary-border {
-          0%, 100% { box-shadow: 0 0 18px rgba(250,204,21,0.25), inset 0 0 16px rgba(250,204,21,0.05); }
-          50% { box-shadow: 0 0 36px rgba(250,204,21,0.5), inset 0 0 24px rgba(250,204,21,0.12); }
-        }
-        @keyframes tilt-hint {
-          0%, 100% { transform: rotate(0deg) translateY(0); }
-          50% { transform: rotate(0.5deg) translateY(-1px); }
+          0%, 100% { box-shadow: 0 0 20px rgba(250,204,21,0.30), 0 0 40px rgba(245,158,11,0.15), inset 0 0 18px rgba(250,204,21,0.06); }
+          50% { box-shadow: 0 0 40px rgba(250,204,21,0.55), 0 0 80px rgba(245,158,11,0.25), inset 0 0 26px rgba(250,204,21,0.14); }
         }
         @keyframes float-dot {
           0%, 100% { transform: translateY(0) translateX(0); opacity: 0.5; }
           50% { transform: translateY(-12px) translateX(6px); opacity: 0.9; }
+        }
+        /* Fog blobs drift slowly + scale-breathe — barely perceptible movement
+           that adds life without distracting from content. */
+        @keyframes fog-drift-1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(40px, -20px) scale(1.08); }
+        }
+        @keyframes fog-drift-2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(-30px, 20px) scale(1.12); }
+        }
+        @keyframes pulse-soft {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.06); opacity: 0.92; }
+        }
+        @keyframes progress-flow {
+          0% { background-position: 0% 50%; }
+          100% { background-position: 200% 50%; }
+        }
+        /* Subtle dashed border march for near-unlock locked achievements */
+        @keyframes border-dance {
+          to { background-position: 12px 0, -12px 0, 0 12px, 0 -12px; }
         }
         .kino-shine::after {
           content: ""; position: absolute; inset: 0;
@@ -228,6 +248,38 @@ export default function ProfilePage() {
         .kino-shine:hover::after { animation: shine-sweep 1.1s ease-out forwards; }
         .kino-glow-pulse { animation: glow-pulse 4s ease-in-out infinite; }
         .kino-legendary { animation: legendary-border 2.6s ease-in-out infinite; }
+        .kino-fog-1 { animation: fog-drift-1 18s ease-in-out infinite; }
+        .kino-fog-2 { animation: fog-drift-2 22s ease-in-out infinite; }
+        .kino-pulse-soft { animation: pulse-soft 2.4s ease-in-out infinite; }
+        /* Animated gradient flow on the featured progress bar */
+        .kino-progress-flow {
+          background: linear-gradient(90deg, #a3e635, #d9f99d, #a3e635, #d9f99d);
+          background-size: 200% 100%;
+          animation: progress-flow 3s linear infinite;
+        }
+        /* Vignette — radial dark overlay around the page edges */
+        .kino-vignette {
+          background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.55) 100%);
+        }
+        /* Edge highlight at the top of each card (visible thin lit line) */
+        .kino-edge::before {
+          content: ""; position: absolute; inset: 0; border-radius: inherit;
+          background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 12%, transparent 88%, rgba(0,0,0,0.18) 100%);
+          pointer-events: none;
+        }
+        /* Near-unlock locked achievement: animated dashed border that
+           slowly marches around to hint that you're close. */
+        .kino-locked-near {
+          background-image:
+            linear-gradient(90deg, rgba(163,230,53,0.35) 50%, transparent 50%),
+            linear-gradient(90deg, rgba(163,230,53,0.35) 50%, transparent 50%),
+            linear-gradient(0deg,  rgba(163,230,53,0.35) 50%, transparent 50%),
+            linear-gradient(0deg,  rgba(163,230,53,0.35) 50%, transparent 50%);
+          background-size: 12px 1px, 12px 1px, 1px 12px, 1px 12px;
+          background-position: 0 0, 0 100%, 0 0, 100% 0;
+          background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+          animation: border-dance 1.5s linear infinite;
+        }
         /* SVG noise grain background — applied as a pseudo to give depth */
         .kino-noise::before {
           content: ""; position: absolute; inset: 0;
@@ -246,21 +298,29 @@ export default function ProfilePage() {
         {/* ── Global noise grain over whole profile page ─────────────────── */}
         <div className="kino-noise absolute inset-0 pointer-events-none z-0" />
 
-        {/* ── Floating particles (subtle, decorative) ────────────────────── */}
+        {/* ── Vignette: dark frame around viewport edges ───────────────── */}
+        <div className="kino-vignette absolute inset-0 pointer-events-none z-[1]" />
+
+        {/* ── Floating particles (varied size/speed for depth) ─────────── */}
         <div className="absolute inset-0 pointer-events-none -z-0 overflow-hidden">
-          {[...Array(6)].map((_, i) => (
-            <span
-              key={i}
-              className="absolute w-1 h-1 rounded-full bg-primary/40"
-              style={{
-                top: `${15 + i * 13}%`,
-                left: `${(i * 17 + 7) % 95}%`,
-                animation: `float-dot ${5 + i}s ease-in-out infinite`,
-                animationDelay: `${i * 0.6}s`,
-                boxShadow: "0 0 8px rgba(163,230,53,0.6)",
-              }}
-            />
-          ))}
+          {[...Array(12)].map((_, i) => {
+            const size = i % 3 === 0 ? 2 : 1; // mix of 1px and 2px dots
+            return (
+              <span
+                key={i}
+                className="absolute rounded-full bg-primary/40"
+                style={{
+                  width: `${size}px`,
+                  height: `${size}px`,
+                  top: `${8 + i * 7.5}%`,
+                  left: `${(i * 13 + 11) % 95}%`,
+                  animation: `float-dot ${4 + (i % 5)}s ease-in-out infinite`,
+                  animationDelay: `${i * 0.4}s`,
+                  boxShadow: `0 0 ${4 + size * 3}px rgba(163,230,53,0.6)`,
+                }}
+              />
+            );
+          })}
         </div>
 
         {/* ── Hero: cinematic poster collage backdrop ─────────────────────── */}
@@ -284,10 +344,10 @@ export default function ProfilePage() {
             )}
             {/* Heavy blur on top of posters for fog effect */}
             <div className="absolute inset-0 backdrop-blur-2xl bg-background/60" />
-            {/* Lime green fog from top-right */}
-            <div className="absolute -top-32 -right-20 w-[600px] h-[600px] rounded-full bg-primary/[0.18] blur-3xl" />
-            {/* Purple fog from bottom-left for color depth */}
-            <div className="absolute -bottom-32 -left-20 w-[500px] h-[500px] rounded-full bg-purple-500/[0.08] blur-3xl" />
+            {/* Drifting fog blobs — slow keyframe motion gives the bg "life" */}
+            <div className="kino-fog-1 absolute -top-32 -right-20 w-[600px] h-[600px] rounded-full bg-primary/[0.18] blur-3xl" />
+            <div className="kino-fog-2 absolute -bottom-32 -left-20 w-[500px] h-[500px] rounded-full bg-purple-500/[0.10] blur-3xl" />
+            <div className="kino-fog-1 absolute top-20 left-1/3 w-[300px] h-[300px] rounded-full bg-cyan-500/[0.05] blur-3xl" style={{ animationDelay: "-9s" }} />
             {/* Final gradient overlay — fade to bg at bottom */}
             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/30 to-background" />
           </div>
@@ -442,18 +502,45 @@ export default function ProfilePage() {
                 {topGenres.length === 0 ? (
                   <EmptyHint icon={<Film size={18} />} text="Смотри фильмы — посчитаем твои жанры" />
                 ) : (
-                  <div className="flex items-center gap-4">
-                    <DonutChart segments={topGenres} centerLabel={`${hoursWatched}ч`} />
-                    <ul className="flex-1 space-y-1.5 min-w-0">
-                      {topGenres.map((g, i) => (
-                        <li key={g.name} className="flex items-center gap-2 text-[12.5px]">
-                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: GENRE_COLORS[i % GENRE_COLORS.length] }} />
-                          <span className="text-foreground/55 tabular-nums text-[11.5px] w-8">{g.pct}%</span>
-                          <span className="text-foreground/85 truncate">{g.name}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                  <>
+                    <div className="flex items-center gap-4">
+                      <DonutChart segments={topGenres} centerLabel={`${hoursWatched}ч`} />
+                      <ul className="flex-1 space-y-1.5 min-w-0">
+                        {topGenres.map((g, i) => (
+                          <li key={g.name} className="flex items-center gap-2 text-[12.5px]">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: GENRE_COLORS[i % GENRE_COLORS.length] }} />
+                            <span className="text-foreground/55 tabular-nums text-[11.5px] w-8">{g.pct}%</span>
+                            <span className="text-foreground/85 truncate">{g.name}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Mini-stats row below donut — fills the empty space
+                        with concrete numbers (avg rating across watched
+                        titles, total titles, top-genre share) */}
+                    <div className="mt-4 pt-4 border-t border-white/[0.05] grid grid-cols-3 gap-3">
+                      <MiniGenreStat
+                        label="Ср. рейтинг"
+                        value={(() => {
+                          const rated = history.filter(h => h.vote_average > 0);
+                          if (rated.length === 0) return "—";
+                          const avg = rated.reduce((s, h) => s + h.vote_average, 0) / rated.length;
+                          return avg.toFixed(1);
+                        })()}
+                        icon={<Star size={11} className="text-amber-300" fill="currentColor" />}
+                      />
+                      <MiniGenreStat
+                        label="Всего просмотрено"
+                        value={String(stats.totalMoviesWatched + stats.totalTvEpisodes)}
+                      />
+                      <MiniGenreStat
+                        label="Топ-жанр"
+                        value={topGenres[0]?.name || "—"}
+                        small
+                      />
+                    </div>
+                  </>
                 )}
               </Card>
 
@@ -484,7 +571,10 @@ export default function ProfilePage() {
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`relative rounded-2xl p-5 bg-foreground/[0.025] ring-1 ring-white/[0.05] backdrop-blur-sm kino-card-tilt hover:ring-white/[0.12] hover:bg-foreground/[0.04] ${className}`}>
+    <div
+      className={`kino-edge relative rounded-2xl p-5 bg-gradient-to-b from-foreground/[0.035] to-foreground/[0.015] ring-1 ring-white/[0.05] backdrop-blur-sm kino-card-tilt hover:ring-white/[0.12] hover:bg-foreground/[0.04] ${className}`}
+      style={{ boxShadow: "0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px -12px rgba(0,0,0,0.5)" }}
+    >
       {children}
     </div>
   );
@@ -572,7 +662,9 @@ function FeaturedContinueHero({ item }: { item: any }) {
           {/* Multi-layer gradient: depth on right, dark on left for text */}
           <div className="absolute inset-0 bg-gradient-to-r from-black via-black/75 to-black/20" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent" />
-          <div className="absolute -top-32 -right-12 w-[400px] h-[400px] rounded-full bg-primary/[0.10] blur-3xl" />
+          <div className="kino-fog-1 absolute -top-32 -right-12 w-[400px] h-[400px] rounded-full bg-primary/[0.12] blur-3xl" />
+          {/* Cinematic grain over the backdrop */}
+          <div className="kino-noise absolute inset-0" />
         </div>
       )}
 
@@ -602,19 +694,23 @@ function FeaturedContinueHero({ item }: { item: any }) {
               )}
             </div>
             <div className="relative h-1.5 bg-white/15 rounded-full overflow-hidden backdrop-blur-sm">
+              {/* Flowing gradient on the filled portion — gives the bar life
+                  even when paused (the user notices motion subliminally) */}
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-primary/80 to-primary"
-                style={{ width: `${pct}%`, boxShadow: "0 0 16px rgba(163,230,53,0.7)" }}
+                className="kino-progress-flow absolute inset-y-0 left-0 rounded-full"
+                style={{ width: `${pct}%`, boxShadow: "0 0 18px rgba(163,230,53,0.7)" }}
               />
             </div>
           </div>
 
           {/* Buttons */}
           <div className="mt-5 flex items-center gap-2 flex-wrap">
+            {/* Play button gets a soft pulse + shine sweep on hover — primary
+                CTA needs to feel alive without being annoying */}
             <Link
               href={href}
-              className="relative kino-shine overflow-hidden inline-flex items-center gap-2 h-12 px-6 rounded-full bg-primary text-primary-foreground font-bold text-[14px] hover:bg-primary/95 transition-all hover:scale-[1.02]"
-              style={{ boxShadow: "0 8px 24px -6px rgba(163,230,53,0.5)" }}
+              className="relative kino-shine kino-pulse-soft overflow-hidden inline-flex items-center gap-2 h-12 px-6 rounded-full bg-primary text-primary-foreground font-bold text-[14px] hover:bg-primary/95 transition-all hover:scale-[1.04]"
+              style={{ boxShadow: "0 8px 28px -4px rgba(163,230,53,0.55), 0 0 24px rgba(163,230,53,0.3)" }}
             >
               <Play size={16} fill="currentColor" /> Продолжить
             </Link>
@@ -741,6 +837,18 @@ function ActivityRow({ item }: { item: any }) {
 }
 
 const GENRE_COLORS = ["#a3e635", "#a78bfa", "#60a5fa", "#fb923c", "#f472b6"];
+
+function MiniGenreStat({ label, value, icon, small }: { label: string; value: string; icon?: React.ReactNode; small?: boolean }) {
+  return (
+    <div className="text-center">
+      <div className="inline-flex items-center gap-1 mb-0.5">
+        {icon}
+        <span className={`text-foreground font-bold tabular-nums leading-none ${small ? "text-[13px]" : "text-[15px]"}`}>{value}</span>
+      </div>
+      <div className="text-foreground/40 text-[9.5px] uppercase tracking-wider mt-0.5">{label}</div>
+    </div>
+  );
+}
 
 function DonutChart({ segments, centerLabel }: { segments: { name: string; pct: number }[]; centerLabel?: string }) {
   const R = 38;
@@ -875,22 +983,29 @@ function AchievementCard({ ach, unlockedDate }: { ach: UnlockedAchievement; unlo
     common:    { ring: "ring-white/[0.06]",   glow: "",              grad: "from-foreground/[0.025] to-foreground/[0.01]", iconColor: "text-foreground/70",  iconBg: "bg-white/[0.06]",       text: "text-foreground/50",  badge: "bg-white/10 text-foreground/65" },
     rare:      { ring: "ring-blue-400/30",    glow: "",              grad: "from-blue-500/[0.10] to-blue-500/[0.02]",      iconColor: "text-blue-300",       iconBg: "bg-blue-500/[0.15]",    text: "text-blue-300",       badge: "bg-blue-400/15 text-blue-300" },
     epic:      { ring: "ring-purple-400/40",  glow: "[box-shadow:0_0_20px_rgba(168,85,247,0.20)]", grad: "from-purple-500/[0.12] to-purple-500/[0.02]",  iconColor: "text-purple-300",     iconBg: "bg-purple-500/[0.18]",  text: "text-purple-300",     badge: "bg-purple-400/15 text-purple-300" },
-    legendary: { ring: "ring-amber-400/50",   glow: "kino-legendary", grad: "from-amber-500/[0.18] to-amber-400/[0.04]",   iconColor: "text-amber-300",      iconBg: "bg-amber-500/[0.20]",   text: "text-amber-300",      badge: "bg-amber-400/15 text-amber-300" },
+    legendary: { ring: "ring-yellow-300/60",  glow: "kino-legendary", grad: "from-yellow-400/[0.22] via-amber-500/[0.10] to-yellow-300/[0.05]", iconColor: "text-yellow-200", iconBg: "bg-gradient-to-br from-yellow-400/[0.35] to-amber-500/[0.15]", text: "text-yellow-200", badge: "bg-yellow-400/20 text-yellow-200" },
   }[rarity];
 
   const rarityLabel = { common: "обычное", rare: "редкое", epic: "эпическое", legendary: "легендарное" }[rarity];
+
+  const nearUnlock = !isUnlocked && ach.progress >= 0.5;
 
   return (
     <div
       className={`relative rounded-xl p-3 ring-1 group kino-card-tilt overflow-hidden ${
         isUnlocked
           ? `bg-gradient-to-br ${tier.grad} ${tier.ring} ${tier.glow}`
-          : "bg-foreground/[0.02] ring-white/[0.04] hover:ring-white/15"
+          : nearUnlock
+            ? "bg-gradient-to-br from-primary/[0.04] to-foreground/[0.01] ring-primary/15 hover:ring-primary/30"
+            : "bg-foreground/[0.02] ring-white/[0.04] hover:ring-white/15"
       }`}
       title={`${ach.desc} • ${rarityLabel}`}
     >
-      {/* Shine sweep on hover */}
+      {/* Shine sweep on hover (only unlocked) */}
       {isUnlocked && <div className="kino-shine absolute inset-0" />}
+      {/* Animated dashed border for near-unlock — gives the user a hint
+          they're close without being obnoxious. Only fires at >=50%. */}
+      {nearUnlock && <div className="kino-locked-near absolute inset-0 rounded-xl pointer-events-none" />}
 
       {!isUnlocked && (
         <div className="absolute top-1.5 right-1.5 text-foreground/30">
