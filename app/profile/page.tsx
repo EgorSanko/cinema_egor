@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   LogIn, LogOut, Heart, Clock, Award, Film, Tv, Trophy, Lock,
   Flame, Flag, TrendingUp, AudioLines, ArrowRight, Play, Bookmark,
-  Star, CheckCircle2, ChevronDown, Crown, Sparkles, Zap,
+  Star, CheckCircle2, ChevronDown, Crown, Sparkles, Zap, Users,
 } from "lucide-react";
 import { AchievementIcon } from "@/lib/achievement-icons";
 import Link from "next/link";
@@ -425,7 +425,10 @@ export default function ProfilePage() {
                 <h1 className="text-3xl sm:text-5xl font-black text-foreground tracking-tight leading-[1.02] drop-shadow-[0_2px_24px_rgba(0,0,0,0.6)]">
                   {user.name}
                 </h1>
-                <p className="text-foreground/55 mt-1.5 text-[13px] sm:text-sm">{user.email}</p>
+                <div className="flex items-center gap-3 flex-wrap mt-1.5">
+                  <p className="text-foreground/55 text-[13px] sm:text-sm">{user.email}</p>
+                  <FriendCodeChip />
+                </div>
 
                 <div className="mt-5 max-w-md">
                   <div className="flex items-center justify-between gap-3 mb-2">
@@ -968,6 +971,37 @@ function DonutChart({ segments, centerLabel }: { segments: { name: string; pct: 
         </div>
       )}
     </div>
+  );
+}
+
+/* ── Friend code chip: shows user's code + copy button ── */
+function FriendCodeChip() {
+  const [code, setCode] = useState<string>("");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const refresh = () => setCode(localStorage.getItem("kino_friend_code") || "");
+    refresh();
+    window.addEventListener("sync-complete", refresh);
+    return () => window.removeEventListener("sync-complete", refresh);
+  }, []);
+  if (!code) return null;
+  const copy = async () => {
+    try {
+      await navigator.clipboard?.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+  return (
+    <button
+      onClick={copy}
+      title="Скопировать код друга — пришли его кому-нибудь чтобы сравнить вкусы"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 ring-1 ring-purple-400/30 text-purple-200 text-[11px] font-bold tracking-wider uppercase hover:bg-purple-500/25 transition-colors"
+    >
+      <Users size={11} />
+      {copied ? "Скопировано" : code}
+    </button>
   );
 }
 

@@ -25,13 +25,25 @@ function getUserData(email: string): any {
       return JSON.parse(fs.readFileSync(file, "utf-8"));
     }
   } catch {}
-  return { favorites: [], history: [], positions: {}, comments: [] };
+  return { favorites: [], history: [], positions: {}, comments: [], lists: [], friendCode: "" };
 }
 
 function saveUserData(email: string, data: any) {
   ensureDir();
   const file = getUserFile(email);
+  // Auto-generate friend code if missing — used by /compare/[code]
+  if (!data.friendCode) {
+    data.friendCode = generateFriendCode();
+  }
   fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf-8");
+}
+
+function generateFriendCode(): string {
+  // 6 chars from a clean alphabet (no I/O/0/1 ambiguity)
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return code;
 }
 
 export async function POST(req: NextRequest) {
@@ -104,15 +116,55 @@ export async function POST(req: NextRequest) {
         .sort((a: any, b: any) => b.createdAt - a.createdAt)
         .slice(0, 2000);
 
+      // Merge user-created lists by id, keep latest updatedAt
+      const listMap = new Map<string, any>();
+      const existLists = Array.isArray(existing.lists) ? existing.lists : [];
+      const incomingLists = Array.isArray(data.lists) ? data.lists : [];
+      for (const l of existLists) listMap.set(l.id, l);
+      for (const l of incomingLists) {
+        const prev = listMap.get(l.id);
+        if (!prev || (l.updatedAt || 0) > (prev.updatedAt || 0)) listMap.set(l.id, l);
+      }
+      const mergedLists = Array.from(listMap.values())
+        .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))
+        .slice(0, 50);
+
       const merged = {
         favorites: mergedFavs,
         history: mergedHistory,
         positions: mergedPositions,
         comments: mergedComments,
+        lists: mergedLists,
+        friendCode: existing.friendCode || generateFriendCode(),
       };
 
       saveUserData(email, merged);
       return NextResponse.json({ success: true, data: merged });
+    }
+
+    // Resolve friend code → return a slim public view of that user's data
+    // (just history+favorites, no email). Used by /compare/[code].
+    if (action === "friend-lookup") {
+      const { code } = body;
+      if (!code) return NextResponse.json({ error: "No code" }, { status: 400 });
+      ensureDir();
+      const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith(".json"));
+      for (const f of files) {
+        try {
+          const u = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), "utf-8"));
+          if (u.friendCode === code) {
+            return NextResponse.json({
+              success: true,
+              data: {
+                history: u.history || [],
+                favorites: u.favorites || [],
+                friendCode: u.friendCode,
+              },
+            });
+          }
+        } catch {}
+      }
+      return NextResponse.json({ error: "Не найдено" }, { status: 404 });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

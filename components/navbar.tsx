@@ -298,6 +298,9 @@ export function Navbar() {
                         <Link href="/wrapped" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-primary/90 hover:text-primary hover:bg-primary/5 transition-colors font-semibold">
                           <span className="text-base leading-none">🎬</span> Год в кино
                         </Link>
+                        <Link href="/lists" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 transition-colors">
+                          <span className="text-base leading-none">📋</span> Мои списки
+                        </Link>
                         <button onClick={() => { logout(); setShowUserMenu(false); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-red-400/90 hover:text-red-400 hover:bg-red-400/5 transition-colors border-t border-white/[0.06]">
                           <LogOut size={15} /> Выйти
                         </button>

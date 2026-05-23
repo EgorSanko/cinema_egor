@@ -68,11 +68,14 @@ function scheduleSyncToServer() {
 
 async function syncToServer(email: string) {
   try {
+    let lists: any[] = [];
+    try { lists = JSON.parse(localStorage.getItem("kino_lists_v1") || "[]"); } catch {}
     const data = {
       favorites: getFavorites(),
       history: getHistory(),
       positions: getAllPositions(),
       comments: getAllComments(),
+      lists,
     };
     const res = await fetch("/api/sync", {
       method: "POST",
@@ -83,6 +86,10 @@ async function syncToServer(email: string) {
       const result = await res.json();
       if (result.data) {
         applyServerData(result.data);
+        // Stash friendCode for /profile to display
+        if (result.data.friendCode) {
+          try { localStorage.setItem("kino_friend_code", result.data.friendCode); } catch {}
+        }
         window.dispatchEvent(new CustomEvent("sync-complete"));
       }
     }
