@@ -51,18 +51,25 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action, email } = body;
 
-    if (!email) {
-      return NextResponse.json({ error: "No email" }, { status: 400 });
-    }
+    // email is required for load/save but NOT for friend-lookup (which
+    // identifies by code). Moving the check inside the actions that need
+    // it — previously every request was rejected with "No email" before
+    // friend-lookup could even run, breaking the compare feature.
+    const requireEmail = () => {
+      if (!email) return NextResponse.json({ error: "No email" }, { status: 400 });
+      return null;
+    };
 
     // LOAD - get all user data from server
     if (action === "load") {
+      const err = requireEmail(); if (err) return err;
       const data = getUserData(email);
       return NextResponse.json({ success: true, data });
     }
 
     // SAVE - save all user data to server
     if (action === "save") {
+      const err = requireEmail(); if (err) return err;
       const { data } = body;
       if (!data) return NextResponse.json({ error: "No data" }, { status: 400 });
 
