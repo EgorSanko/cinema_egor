@@ -100,11 +100,14 @@ async function syncToServer(email: string) {
 
 export async function syncFromServer(email: string): Promise<boolean> {
   try {
+    let lists: any[] = [];
+    try { lists = JSON.parse(localStorage.getItem("kino_lists_v1") || "[]"); } catch {}
     const localData = {
       favorites: getFavorites(),
       history: getHistory(),
       positions: getAllPositions(),
       comments: getAllComments(),
+      lists,
     };
 
     const res = await fetch("/api/sync", {
@@ -117,6 +120,9 @@ export async function syncFromServer(email: string): Promise<boolean> {
       const result = await res.json();
       if (result.data) {
         applyServerData(result.data);
+        if (result.data.friendCode) {
+          try { localStorage.setItem("kino_friend_code", result.data.friendCode); } catch {}
+        }
         window.dispatchEvent(new CustomEvent("sync-complete"));
         return true;
       }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Sparkles, Dices, X, Play } from "lucide-react";
@@ -31,33 +31,42 @@ export function MoodAndRoulette() {
   const [spinPick, setSpinPick] = useState<Movie | null>(null);
   const [spinPool, setSpinPool] = useState<Movie[]>([]);
 
-  // Build the spinner pool on first interaction — favorites + history
-  // titles with rating 7+. Fallback: random from currently-trending.
+  // Pool = TMDB top_rated + popular (random pages), MINUS what the user
+  // already watched/has in history. Goal is *discovery* — recommending
+  // unseen titles. Old impl picked from history which defeated the point.
   const buildPool = async (): Promise<Movie[]> => {
     if (spinPool.length > 0) return spinPool;
     let pool: Movie[] = [];
+    // Skip-set from local storage so we don't show what user already saw
+    const skip = new Set<number>();
     try {
-      const favRaw = localStorage.getItem("kino_favorites");
       const histRaw = localStorage.getItem("kino_history");
-      const favs = favRaw ? JSON.parse(favRaw) : [];
+      const favRaw = localStorage.getItem("kino_favorites");
       const hist = histRaw ? JSON.parse(histRaw) : [];
-      const merged = [...favs, ...hist];
-      const seen = new Set<string>();
-      for (const m of merged) {
-        const key = `${m.type ?? "movie"}-${m.id}`;
-        if (seen.has(key)) continue;
-        if ((m.vote_average ?? 0) < 7) continue;
-        seen.add(key);
-        pool.push({ id: m.id, title: m.title, poster_path: m.poster_path, vote_average: m.vote_average });
-      }
+      const favs = favRaw ? JSON.parse(favRaw) : [];
+      for (const m of [...hist, ...favs]) if (m?.id) skip.add(m.id);
     } catch {}
-    if (pool.length < 5) {
-      try {
-        const res = await fetch("/tmdb-api/movie/top_rated?api_key=275c9d09780aadb4b13ff57a731eda00&language=ru-RU&page=1");
-        const data = await res.json();
-        pool = pool.concat((data.results || []).slice(0, 20));
-      } catch {}
-    }
+    // Pull 2 random pages from top_rated + 1 random page from popular
+    // for variety. Filter out adult and items the user has touched.
+    const pages = [
+      `/tmdb-api/movie/top_rated?api_key=275c9d09780aadb4b13ff57a731eda00&language=ru-RU&page=${1 + Math.floor(Math.random() * 5)}`,
+      `/tmdb-api/movie/top_rated?api_key=275c9d09780aadb4b13ff57a731eda00&language=ru-RU&page=${1 + Math.floor(Math.random() * 5)}`,
+      `/tmdb-api/movie/popular?api_key=275c9d09780aadb4b13ff57a731eda00&language=ru-RU&page=${1 + Math.floor(Math.random() * 5)}`,
+    ];
+    try {
+      const responses = await Promise.all(pages.map(p => fetch(p).then(r => r.json()).catch(() => ({ results: [] }))));
+      const merged: Movie[] = [];
+      const seen = new Set<number>();
+      for (const r of responses) {
+        for (const m of (r.results || [])) {
+          if (skip.has(m.id) || seen.has(m.id)) continue;
+          if (!m.poster_path) continue;
+          seen.add(m.id);
+          merged.push(m);
+        }
+      }
+      pool = merged.slice(0, 60);
+    } catch {}
     setSpinPool(pool);
     return pool;
   };
@@ -133,55 +142,15 @@ export function MoodAndRoulette() {
         </div>
       </div>
 
-      {/* Roulette */}
-      <div className="relative rounded-2xl p-5 bg-gradient-to-br from-purple-500/[0.10] to-foreground/[0.01] ring-1 ring-purple-400/15 overflow-hidden lg:w-[280px]">
-        <div className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-purple-500/[0.15] blur-3xl pointer-events-none" />
-        <div className="relative flex items-center gap-2 mb-3">
-          <Dices size={16} className="text-purple-300" />
-          <h2 className="text-foreground font-bold text-[15px]">Помоги выбрать</h2>
-        </div>
-        <p className="text-foreground/55 text-[12px] mb-4">Случайка из твоего топа и фаворитов</p>
-        {spinPick ? (
-          <Link href={`/movie/${spinPick.id}`} className="block">
-            <div className={`relative aspect-[16/9] rounded-xl overflow-hidden bg-foreground/[0.05] ring-1 ring-white/[0.06] mb-3 ${spinning ? "blur-sm" : ""}`}>
-              {spinPick.poster_path && (
-                <Image
-                  src={`${POSTER}/w500${spinPick.poster_path}`}
-                  alt={spinPick.title || spinPick.name || ""}
-                  fill
-                  sizes="280px"
-                  className="object-cover"
-                />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 to-transparent" />
-              <div className="absolute bottom-2 left-3 right-3">
-                <p className="text-white text-[13px] font-bold line-clamp-1">{spinPick.title || spinPick.name}</p>
-              </div>
-              {!spinning && (
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                  <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
-                    <Play size={18} fill="currentColor" className="text-primary-foreground" />
-                  </div>
-                </div>
-              )}
-            </div>
-          </Link>
-        ) : (
-          <div className="aspect-[16/9] rounded-xl border-2 border-dashed border-white/[0.08] mb-3 flex items-center justify-center text-foreground/30">
-            <Dices size={32} />
-          </div>
-        )}
-        <button
-          onClick={spin}
-          disabled={spinning}
-          className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-full bg-purple-500/20 hover:bg-purple-500/30 ring-1 ring-purple-400/40 text-purple-100 text-[13px] font-semibold transition-all disabled:opacity-60"
-        >
-          <Dices size={14} className={spinning ? "animate-spin" : ""} />
-          {spinning ? "Вертится…" : spinPick ? "Ещё раз" : "Крутить барабан"}
-        </button>
-      </div>
+      {/* Roulette — slot-machine style */}
+      <RouletteSlot
+        spinning={spinning}
+        spinPick={spinPick}
+        spinPool={spinPool}
+        onSpin={spin}
+      />
 
-      {/* Mood results modal */}
+      {/* Mood results modal — overlays both cards */}
       {openMood && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm" onClick={closeMood}>
           <div onClick={e => e.stopPropagation()} className="relative w-full max-w-3xl max-h-[85vh] rounded-2xl bg-background ring-1 ring-white/10 flex flex-col">
@@ -222,3 +191,90 @@ export function MoodAndRoulette() {
     </section>
   );
 }
+
+/* ── Slot-machine roulette ─────────────────────────────────────
+   Cinematic poster carousel that scrolls fast then settles on the
+   final pick. The "winning" item lands behind a center indicator
+   (vertical neon line). Big poster, big CTA, very Steam-roulette. */
+function RouletteSlot({ spinning, spinPick, spinPool, onSpin }: {
+  spinning: boolean;
+  spinPick: Movie | null;
+  spinPool: Movie[];
+  onSpin: () => void;
+}) {
+  // Build a long shuffled strip when pool changes — used during animation
+  const strip = useMemo(() => {
+    if (spinPool.length === 0) return [] as Movie[];
+    const out: Movie[] = [];
+    // 40 items: 4× repeated, last one is the pick — so it lands center
+    for (let i = 0; i < 40; i++) out.push(spinPool[Math.floor(Math.random() * spinPool.length)]);
+    if (spinPick) out[35] = spinPick; // index 35 lands center after settle
+    return out;
+  }, [spinPool, spinPick]);
+
+  return (
+    <div className="relative rounded-2xl p-5 bg-gradient-to-br from-purple-500/[0.12] to-foreground/[0.01] ring-1 ring-purple-400/20 overflow-hidden lg:w-[420px]">
+      <div className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-purple-500/[0.20] blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-20 -right-10 w-40 h-40 rounded-full bg-primary/[0.10] blur-3xl pointer-events-none" />
+      <div className="relative flex items-center gap-2 mb-1.5">
+        <Dices size={16} className="text-purple-300" />
+        <h2 className="text-foreground font-bold text-[15px]">Помоги выбрать</h2>
+      </div>
+      <p className="text-foreground/55 text-[12px] mb-4">Случайный фильм из топ-рейтинга, который ты ещё не смотрел</p>
+
+      {/* Slot strip */}
+      <div className="relative aspect-[5/3] rounded-xl overflow-hidden bg-black ring-1 ring-white/[0.08] mb-3">
+        {/* Strip background with fade edges */}
+        <div className="absolute inset-0 flex items-center"
+             style={{
+               transform: spinning ? "translateX(-3000px)" : spinPick ? "translateX(-3360px)" : "translateX(0)",
+               transition: spinning ? "transform 2.6s cubic-bezier(.05,.7,.1,1)" : spinPick ? "transform 0.6s cubic-bezier(.2,.7,.2,1)" : "none",
+             }}>
+          {strip.map((m, i) => (
+            <div key={i} className="relative h-full w-[105px] flex-shrink-0">
+              {m.poster_path && (
+                <Image src={`${POSTER}/w185${m.poster_path}`} alt="" fill sizes="105px" className="object-cover" />
+              )}
+            </div>
+          ))}
+        </div>
+        {/* Center indicator line + glow */}
+        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-primary pointer-events-none z-10" style={{ boxShadow: "0 0 16px rgba(163,230,53,0.8), 0 0 32px rgba(163,230,53,0.4)" }} />
+        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[110px] ring-2 ring-primary/40 ring-inset rounded-md pointer-events-none z-10" />
+        {/* Edge fades */}
+        <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-black to-transparent pointer-events-none z-10" />
+        <div className="absolute inset-y-0 right-0 w-1/4 bg-gradient-to-l from-black to-transparent pointer-events-none z-10" />
+
+        {/* Empty / initial state overlay */}
+        {!spinning && !spinPick && strip.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 z-20 text-foreground/40">
+            <Dices size={32} />
+            <p className="text-[11px]">Жми «РОЛИК» чтобы крутить</p>
+          </div>
+        )}
+      </div>
+
+      {/* Winning title bar */}
+      {spinPick && !spinning && (
+        <Link href={`/movie/${spinPick.id}`} className="block mb-3 rounded-xl bg-gradient-to-r from-primary/15 to-primary/5 ring-1 ring-primary/30 px-3 py-2.5 group hover:bg-primary/20 transition-colors">
+          <p className="text-foreground font-bold text-[14px] line-clamp-1 group-hover:text-primary">{spinPick.title || spinPick.name}</p>
+          <div className="flex items-center gap-2 mt-1 text-[10.5px] text-foreground/55">
+            {spinPick.vote_average && <span className="text-amber-300 font-bold">★ {spinPick.vote_average.toFixed(1)}</span>}
+            {spinPick.release_date && <span>{new Date(spinPick.release_date).getFullYear()}</span>}
+            <span className="ml-auto text-primary font-semibold inline-flex items-center gap-1">Смотреть <Play size={11} fill="currentColor" /></span>
+          </div>
+        </Link>
+      )}
+
+      <button
+        onClick={onSpin}
+        disabled={spinning}
+        className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-full bg-gradient-to-r from-primary to-yellow-300 text-primary-foreground font-black text-[14px] tracking-wider uppercase transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+        style={{ boxShadow: "0 6px 24px -4px rgba(163,230,53,0.5)" }}
+      >
+        <Dices size={16} className={spinning ? "animate-spin" : ""} />
+        {spinning ? "Крутится…" : spinPick ? "Ещё раз" : "РОЛИК"}
+      </button>
+    </div>);
+}
+

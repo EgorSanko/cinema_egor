@@ -2,7 +2,7 @@
 
 import { Navbar } from "@/components/navbar";
 import { useAuth } from "@/components/auth-context";
-import { getFavorites, getHistory } from "@/lib/storage";
+import { getFavorites, getHistory, syncFromServer } from "@/lib/storage";
 import { computeStats, evaluateAchievements, type UnlockedAchievement } from "@/lib/achievements";
 import { getGenreLookup, pickPersona, GENRES } from "@/lib/genre-persona";
 import { enrichHistoryWithGenres } from "@/lib/genre-enrich";
@@ -84,11 +84,17 @@ export default function ProfilePage() {
     };
     window.addEventListener("sync-complete", refresh);
     window.addEventListener("favorites-changed", refresh);
+    // Force a sync immediately so the server generates+returns a
+    // friendCode for users who haven't synced yet (otherwise the
+    // chip on profile stays empty).
+    if (user?.email) {
+      syncFromServer(user.email).catch(() => {});
+    }
     return () => {
       window.removeEventListener("sync-complete", refresh);
       window.removeEventListener("favorites-changed", refresh);
     };
-  }, []);
+  }, [user?.email]);
 
   // genreLookup is a stable map — built once from the GENRES constant.
   // Without it computeStats can't populate stats.byGenre.
@@ -974,10 +980,13 @@ function DonutChart({ segments, centerLabel }: { segments: { name: string; pct: 
   );
 }
 
-/* ── Friend code chip: shows user's code + copy button ── */
+/* ── Friend code chip: shows user's code + copy button. Click opens
+       a small modal with code, link, and input for friend's code. ── */
 function FriendCodeChip() {
   const [code, setCode] = useState<string>("");
+  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [friendInput, setFriendInput] = useState("");
   useEffect(() => {
     if (typeof window === "undefined") return;
     const refresh = () => setCode(localStorage.getItem("kino_friend_code") || "");
@@ -985,7 +994,7 @@ function FriendCodeChip() {
     window.addEventListener("sync-complete", refresh);
     return () => window.removeEventListener("sync-complete", refresh);
   }, []);
-  if (!code) return null;
+
   const copy = async () => {
     try {
       await navigator.clipboard?.writeText(code);
@@ -993,15 +1002,71 @@ function FriendCodeChip() {
       setTimeout(() => setCopied(false), 2000);
     } catch {}
   };
+
+  // Empty state — show generating button until sync settles
+  if (!code) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-foreground/[0.05] ring-1 ring-white/[0.06] text-foreground/45 text-[11px] font-medium">
+        <Users size={11} />
+        Код генерируется…
+      </span>
+    );
+  }
+
   return (
-    <button
-      onClick={copy}
-      title="Скопировать код друга — пришли его кому-нибудь чтобы сравнить вкусы"
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 ring-1 ring-purple-400/30 text-purple-200 text-[11px] font-bold tracking-wider uppercase hover:bg-purple-500/25 transition-colors"
-    >
-      <Users size={11} />
-      {copied ? "Скопировано" : code}
-    </button>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="Твой код для сравнения вкусов с друзьями"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 ring-1 ring-purple-400/30 text-purple-200 text-[11px] font-bold tracking-wider uppercase hover:bg-purple-500/25 transition-colors"
+      >
+        <Users size={11} />
+        Код: {code}
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm" onClick={() => setOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md rounded-2xl bg-background ring-1 ring-white/10 p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-foreground font-bold text-lg flex items-center gap-2"><Users size={18} className="text-purple-300" /> Сравнить с другом</h2>
+              <button onClick={() => setOpen(false)} className="w-8 h-8 rounded-full bg-foreground/[0.05] hover:bg-foreground/[0.10] text-foreground/75 flex items-center justify-center text-lg">×</button>
+            </div>
+
+            <div>
+              <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold mb-2">Твой код — отправь другу</div>
+              <button
+                onClick={copy}
+                className="w-full inline-flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-purple-500/20 to-primary/15 ring-1 ring-purple-400/40 hover:ring-purple-300/60 transition-colors"
+              >
+                <span className="text-purple-100 font-black text-2xl tracking-[0.3em] tabular-nums">{code}</span>
+                <span className="text-purple-200 text-[12px] font-semibold">{copied ? "✓ Скопировано" : "Копировать"}</span>
+              </button>
+              <p className="text-foreground/45 text-[11px] mt-2">Или ссылка: <span className="text-foreground/70">sapkeflykino.ru/compare/{code}</span></p>
+            </div>
+
+            <div>
+              <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold mb-2">Ввести код друга</div>
+              <div className="flex gap-2">
+                <input
+                  value={friendInput}
+                  onChange={e => setFriendInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                  maxLength={6}
+                  placeholder="ABCD23"
+                  className="flex-1 bg-background/40 ring-1 ring-white/[0.08] rounded-xl px-4 h-12 text-foreground text-center font-black text-xl tracking-[0.3em] tabular-nums outline-none focus:ring-purple-400/50"
+                />
+                <Link
+                  href={friendInput.length === 6 ? `/compare/${friendInput}` : "#"}
+                  onClick={e => { if (friendInput.length !== 6) e.preventDefault(); }}
+                  className={`px-5 h-12 rounded-xl font-bold text-[13px] flex items-center transition-all ${friendInput.length === 6 ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-foreground/[0.05] text-foreground/30 cursor-not-allowed"}`}
+                >
+                  Сравнить
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
