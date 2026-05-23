@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-context";
 import { getFavorites, getHistory } from "@/lib/storage";
 import { computeStats, evaluateAchievements, type UnlockedAchievement } from "@/lib/achievements";
 import { getGenreLookup, pickPersona, GENRES } from "@/lib/genre-persona";
+import { enrichHistoryWithGenres } from "@/lib/genre-enrich";
 import { useEffect, useMemo, useState } from "react";
 import {
   LogIn, LogOut, Heart, Clock, Award, Film, Tv, Trophy, Lock,
@@ -90,7 +91,22 @@ export default function ProfilePage() {
   // genreLookup is a stable map — built once from the GENRES constant.
   // Without it computeStats can't populate stats.byGenre.
   const genreLookup = useMemo(() => getGenreLookup(), []);
-  const stats = useMemo(() => computeStats(history, favorites, genreLookup), [history, favorites, genreLookup]);
+
+  // Backfill: old history rows don't have genre_ids on them. Fetch each
+  // unique (type, id) once from TMDB and cache to localStorage so byGenre
+  // is populated even from legacy history. enrichedHistory == history
+  // initially; gets replaced async after fetches complete.
+  const [enrichedHistory, setEnrichedHistory] = useState<any[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    setEnrichedHistory(history); // show stats immediately with what we have
+    enrichHistoryWithGenres(history).then((enriched) => {
+      if (!cancelled) setEnrichedHistory(enriched);
+    });
+    return () => { cancelled = true; };
+  }, [history]);
+
+  const stats = useMemo(() => computeStats(enrichedHistory, favorites, genreLookup), [enrichedHistory, favorites, genreLookup]);
   const achievements = useMemo(() => evaluateAchievements(stats), [stats]);
   const unlockedCount = achievements.filter(a => a.unlocked).length;
   const progressPct = achievements.length ? (unlockedCount / achievements.length) * 100 : 0;
