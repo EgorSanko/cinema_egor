@@ -6,6 +6,8 @@ import { getFavorites, getHistory } from "@/lib/storage";
 import { computeStats, evaluateAchievements, type UnlockedAchievement } from "@/lib/achievements";
 import { getGenreLookup, pickPersona, GENRES } from "@/lib/genre-persona";
 import { enrichHistoryWithGenres } from "@/lib/genre-enrich";
+import { getCanon, setCanon, getCanonCandidates, type CanonPick } from "@/lib/canon";
+import { canFreezeNow, freezeDay, getFrozenDays, daysUntilNextFreeze } from "@/lib/streak-freeze";
 import { useEffect, useMemo, useState } from "react";
 import {
   LogIn, LogOut, Heart, Clock, Award, Film, Tv, Trophy, Lock,
@@ -106,7 +108,28 @@ export default function ProfilePage() {
     return () => { cancelled = true; };
   }, [history]);
 
-  const stats = useMemo(() => computeStats(enrichedHistory, favorites, genreLookup), [enrichedHistory, favorites, genreLookup]);
+  // Frozen days protect streak (Duolingo-style); refresh on freeze event
+  const [frozenDays, setFrozenDays] = useState<string[]>([]);
+  useEffect(() => {
+    setFrozenDays(getFrozenDays());
+    const onFreeze = () => setFrozenDays(getFrozenDays());
+    window.addEventListener("streak-freeze-changed", onFreeze);
+    return () => window.removeEventListener("streak-freeze-changed", onFreeze);
+  }, []);
+  const stats = useMemo(
+    () => computeStats(enrichedHistory, favorites, genreLookup, frozenDays),
+    [enrichedHistory, favorites, genreLookup, frozenDays]
+  );
+
+  // Canon: top 5 picks shown on profile
+  const [canon, setCanonState] = useState<CanonPick[]>([]);
+  useEffect(() => {
+    setCanonState(getCanon());
+    const onCanon = () => setCanonState(getCanon());
+    window.addEventListener("canon-changed", onCanon);
+    return () => window.removeEventListener("canon-changed", onCanon);
+  }, []);
+  const [canonPickerOpen, setCanonPickerOpen] = useState(false);
   const achievements = useMemo(() => evaluateAchievements(stats), [stats]);
   const unlockedCount = achievements.filter(a => a.unlocked).length;
   const progressPct = achievements.length ? (unlockedCount / achievements.length) * 100 : 0;
@@ -443,11 +466,21 @@ export default function ProfilePage() {
 
           {/* ── Tiny streak/extra stats: 4 smallest ─────────────────────── */}
           <section className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-            <SmallStat icon={<Flame size={13} />} label="Дней подряд" value={stats.consecutiveDays} accent />
+            <StreakStatWithFreeze value={stats.consecutiveDays} />
             <SmallStat icon={<Flag size={13} />} label="Сериалов до конца" value={stats.completedTvSeries} />
             <SmallStat icon={<TrendingUp size={13} />} label="Серий за день (рекорд)" value={stats.maxEpisodesInOneDay} />
             <SmallStat icon={<AudioLines size={13} />} label="Озвучек попробовано" value={stats.uniqueTranslators} />
           </section>
+
+          {/* ── Top 5 personal canon — Letterboxd-style favourites ─────── */}
+          <CanonStrip picks={canon} onEdit={() => setCanonPickerOpen(true)} />
+          {canonPickerOpen && (
+            <CanonPicker
+              current={canon}
+              onClose={() => setCanonPickerOpen(false)}
+              onSave={(p) => { setCanon(p); setCanonPickerOpen(false); }}
+            />
+          )}
 
           {/* ── Two-column row: more continue + activity ────────────────── */}
           <section className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
@@ -535,6 +568,7 @@ export default function ProfilePage() {
               <Card>
                 <CardHeader title="Когда ты смотришь" />
                 <WatchHeatmap data={heatmap} />
+                <LostTimePanel hours={hoursWatched} />
               </Card>
             </div>
           </section>
@@ -933,6 +967,228 @@ function DonutChart({ segments, centerLabel }: { segments: { name: string; pct: 
           <span className="text-foreground/45 text-[9px] uppercase tracking-wider mt-0.5">всего</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Streak stat with freeze button (Duolingo-style break protection) ── */
+function StreakStatWithFreeze({ value }: { value: number }) {
+  const [canFreeze, setCanFreeze] = useState(false);
+  const [daysUntil, setDaysUntil] = useState(0);
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    const refresh = () => {
+      setCanFreeze(canFreezeNow());
+      setDaysUntil(daysUntilNextFreeze());
+    };
+    refresh();
+    window.addEventListener("streak-freeze-changed", refresh);
+    return () => window.removeEventListener("streak-freeze-changed", refresh);
+  }, []);
+
+  const onFreeze = () => {
+    if (confirming) {
+      freezeDay();
+      setConfirming(false);
+    } else {
+      setConfirming(true);
+      setTimeout(() => setConfirming(false), 3000);
+    }
+  };
+
+  return (
+    <div className="relative rounded-xl px-3.5 py-2.5 bg-gradient-to-br from-orange-500/[0.08] to-red-500/[0.04] ring-1 ring-orange-400/20 flex items-center gap-3 kino-card-tilt overflow-hidden">
+      <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-orange-400/15 text-orange-300 ring-1 ring-orange-300/30 flex-shrink-0">
+        <Flame size={13} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-foreground text-[17px] font-bold leading-none tabular-nums">{value}</div>
+        <div className="text-foreground/45 text-[10px] mt-0.5 truncate">Дней подряд</div>
+      </div>
+      <button
+        onClick={onFreeze}
+        disabled={!canFreeze}
+        title={canFreeze ? "Заморозить вчерашний день — streak не сбросится" : `Доступно через ${daysUntil} дн.`}
+        className={`flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg ring-1 transition-all ${
+          canFreeze
+            ? confirming
+              ? "bg-cyan-400/30 ring-cyan-300/60 text-cyan-200 scale-110"
+              : "bg-cyan-400/10 ring-cyan-400/30 text-cyan-300 hover:bg-cyan-400/20"
+            : "bg-white/[0.02] ring-white/[0.04] text-foreground/20 cursor-not-allowed"
+        }`}
+      >
+        {confirming ? <span className="text-[9px] font-bold">OK?</span> : <span style={{ fontSize: 12 }}>❄️</span>}
+      </button>
+    </div>
+  );
+}
+
+/* ── Canon strip — 5 slots for personal favourites ── */
+function CanonStrip({ picks, onEdit }: { picks: CanonPick[]; onEdit: () => void }) {
+  const slots = [0, 1, 2, 3, 4];
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-base">⭐</span>
+          <h2 className="text-lg font-bold text-foreground">Мой топ-5</h2>
+        </div>
+        <button
+          onClick={onEdit}
+          className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-foreground/[0.04] ring-1 ring-white/[0.08] text-foreground/75 hover:text-foreground hover:bg-foreground/[0.08] transition-colors text-[12px] font-medium"
+        >
+          {picks.length > 0 ? "Изменить" : "Выбрать"}
+        </button>
+      </div>
+      <div className="grid grid-cols-5 gap-2.5">
+        {slots.map(i => {
+          const p = picks[i];
+          if (!p) {
+            return (
+              <button
+                key={i}
+                onClick={onEdit}
+                className="aspect-[2/3] rounded-xl border-2 border-dashed border-white/[0.08] flex items-center justify-center text-foreground/30 hover:border-primary/40 hover:text-primary/60 transition-colors"
+                aria-label={`Слот ${i + 1}`}
+              >
+                <span className="text-2xl font-light">+</span>
+              </button>
+            );
+          }
+          const href = p.type === "tv" ? `/tv/${p.id}` : `/movie/${p.id}`;
+          return (
+            <Link key={i} href={href} className="group relative aspect-[2/3] rounded-xl overflow-hidden bg-foreground/[0.04] ring-1 ring-white/[0.06] hover:ring-primary/40 transition-all kino-card-tilt">
+              {p.poster_path ? (
+                <Image
+                  src={`${POSTER_BASE}/w342${p.poster_path}`}
+                  alt={p.title}
+                  fill
+                  sizes="180px"
+                  className="object-cover transition-transform duration-500 group-hover:scale-110"
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-foreground/30">
+                  <Film size={28} />
+                </div>
+              )}
+              <span className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center ring-2 ring-background">
+                {i + 1}
+              </span>
+              <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/95 to-transparent">
+                <p className="text-white text-[11px] font-semibold line-clamp-2 leading-tight">{p.title}</p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ── Canon picker modal ── */
+function CanonPicker({ current, onClose, onSave }: { current: CanonPick[]; onClose: () => void; onSave: (p: CanonPick[]) => void }) {
+  const [selected, setSelected] = useState<CanonPick[]>(current);
+  const candidates = useMemo(() => getCanonCandidates(), []);
+
+  const toggle = (p: CanonPick) => {
+    const key = `${p.type}-${p.id}`;
+    const exists = selected.find(x => `${x.type}-${x.id}` === key);
+    if (exists) setSelected(selected.filter(x => `${x.type}-${x.id}` !== key));
+    else if (selected.length < 5) setSelected([...selected, p]);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="relative w-full max-w-2xl max-h-[80vh] rounded-2xl bg-background ring-1 ring-white/10 flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-white/[0.06]">
+          <div>
+            <h2 className="text-foreground text-lg font-bold">Выбери свой топ-5</h2>
+            <p className="text-foreground/55 text-[12px] mt-0.5">Из истории и избранного · {selected.length}/5</p>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-full bg-foreground/[0.05] hover:bg-foreground/[0.10] text-foreground/75 flex items-center justify-center">
+            <span className="text-lg leading-none">×</span>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {candidates.length === 0 ? (
+            <EmptyHint icon={<Film size={18} />} text="Сначала посмотри несколько фильмов или добавь в избранное" />
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+              {candidates.map(c => {
+                const key = `${c.type}-${c.id}`;
+                const idx = selected.findIndex(x => `${x.type}-${x.id}` === key);
+                const isSelected = idx >= 0;
+                const limitReached = !isSelected && selected.length >= 5;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggle(c)}
+                    disabled={limitReached}
+                    className={`relative aspect-[2/3] rounded-xl overflow-hidden ring-1 transition-all ${
+                      isSelected ? "ring-primary scale-95" : limitReached ? "ring-white/[0.04] opacity-40 cursor-not-allowed" : "ring-white/[0.08] hover:ring-white/30"
+                    }`}
+                  >
+                    {c.poster_path ? (
+                      <Image src={`${POSTER_BASE}/w185${c.poster_path}`} alt={c.title} fill sizes="120px" className="object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center bg-foreground/[0.05] text-foreground/30">
+                        <Film size={20} />
+                      </div>
+                    )}
+                    {isSelected && (
+                      <span className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full bg-primary text-primary-foreground text-[12px] font-bold flex items-center justify-center ring-2 ring-background">
+                        {idx + 1}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className="p-4 border-t border-white/[0.06] flex gap-2 justify-end">
+          <button onClick={onClose} className="px-4 h-10 rounded-full bg-foreground/[0.05] hover:bg-foreground/[0.10] text-foreground/75 text-[13px] font-medium">Отмена</button>
+          <button onClick={() => onSave(selected)} className="px-5 h-10 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground text-[13px] font-bold">Сохранить</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Lost-time panel: what else you could have done in N hours ── */
+function LostTimePanel({ hours }: { hours: number }) {
+  if (hours < 5) return null; // No point for tiny counts
+  // Each comparison: (label, divisor → "you could have...") — rotates so
+  // refresh shows different fun fact each time. Seeded by hours so it's
+  // stable per session but different across visits.
+  const facts: { icon: string; text: string }[] = [
+    { icon: "📚", text: `Прочитал бы ${Math.round(hours / 5.5)} книг(и) (по 350 стр.)` },
+    { icon: "🏃", text: `Пробежал бы ${Math.round(hours * 9)} км (5 мин/км)` },
+    { icon: "✈️", text: `${(hours / 12).toFixed(1)} перелётов Москва → Бали` },
+    { icon: "☕", text: `Выпил бы ${Math.round(hours * 3)} чашек кофе` },
+    { icon: "💤", text: `${Math.round(hours / 8)} ночей полноценного сна` },
+    { icon: "🎸", text: `Научился бы основам гитары (~${Math.max(1, Math.round(hours / 30))} курс${hours > 60 ? "а" : ""})` },
+    { icon: "🍕", text: `Приготовил бы ${Math.round(hours * 0.8)} пицц(ы) с нуля` },
+    { icon: "🚗", text: `Из Москвы в Сочи ${Math.max(1, Math.round(hours / 20))} раз туда-обратно` },
+    { icon: "🏊", text: `Проплыл бы ${Math.round(hours * 2)} км в бассейне` },
+    { icon: "🌱", text: `Помидорный куст вырос бы ${Math.round(hours / 720)}+ раз` },
+  ];
+  // Pick 3 deterministic-looking but varied
+  const start = Math.floor(hours) % facts.length;
+  const picks = [0, 3, 6].map(o => facts[(start + o) % facts.length]);
+  return (
+    <div className="mt-4 pt-4 border-t border-white/[0.05]">
+      <div className="text-foreground/55 text-[10.5px] uppercase tracking-wider font-semibold mb-2.5">
+        За это время ты мог бы
+      </div>
+      <ul className="space-y-1.5">
+        {picks.map((f, i) => (
+          <li key={i} className="flex items-center gap-2.5 text-[11.5px]">
+            <span className="text-base leading-none">{f.icon}</span>
+            <span className="text-foreground/75">{f.text}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

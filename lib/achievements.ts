@@ -62,7 +62,8 @@ export function emptyStats(): UserStats {
 export function computeStats(
   history: HistoryItem[],
   favorites: FavoriteItem[],
-  genreLookup?: Map<number, string>
+  genreLookup?: Map<number, string>,
+  frozenDays?: string[]
 ): UserStats {
   const stats = emptyStats();
   const seenMovies = new Set<number>();
@@ -140,17 +141,21 @@ export function computeStats(
     if (count >= 5) stats.completedTvSeries++;
   }
 
-  // Streak: consecutive days with activity, ending today or yesterday
+  // Streak: consecutive days with activity, ending today or yesterday.
+  // Frozen days (passed in) count as "active" — Duolingo-style break
+  // protection. A frozen day extends the streak but doesn't increment
+  // totalActiveDays (those are real-watch days).
+  const frozenSet = new Set(frozenDays || []);
   const sortedDays = [...activeDays].sort();
   let streak = 0;
-  if (sortedDays.length > 0) {
+  if (sortedDays.length > 0 || frozenSet.size > 0) {
     let cursor = new Date();
     cursor.setHours(0, 0, 0, 0);
     const todayStr = cursor.toISOString().slice(0, 10);
-    if (!activeDays.has(todayStr)) cursor.setDate(cursor.getDate() - 1);
+    if (!activeDays.has(todayStr) && !frozenSet.has(todayStr)) cursor.setDate(cursor.getDate() - 1);
     while (true) {
       const ds = cursor.toISOString().slice(0, 10);
-      if (activeDays.has(ds)) {
+      if (activeDays.has(ds) || frozenSet.has(ds)) {
         streak++;
         cursor.setDate(cursor.getDate() - 1);
       } else break;
