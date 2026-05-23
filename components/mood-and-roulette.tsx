@@ -71,26 +71,26 @@ export function MoodAndRoulette() {
     return pool;
   };
 
+  // Pre-warm the pool so the slot card has visual content from the start
+  useEffect(() => {
+    if (spinPool.length === 0) buildPool().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const spin = async () => {
     if (spinning) return;
     setSpinning(true);
     setSpinPick(null);
     const pool = await buildPool();
     if (pool.length === 0) { setSpinning(false); return; }
-    // Animate by cycling 18 random picks fast, then settle on final
-    let i = 0;
-    const totalCycles = 18;
-    const interval = setInterval(() => {
-      const m = pool[Math.floor(Math.random() * pool.length)];
-      setSpinPick(m);
-      i++;
-      if (i >= totalCycles) {
-        clearInterval(interval);
-        const final = pool[Math.floor(Math.random() * pool.length)];
-        setSpinPick(final);
-        setSpinning(false);
-      }
-    }, 80);
+    // The RouletteSlot child cycles its own visual during `spinning`. We
+    // just need to wait the chosen duration and then commit the final pick.
+    // 2.2s = enough time to build anticipation without dragging.
+    setTimeout(() => {
+      const final = pool[Math.floor(Math.random() * pool.length)];
+      setSpinPick(final);
+      setSpinning(false);
+    }, 2200);
   };
 
   const pickMood = async (id: string) => {
@@ -192,89 +192,149 @@ export function MoodAndRoulette() {
   );
 }
 
-/* ── Slot-machine roulette ─────────────────────────────────────
-   Cinematic poster carousel that scrolls fast then settles on the
-   final pick. The "winning" item lands behind a center indicator
-   (vertical neon line). Big poster, big CTA, very Steam-roulette. */
+/* ── Tinder-style roulette card ─────────────────────────────────
+   Big single poster (real aspect 2:3) that flips/swaps fast during
+   spin then settles on the final pick. No more squished slot-strip —
+   posters get their natural shape and the whole card has weight. */
 function RouletteSlot({ spinning, spinPick, spinPool, onSpin }: {
   spinning: boolean;
   spinPick: Movie | null;
   spinPool: Movie[];
   onSpin: () => void;
 }) {
-  // Build a long shuffled strip when pool changes — used during animation
-  const strip = useMemo(() => {
-    if (spinPool.length === 0) return [] as Movie[];
-    const out: Movie[] = [];
-    // 40 items: 4× repeated, last one is the pick — so it lands center
-    for (let i = 0; i < 40; i++) out.push(spinPool[Math.floor(Math.random() * spinPool.length)]);
-    if (spinPick) out[35] = spinPick; // index 35 lands center after settle
-    return out;
-  }, [spinPool, spinPick]);
+  // Cycle which pool poster to show during spin animation
+  const [cycleIdx, setCycleIdx] = useState(0);
+  useEffect(() => {
+    if (!spinning || spinPool.length === 0) return;
+    let i = 0;
+    const id = setInterval(() => {
+      i++;
+      setCycleIdx(Math.floor(Math.random() * spinPool.length));
+    }, 90);
+    return () => clearInterval(id);
+  }, [spinning, spinPool.length]);
+
+  // What we show in the big card right now
+  const visible = spinPick && !spinning ? spinPick : spinPool[cycleIdx] || null;
 
   return (
-    <div className="relative rounded-2xl p-5 bg-gradient-to-br from-purple-500/[0.12] to-foreground/[0.01] ring-1 ring-purple-400/20 overflow-hidden lg:w-[420px]">
-      <div className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-purple-500/[0.20] blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-20 -right-10 w-40 h-40 rounded-full bg-primary/[0.10] blur-3xl pointer-events-none" />
-      <div className="relative flex items-center gap-2 mb-1.5">
-        <Dices size={16} className="text-purple-300" />
-        <h2 className="text-foreground font-bold text-[15px]">Помоги выбрать</h2>
+    <div className="relative rounded-2xl p-5 bg-gradient-to-br from-purple-500/[0.14] via-purple-500/[0.05] to-foreground/[0.01] ring-1 ring-purple-400/25 overflow-hidden lg:w-[300px] flex flex-col">
+      <div className="absolute -top-16 -left-16 w-44 h-44 rounded-full bg-purple-500/[0.20] blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-20 -right-16 w-48 h-48 rounded-full bg-primary/[0.12] blur-3xl pointer-events-none" />
+
+      <div className="relative flex items-center gap-2 mb-1">
+        <Dices size={15} className="text-purple-300" />
+        <h2 className="text-foreground font-bold text-[14px]">Помоги выбрать</h2>
       </div>
-      <p className="text-foreground/55 text-[12px] mb-4">Случайный фильм из топ-рейтинга, который ты ещё не смотрел</p>
+      <p className="relative text-foreground/55 text-[11.5px] mb-4 leading-snug">Случайный фильм из топ-рейтинга, который ты ещё не смотрел</p>
 
-      {/* Slot strip */}
-      <div className="relative aspect-[5/3] rounded-xl overflow-hidden bg-black ring-1 ring-white/[0.08] mb-3">
-        {/* Strip background with fade edges */}
-        <div className="absolute inset-0 flex items-center"
-             style={{
-               transform: spinning ? "translateX(-3000px)" : spinPick ? "translateX(-3360px)" : "translateX(0)",
-               transition: spinning ? "transform 2.6s cubic-bezier(.05,.7,.1,1)" : spinPick ? "transform 0.6s cubic-bezier(.2,.7,.2,1)" : "none",
-             }}>
-          {strip.map((m, i) => (
-            <div key={i} className="relative h-full w-[105px] flex-shrink-0">
-              {m.poster_path && (
-                <Image src={`${POSTER}/w185${m.poster_path}`} alt="" fill sizes="105px" className="object-cover" />
-              )}
+      {/* Big poster card */}
+      <div className="relative w-full mb-3" style={{ perspective: "1000px" }}>
+        <div
+          className={`relative aspect-[2/3] rounded-xl overflow-hidden bg-foreground/[0.05] ring-1 ring-white/[0.08] transition-transform duration-300 ${spinning ? "scale-95" : "scale-100"}`}
+          style={{
+            boxShadow: spinPick && !spinning
+              ? "0 16px 50px -8px rgba(163,230,53,0.45), 0 0 0 1px rgba(163,230,53,0.25)"
+              : "0 8px 32px -8px rgba(0,0,0,0.6)",
+          }}
+        >
+          {visible?.poster_path ? (
+            <Image
+              key={visible.id + (spinning ? `-${cycleIdx}` : "-settled")}
+              src={`${POSTER}/w500${visible.poster_path}`}
+              alt={visible.title || visible.name || ""}
+              fill
+              sizes="300px"
+              className={`object-cover ${spinning ? "" : "transition-opacity duration-300"}`}
+              priority
+            />
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-foreground/30">
+              <Dices size={48} />
+              <p className="text-[12px] font-medium">Жми «РОЛИК»</p>
             </div>
-          ))}
-        </div>
-        {/* Center indicator line + glow */}
-        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-primary pointer-events-none z-10" style={{ boxShadow: "0 0 16px rgba(163,230,53,0.8), 0 0 32px rgba(163,230,53,0.4)" }} />
-        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[110px] ring-2 ring-primary/40 ring-inset rounded-md pointer-events-none z-10" />
-        {/* Edge fades */}
-        <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-black to-transparent pointer-events-none z-10" />
-        <div className="absolute inset-y-0 right-0 w-1/4 bg-gradient-to-l from-black to-transparent pointer-events-none z-10" />
+          )}
 
-        {/* Empty / initial state overlay */}
-        {!spinning && !spinPick && strip.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 z-20 text-foreground/40">
-            <Dices size={32} />
-            <p className="text-[11px]">Жми «РОЛИК» чтобы крутить</p>
-          </div>
+          {/* Bottom gradient + title overlay (only when settled) */}
+          {spinPick && !spinning && (
+            <>
+              <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black via-black/70 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 p-3">
+                <p className="text-white font-black text-[16px] leading-tight line-clamp-2 drop-shadow-lg">
+                  {spinPick.title || spinPick.name}
+                </p>
+                <div className="flex items-center gap-2 mt-1.5 text-[11px]">
+                  {spinPick.vote_average ? (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 font-bold ring-1 ring-amber-400/30">★ {spinPick.vote_average.toFixed(1)}</span>
+                  ) : null}
+                  {spinPick.release_date && <span className="text-white/65">{new Date(spinPick.release_date).getFullYear()}</span>}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Spinning state — vignette flash */}
+          {spinning && (
+            <>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20 pointer-events-none" />
+              <div className="absolute inset-0 ring-2 ring-primary/40 ring-inset rounded-xl pointer-events-none" style={{ animation: "pulse-glow 0.4s ease-in-out infinite alternate" }} />
+            </>
+          )}
+        </div>
+
+        {/* Stacked card shadows behind = "deck" feel */}
+        {!spinPick && !spinning && (
+          <>
+            <div className="absolute inset-0 -z-10 rounded-xl bg-foreground/[0.04] ring-1 ring-white/[0.04]" style={{ transform: "translate(4px, 4px) rotate(2deg)" }} />
+            <div className="absolute inset-0 -z-20 rounded-xl bg-foreground/[0.03] ring-1 ring-white/[0.03]" style={{ transform: "translate(8px, 8px) rotate(4deg)" }} />
+          </>
         )}
       </div>
 
-      {/* Winning title bar */}
-      {spinPick && !spinning && (
-        <Link href={`/movie/${spinPick.id}`} className="block mb-3 rounded-xl bg-gradient-to-r from-primary/15 to-primary/5 ring-1 ring-primary/30 px-3 py-2.5 group hover:bg-primary/20 transition-colors">
-          <p className="text-foreground font-bold text-[14px] line-clamp-1 group-hover:text-primary">{spinPick.title || spinPick.name}</p>
-          <div className="flex items-center gap-2 mt-1 text-[10.5px] text-foreground/55">
-            {spinPick.vote_average && <span className="text-amber-300 font-bold">★ {spinPick.vote_average.toFixed(1)}</span>}
-            {spinPick.release_date && <span>{new Date(spinPick.release_date).getFullYear()}</span>}
-            <span className="ml-auto text-primary font-semibold inline-flex items-center gap-1">Смотреть <Play size={11} fill="currentColor" /></span>
-          </div>
-        </Link>
+      {/* Action row — Play link if picked, spin button */}
+      {spinPick && !spinning ? (
+        <div className="flex gap-2">
+          <Link
+            href={`/movie/${spinPick.id}`}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 h-11 rounded-full bg-primary text-primary-foreground font-bold text-[13px] hover:bg-primary/90 transition-all"
+            style={{ boxShadow: "0 6px 20px -4px rgba(163,230,53,0.5)" }}
+          >
+            <Play size={14} fill="currentColor" /> Смотреть
+          </Link>
+          <button
+            onClick={onSpin}
+            disabled={spinning}
+            className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-purple-500/20 hover:bg-purple-500/30 ring-1 ring-purple-400/40 text-purple-200"
+            title="Ещё раз"
+          >
+            <Dices size={16} />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onSpin}
+          disabled={spinning}
+          className="relative w-full inline-flex items-center justify-center gap-2 h-12 rounded-full bg-gradient-to-r from-primary via-yellow-300 to-primary text-primary-foreground font-black text-[14px] tracking-[0.2em] uppercase transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed overflow-hidden"
+          style={{
+            boxShadow: "0 8px 28px -4px rgba(163,230,53,0.55), 0 0 24px rgba(163,230,53,0.25)",
+            backgroundSize: "200% 100%",
+            animation: spinning ? "btn-flow 1s linear infinite" : undefined,
+          }}
+        >
+          <Dices size={16} className={spinning ? "animate-spin" : ""} />
+          {spinning ? "Крутится…" : "Крутить"}
+        </button>
       )}
 
-      <button
-        onClick={onSpin}
-        disabled={spinning}
-        className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-full bg-gradient-to-r from-primary to-yellow-300 text-primary-foreground font-black text-[14px] tracking-wider uppercase transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-        style={{ boxShadow: "0 6px 24px -4px rgba(163,230,53,0.5)" }}
-      >
-        <Dices size={16} className={spinning ? "animate-spin" : ""} />
-        {spinning ? "Крутится…" : spinPick ? "Ещё раз" : "РОЛИК"}
-      </button>
+      <style jsx>{`
+        @keyframes pulse-glow {
+          from { box-shadow: inset 0 0 16px rgba(163,230,53,0.15); }
+          to { box-shadow: inset 0 0 32px rgba(163,230,53,0.35); }
+        }
+        @keyframes btn-flow {
+          to { background-position: -200% 0; }
+        }
+      `}</style>
     </div>);
 }
 
