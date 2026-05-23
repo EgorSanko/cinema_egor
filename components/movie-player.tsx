@@ -95,6 +95,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
             release_date: movie.release_date, watchedAt: Date.now(),
             progress: ct, duration: dur, quality: selectedQuality,
             translatorName: trName, translatorId: selectedTranslator || undefined,
+            genre_ids: movie.genres?.map(g => g.id),
           });
         }
       }

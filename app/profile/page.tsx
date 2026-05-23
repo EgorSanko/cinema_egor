@@ -4,6 +4,7 @@ import { Navbar } from "@/components/navbar";
 import { useAuth } from "@/components/auth-context";
 import { getFavorites, getHistory } from "@/lib/storage";
 import { computeStats, evaluateAchievements, type UnlockedAchievement } from "@/lib/achievements";
+import { getGenreLookup, pickPersona, GENRES } from "@/lib/genre-persona";
 import { useEffect, useMemo, useState } from "react";
 import {
   LogIn, LogOut, Heart, Clock, Award, Film, Tv, Trophy, Lock,
@@ -86,7 +87,10 @@ export default function ProfilePage() {
     };
   }, []);
 
-  const stats = useMemo(() => computeStats(history, favorites), [history, favorites]);
+  // genreLookup is a stable map — built once from the GENRES constant.
+  // Without it computeStats can't populate stats.byGenre.
+  const genreLookup = useMemo(() => getGenreLookup(), []);
+  const stats = useMemo(() => computeStats(history, favorites, genreLookup), [history, favorites, genreLookup]);
   const achievements = useMemo(() => evaluateAchievements(stats), [stats]);
   const unlockedCount = achievements.filter(a => a.unlocked).length;
   const progressPct = achievements.length ? (unlockedCount / achievements.length) * 100 : 0;
@@ -497,51 +501,19 @@ export default function ProfilePage() {
 
             {/* Right column: stacked donut + heatmap */}
             <div className="space-y-4">
-              <Card>
-                <CardHeader title="Любимые жанры" />
-                {topGenres.length === 0 ? (
-                  <EmptyHint icon={<Film size={18} />} text="Смотри фильмы — посчитаем твои жанры" />
-                ) : (
-                  <>
-                    <div className="flex items-center gap-4">
-                      <DonutChart segments={topGenres} centerLabel={`${hoursWatched}ч`} />
-                      <ul className="flex-1 space-y-1.5 min-w-0">
-                        {topGenres.map((g, i) => (
-                          <li key={g.name} className="flex items-center gap-2 text-[12.5px]">
-                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: GENRE_COLORS[i % GENRE_COLORS.length] }} />
-                            <span className="text-foreground/55 tabular-nums text-[11.5px] w-8">{g.pct}%</span>
-                            <span className="text-foreground/85 truncate">{g.name}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+              <CinemaDNA topGenres={topGenres} />
 
-                    {/* Mini-stats row below donut — fills the empty space
-                        with concrete numbers (avg rating across watched
-                        titles, total titles, top-genre share) */}
-                    <div className="mt-4 pt-4 border-t border-white/[0.05] grid grid-cols-3 gap-3">
-                      <MiniGenreStat
-                        label="Ср. рейтинг"
-                        value={(() => {
-                          const rated = history.filter(h => h.vote_average > 0);
-                          if (rated.length === 0) return "—";
-                          const avg = rated.reduce((s, h) => s + h.vote_average, 0) / rated.length;
-                          return avg.toFixed(1);
-                        })()}
-                        icon={<Star size={11} className="text-amber-300" fill="currentColor" />}
-                      />
-                      <MiniGenreStat
-                        label="Всего просмотрено"
-                        value={String(stats.totalMoviesWatched + stats.totalTvEpisodes)}
-                      />
-                      <MiniGenreStat
-                        label="Топ-жанр"
-                        value={topGenres[0]?.name || "—"}
-                        small
-                      />
-                    </div>
-                  </>
-                )}
+              <Card>
+                <MiniGenreStat
+                  label="Ср. рейтинг"
+                  value={(() => {
+                    const rated = history.filter(h => h.vote_average > 0);
+                    if (rated.length === 0) return "—";
+                    const avg = rated.reduce((s, h) => s + h.vote_average, 0) / rated.length;
+                    return avg.toFixed(1);
+                  })()}
+                  icon={<Star size={11} className="text-amber-300" fill="currentColor" />}
+                />
               </Card>
 
               <Card>
@@ -847,6 +819,69 @@ function MiniGenreStat({ label, value, icon, small }: { label: string; value: st
       </div>
       <div className="text-foreground/40 text-[9.5px] uppercase tracking-wider mt-0.5">{label}</div>
     </div>
+  );
+}
+
+/* ── CinemaDNA: personality + animated genre bars with emoji ── */
+function CinemaDNA({ topGenres }: { topGenres: { name: string; count: number; pct: number }[] }) {
+  const persona = pickPersona(topGenres);
+
+  if (topGenres.length === 0) {
+    return (
+      <Card>
+        <CardHeader title="Твоя киноДНК" />
+        <EmptyHint
+          icon={<span className="text-2xl">🎬</span>}
+          text="Посмотри пару фильмов и сериалов — мы разберём из чего сделан твой вкус"
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Твоя киноДНК" />
+
+      {/* Persona verdict — big emoji + name + tagline */}
+      <div className="relative -mx-2 mb-4 rounded-xl bg-gradient-to-br from-primary/[0.08] to-purple-500/[0.04] ring-1 ring-primary/15 px-4 py-3 overflow-hidden">
+        <div className="absolute -top-6 -right-6 text-6xl opacity-10 pointer-events-none select-none">{persona.emoji}</div>
+        <div className="relative flex items-center gap-3">
+          <span className="text-3xl leading-none">{persona.emoji}</span>
+          <div className="min-w-0">
+            <div className="text-foreground font-bold text-[14px] leading-tight">{persona.title}</div>
+            <div className="text-foreground/55 text-[11px] mt-0.5 leading-tight">{persona.tagline}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Animated genre bars */}
+      <ul className="space-y-2">
+        {topGenres.slice(0, 5).map((g, i) => {
+          // Look up emoji for the genre by name (from GENRES table)
+          const entry = Object.values(GENRES).find(x => x.name === g.name);
+          return (
+            <li key={g.name} className="flex items-center gap-2.5 group">
+              <span className="text-base leading-none w-5 text-center" aria-hidden>
+                {entry?.emoji ?? "🎬"}
+              </span>
+              <span className="text-foreground/85 text-[12px] font-medium w-[88px] truncate">{g.name}</span>
+              <div className="relative flex-1 h-2 bg-white/[0.05] rounded-full overflow-hidden">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-1000 ease-out"
+                  style={{
+                    width: `${g.pct}%`,
+                    background: `linear-gradient(90deg, ${GENRE_COLORS[i % GENRE_COLORS.length]} 0%, ${GENRE_COLORS[i % GENRE_COLORS.length]}aa 100%)`,
+                    boxShadow: `0 0 8px ${GENRE_COLORS[i % GENRE_COLORS.length]}55`,
+                    animationDelay: `${i * 120}ms`,
+                  }}
+                />
+              </div>
+              <span className="text-foreground/85 text-[11.5px] font-bold tabular-nums w-9 text-right">{g.pct}%</span>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }
 

@@ -30,6 +30,9 @@ export interface HistoryItem {
   quality?: string;
   translatorName?: string;
   translatorId?: number;
+  // TMDB genre IDs — used by computeStats to build byGenre breakdown.
+  // Optional for backward compatibility with old history entries.
+  genre_ids?: number[];
 }
 
 export interface Comment {

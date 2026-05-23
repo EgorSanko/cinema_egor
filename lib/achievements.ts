@@ -164,16 +164,30 @@ export function computeStats(
     if (c > stats.maxEpisodesInOneDay) stats.maxEpisodesInOneDay = c;
   }
 
-  // Genres (if lookup provided)
+  // Genres breakdown. Counts from BOTH history (each watched movie/episode)
+  // and favorites — gives a richer signal than favorites alone (people
+  // watch a lot more than they favorite). Items without genre_ids are
+  // skipped silently (e.g. legacy history rows before we added the field).
   if (genreLookup) {
-    for (const f of favorites) {
-      const ids = (f as any).genre_ids as number[] | undefined;
-      if (!ids) continue;
+    const addGenres = (ids: number[] | undefined) => {
+      if (!ids) return;
       for (const id of ids) {
         const name = genreLookup.get(id);
         if (!name) continue;
         stats.byGenre[name] = (stats.byGenre[name] || 0) + 1;
       }
+    };
+    // Dedupe history by (type,id) so a 10-episode binge counts as 1
+    // genre vote, not 10 — otherwise long series dominate the picture.
+    const seen = new Set<string>();
+    for (const h of history) {
+      const key = `${h.type}-${h.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      addGenres((h as any).genre_ids);
+    }
+    for (const f of favorites) {
+      addGenres((f as any).genre_ids);
     }
     stats.uniqueGenres = Object.keys(stats.byGenre).length;
   }

@@ -132,6 +132,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
             progress: ct, duration: dur, season: selectedSeason,
             episode: selectedEpisode, episodeName: epName, quality: selectedQuality,
             translatorName: trName, translatorId: selectedTranslator || undefined,
+            genre_ids: show.genres?.map(g => g.id),
           });
         }
       }
