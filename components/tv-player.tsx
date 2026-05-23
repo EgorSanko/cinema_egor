@@ -12,6 +12,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
+import { BingoCard } from "./bingo-card";
 import { TrailerButton } from "./trailer-modal";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
@@ -42,6 +43,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [showPlayer, setShowPlayer] = useState(false);
+  const [showBingo, setShowBingo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [streamData, setStreamData] = useState<any>(null);
@@ -566,7 +568,15 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     poster_path: show.poster_path, vote_average: show.vote_average,
                     first_air_date: show.first_air_date, addedAt: Date.now(),
                   }} />
+                  <button
+                    onClick={() => setShowBingo(true)}
+                    title="Кино-бинго"
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-foreground/[0.05] hover:bg-foreground/[0.10] ring-1 ring-white/[0.08] hover:ring-primary/30 transition-colors text-lg"
+                  >
+                    🎲
+                  </button>
                 </div>
+                {showBingo && <BingoCard mediaId={show.id} mediaType="tv" onClose={() => setShowBingo(false)} />}
 
                 {/* Meta row */}
                 <div className="flex flex-wrap items-center gap-2 text-[13px]">
