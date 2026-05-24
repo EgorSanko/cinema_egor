@@ -7,6 +7,8 @@ import { computeStats, evaluateAchievements, type UnlockedAchievement } from "@/
 import { getGenreLookup, pickPersona, GENRES } from "@/lib/genre-persona";
 import { enrichHistoryWithGenres } from "@/lib/genre-enrich";
 import { getCanon, setCanon, getCanonCandidates, type CanonPick } from "@/lib/canon";
+import { getAllByStatus, type WatchStatus } from "@/lib/status";
+import { getLists, createList, type UserList } from "@/lib/lists";
 import { canFreezeNow, freezeDay, getFrozenDays, daysUntilNextFreeze } from "@/lib/streak-freeze";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -454,6 +456,24 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
+
+              {/* Mascot — справа от ника, только на десктопе чтоб не мешать на mobile */}
+              <div className="hidden lg:flex flex-shrink-0 ml-auto items-end justify-end self-stretch">
+                <video
+                  src="/mascot.webm"
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="auto"
+                  disablePictureInPicture
+                  controlsList="nodownload noplaybackrate nofullscreen"
+                  className="w-64 h-64 xl:w-80 xl:h-80 2xl:w-96 2xl:h-96 object-contain pointer-events-none select-none drop-shadow-[0_0_60px_rgba(163,230,53,0.3)]"
+                  style={{ mixBlendMode: "screen" }}
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
+              </div>
             </div>
           </div>
         </section>
@@ -584,16 +604,94 @@ export default function ProfilePage() {
 
           {/* ── My lists ───────────────────────────────────────────────── */}
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-4">Мои списки</h2>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <ListCard href="/favorites" title="Избранное" count={favorites.length} items={favorites.slice(0, 4)} />
-              <ListCard href="/history" title="История" count={history.length} items={history.slice(0, 4)} />
-              <ListCard href="/history?filter=hot" title="Лучшие за 2025" count={history.filter(h => h.vote_average >= 8).length} items={history.filter(h => h.vote_average >= 8).slice(0, 4)} />
-              <ListCard href="/history?filter=top" title="Шедевры" count={history.filter(h => h.vote_average >= 9).length} items={history.filter(h => h.vote_average >= 9).slice(0, 4)} />
-            </div>
+            <StatusAndListsSection favorites={favorites} history={history} />
           </section>
         </div>
       </main>
+    </>
+  );
+}
+
+/* ── Status sections (Хочу / Смотрю / Просмотрел) + user lists ── */
+function StatusAndListsSection({ favorites, history }: { favorites: any[]; history: any[] }) {
+  const [want, setWant] = useState<any[]>([]);
+  const [watching, setWatching] = useState<any[]>([]);
+  const [watched, setWatched] = useState<any[]>([]);
+  const [lists, setLists] = useState<UserList[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  useEffect(() => {
+    const refresh = () => {
+      setWant(getAllByStatus("want"));
+      setWatching(getAllByStatus("watching"));
+      setWatched(getAllByStatus("watched"));
+      setLists(getLists());
+    };
+    refresh();
+    window.addEventListener("status-changed", refresh);
+    window.addEventListener("lists-changed", refresh);
+    window.addEventListener("sync-complete", refresh);
+    return () => {
+      window.removeEventListener("status-changed", refresh);
+      window.removeEventListener("lists-changed", refresh);
+      window.removeEventListener("sync-complete", refresh);
+    };
+  }, []);
+
+  const onCreate = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const l = createList(name);
+    setNewName("");
+    setCreating(false);
+    location.href = `/list/${l.id}`;
+  };
+
+  return (
+    <>
+      <h2 className="text-lg font-bold text-foreground mb-4">Мои списки</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <ListCard href="/favorites" title="Избранное" count={favorites.length} items={favorites.slice(0, 4)} />
+        <ListCard href="/profile#want" title="Хочу посмотреть" count={want.length} items={want.slice(0, 4)} />
+        <ListCard href="/profile#watching" title="Смотрю" count={watching.length} items={watching.slice(0, 4)} />
+        <ListCard href="/profile#watched" title="Просмотрел" count={watched.length} items={watched.slice(0, 4)} />
+      </div>
+
+      {/* User custom lists */}
+      <div className="mt-8 flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold text-foreground">Мои подборки</h2>
+        {!creating && (
+          <button onClick={() => setCreating(true)} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-full bg-primary text-primary-foreground font-semibold text-[12px] hover:bg-primary/90">
+            + Новая подборка
+          </button>
+        )}
+      </div>
+
+      {creating && (
+        <div className="mb-3 rounded-2xl p-3 bg-foreground/[0.03] ring-1 ring-white/[0.06] flex gap-2">
+          <input
+            autoFocus
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && onCreate()}
+            placeholder="«Топ-10 нуаров»"
+            className="flex-1 bg-background/40 ring-1 ring-white/[0.08] rounded-lg px-3 h-9 text-foreground text-[13px] outline-none focus:ring-primary/40"
+          />
+          <button onClick={onCreate} className="px-3 h-9 rounded-lg bg-primary text-primary-foreground text-[12px] font-semibold">Создать</button>
+          <button onClick={() => { setCreating(false); setNewName(""); }} className="px-3 h-9 rounded-lg bg-foreground/[0.05] text-foreground/75 text-[12px]">Отмена</button>
+        </div>
+      )}
+
+      {lists.length === 0 ? (
+        <p className="text-foreground/45 text-[13px] py-4 text-center">Подборок пока нет — создай первую и добавляй фильмы через поиск</p>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {lists.map(l => (
+            <ListCard key={l.id} href={`/list/${l.id}`} title={l.name} count={l.items.length} items={l.items.slice(0, 4)} />
+          ))}
+        </div>
+      )}
     </>
   );
 }

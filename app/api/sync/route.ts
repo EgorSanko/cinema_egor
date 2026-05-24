@@ -136,12 +136,22 @@ export async function POST(req: NextRequest) {
         .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))
         .slice(0, 50);
 
+      // Statuses: merge by entry key, newest updatedAt wins
+      const statusMap: Record<string, any> = { ...(existing.statuses || {}) };
+      const incomingStatuses = data.statuses || {};
+      for (const [k, v] of Object.entries(incomingStatuses)) {
+        const incoming: any = v;
+        const cur = statusMap[k];
+        if (!cur || (incoming.updatedAt || 0) > (cur.updatedAt || 0)) statusMap[k] = incoming;
+      }
+
       const merged = {
         favorites: mergedFavs,
         history: mergedHistory,
         positions: mergedPositions,
         comments: mergedComments,
         lists: mergedLists,
+        statuses: statusMap,
         friendCode: existing.friendCode || generateFriendCode(),
       };
 
@@ -172,6 +182,25 @@ export async function POST(req: NextRequest) {
         } catch {}
       }
       return NextResponse.json({ error: "Не найдено" }, { status: 404 });
+    }
+
+    // Public list lookup — anyone can fetch a list by its id without auth.
+    // Used by /list/[id] when the visitor doesn't own the list locally.
+    if (action === "list-lookup") {
+      const { listId } = body;
+      if (!listId) return NextResponse.json({ error: "No listId" }, { status: 400 });
+      ensureDir();
+      const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith(".json"));
+      for (const f of files) {
+        try {
+          const u = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), "utf-8"));
+          const list = (u.lists || []).find((l: any) => l.id === listId);
+          if (list) {
+            return NextResponse.json({ success: true, data: list });
+          }
+        } catch {}
+      }
+      return NextResponse.json({ error: "Список не найден" }, { status: 404 });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

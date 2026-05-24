@@ -12,6 +12,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { BingoCard } from "./bingo-card";
+import { StatusButtons } from "./status-buttons";
 import { TrailerButton } from "./trailer-modal";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
@@ -30,6 +31,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const [showPlayer, setShowPlayer] = useState(false);
   const [showBingo, setShowBingo] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showLoadingMascot, setShowLoadingMascot] = useState(false);
   const [error, setError] = useState("");
   const [streamData, setStreamData] = useState<any>(null);
   const [selectedQuality, setSelectedQuality] = useState("");
@@ -235,6 +237,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     if (resumeTime && resumeTime > 10 && !translatorLoading) setShowResume(true);
   }, [streamData, resumeTime, translatorLoading]);
 
+  // Min-show маскота 800ms — гарантия что не моргнёт
+  useEffect(() => {
+    if (loading) { setShowLoadingMascot(true); return; }
+    const t = setTimeout(() => setShowLoadingMascot(false), 800);
+    return () => clearTimeout(t);
+  }, [loading]);
+
   const handleResume = () => {
     if (videoRef.current && resumeTime) {
       videoRef.current.currentTime = resumeTime;
@@ -347,14 +356,26 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                 </div>
               </div>
             </div>
-          ) : loading && !streamData ? (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4">
-              <div className="relative">
-                <div className="w-20 h-20 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                <Film size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary" />
+          ) : (loading || showLoadingMascot) && !streamData ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-5">
+              <video
+                src="/mascot.webm"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+                disablePictureInPicture
+                controlsList="nodownload noplaybackrate nofullscreen"
+                className="w-80 h-80 sm:w-96 sm:h-96 md:w-[28rem] md:h-[28rem] lg:w-[34rem] lg:h-[34rem] xl:w-[40rem] xl:h-[40rem] object-contain pointer-events-none select-none drop-shadow-[0_0_80px_rgba(163,230,53,0.3)]"
+                style={{ mixBlendMode: "screen" }}
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-lg font-semibold">{translatorLoading ? "Смена озвучки..." : "Загрузка фильма"}</p>
+                <p className="text-gray-500 text-sm">Поиск лучшего качества...</p>
               </div>
-              <p className="text-lg font-semibold">{translatorLoading ? "Смена озвучки..." : "Загрузка фильма"}</p>
-              <p className="text-gray-500 text-sm">Поиск лучшего качества...</p>
             </div>
           ) : error ? (
             <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4 px-8">
@@ -447,6 +468,15 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   </button>
                 </div>
                 {showBingo && <BingoCard mediaId={movie.id} mediaType="movie" onClose={() => setShowBingo(false)} />}
+
+                {/* Watch status — Хочу / Просмотрел toggle pills */}
+                <StatusButtons
+                  id={movie.id}
+                  type="movie"
+                  title={movie.title}
+                  poster_path={movie.poster_path}
+                  vote_average={movie.vote_average}
+                />
 
                 <div className="flex flex-wrap items-center gap-2 text-[13px]">
                   {movie.release_date && (

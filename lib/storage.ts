@@ -69,13 +69,16 @@ function scheduleSyncToServer() {
 async function syncToServer(email: string) {
   try {
     let lists: any[] = [];
+    let statuses: any = {};
     try { lists = JSON.parse(localStorage.getItem("kino_lists_v1") || "[]"); } catch {}
+    try { statuses = JSON.parse(localStorage.getItem("kino_status_v1") || "{}"); } catch {}
     const data = {
       favorites: getFavorites(),
       history: getHistory(),
       positions: getAllPositions(),
       comments: getAllComments(),
       lists,
+      statuses,
     };
     const res = await fetch("/api/sync", {
       method: "POST",
@@ -101,13 +104,16 @@ async function syncToServer(email: string) {
 export async function syncFromServer(email: string): Promise<boolean> {
   try {
     let lists: any[] = [];
+    let statuses: any = {};
     try { lists = JSON.parse(localStorage.getItem("kino_lists_v1") || "[]"); } catch {}
+    try { statuses = JSON.parse(localStorage.getItem("kino_status_v1") || "{}"); } catch {}
     const localData = {
       favorites: getFavorites(),
       history: getHistory(),
       positions: getAllPositions(),
       comments: getAllComments(),
       lists,
+      statuses,
     };
 
     const res = await fetch("/api/sync", {
@@ -137,6 +143,20 @@ function applyServerData(data: any) {
   if (data.favorites) localStorage.setItem("kino_favorites", JSON.stringify(data.favorites));
   if (data.history) localStorage.setItem("kino_history", JSON.stringify(data.history));
   if (data.comments) localStorage.setItem("kino_comments", JSON.stringify(data.comments));
+  if (data.lists) localStorage.setItem("kino_lists_v1", JSON.stringify(data.lists));
+  if (data.statuses && typeof data.statuses === "object") {
+    // Merge with local — keep newest by updatedAt per entry
+    try {
+      const local = JSON.parse(localStorage.getItem("kino_status_v1") || "{}");
+      for (const [k, v] of Object.entries(data.statuses)) {
+        const cur = local[k];
+        const incoming: any = v;
+        if (!cur || (incoming.updatedAt || 0) > (cur.updatedAt || 0)) local[k] = incoming;
+      }
+      localStorage.setItem("kino_status_v1", JSON.stringify(local));
+      window.dispatchEvent(new Event("status-changed"));
+    } catch {}
+  }
   if (data.positions) {
     for (const [key, val] of Object.entries(data.positions)) {
       localStorage.setItem(key, JSON.stringify(val));
