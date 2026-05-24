@@ -493,7 +493,7 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
             animation. Each half shows the FULL logo positioned so the
             seam between the two halves shows "SAPKEFLY KINO" centered. */}
         <div className="absolute inset-0 z-30 flex pointer-events-none">
-          {/* LEFT door */}
+          {/* LEFT door — shows LEFT half of the SAPKEFLY KINO logo */}
           <div
             className="relative w-1/2 h-full overflow-hidden transition-transform duration-700 ease-in-out"
             style={{
@@ -503,20 +503,29 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
               boxShadow: opened ? "none" : "inset -16px 0 40px -8px rgba(163,230,53,0.30), 8px 0 32px -8px rgba(0,0,0,0.7)",
             }}
           >
-            {/* Logo text positioned so its center sits at right edge of
-                this half (= the seam = center of full container).
+            {/* Real logo image (logo-512.png — green "SAPKEFLY KINO"
+                with stylized S icon). Box positioned so its center sits
+                at the seam (right edge of this door = container center).
                 translateX(50%) pushes the box halfway past the seam;
-                overflow-hidden clips off the right half — leaving the
-                LEFT half of the logo visible on this door. */}
+                overflow-hidden clips off the right half. */}
             <div
-              className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 flex items-center gap-2 whitespace-nowrap"
-              style={{ fontSize: "clamp(28px, 5vw, 56px)" }}
+              className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2"
+              style={{
+                width: "clamp(260px, 38vw, 460px)",
+                aspectRatio: "4 / 1",
+              }}
             >
-              <span className="text-3xl sm:text-5xl" aria-hidden>🎬</span>
-              <span className="font-black tracking-tighter text-foreground">SAPKEFLY KINO</span>
+              <Image
+                src="/logo-512.png"
+                alt="SAPKEFLY KINO"
+                fill
+                sizes="460px"
+                className="object-contain"
+                priority
+              />
             </div>
           </div>
-          {/* RIGHT door */}
+          {/* RIGHT door — mirror, shows RIGHT half of the logo */}
           <div
             className="relative w-1/2 h-full overflow-hidden transition-transform duration-700 ease-in-out"
             style={{
@@ -526,14 +535,21 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
               boxShadow: opened ? "none" : "inset 16px 0 40px -8px rgba(163,230,53,0.30), -8px 0 32px -8px rgba(0,0,0,0.7)",
             }}
           >
-            {/* Mirror of left door — pull logo box to the left of own bounds
-                so the RIGHT half of the logo is visible. */}
             <div
-              className="absolute top-1/2 left-0 -translate-y-1/2 -translate-x-1/2 flex items-center gap-2 whitespace-nowrap"
-              style={{ fontSize: "clamp(28px, 5vw, 56px)" }}
+              className="absolute top-1/2 left-0 -translate-y-1/2 -translate-x-1/2"
+              style={{
+                width: "clamp(260px, 38vw, 460px)",
+                aspectRatio: "4 / 1",
+              }}
             >
-              <span className="text-3xl sm:text-5xl" aria-hidden>🎬</span>
-              <span className="font-black tracking-tighter text-foreground">SAPKEFLY KINO</span>
+              <Image
+                src="/logo-512.png"
+                alt="SAPKEFLY KINO"
+                fill
+                sizes="460px"
+                className="object-contain"
+                priority
+              />
             </div>
           </div>
           {/* Seam glow pulse — only visible when closed */}
