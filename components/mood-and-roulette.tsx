@@ -555,13 +555,53 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
           {/* Seam glow pulse — only visible when closed */}
           {!opened && (
             <div
-              className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[3px] pointer-events-none"
+              className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[3px] pointer-events-none z-10"
               style={{
                 background: "linear-gradient(180deg, transparent, #a3e635, transparent)",
                 boxShadow: "0 0 20px rgba(163,230,53,0.8), 0 0 40px rgba(163,230,53,0.4)",
                 animation: "seam-pulse 2s ease-in-out infinite",
               }}
             />
+          )}
+
+          {/* Sci-fi accents to make the "case" feel like a real CS:GO case
+              instead of an empty black box with a logo. Only visible while
+              the doors are closed. */}
+          {!opened && (
+            <div className="absolute inset-0 pointer-events-none z-10">
+              {/* Top + bottom lime accent bars with glow */}
+              <div className="absolute top-3 left-8 right-8 h-[2px] rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgba(163,230,53,0.5), transparent)" }} />
+              <div className="absolute bottom-3 left-8 right-8 h-[2px] rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgba(163,230,53,0.5), transparent)" }} />
+
+              {/* Four corner brackets — L-shaped accents */}
+              {[
+                { top: 10, left: 10,    border: "border-t-2 border-l-2 rounded-tl-md" },
+                { top: 10, right: 10,   border: "border-t-2 border-r-2 rounded-tr-md" },
+                { bottom: 10, left: 10, border: "border-b-2 border-l-2 rounded-bl-md" },
+                { bottom: 10, right: 10,border: "border-b-2 border-r-2 rounded-br-md" },
+              ].map((pos, i) => (
+                <div
+                  key={i}
+                  className={`absolute w-4 h-4 border-primary/70 ${pos.border}`}
+                  style={{
+                    ...pos,
+                    boxShadow: "0 0 8px rgba(163,230,53,0.4)",
+                  }}
+                />
+              ))}
+
+              {/* Subtitle below the logo at the seam */}
+              <div className="absolute left-1/2 -translate-x-1/2 text-center"
+                   style={{ bottom: "20%" }}>
+                <p className="text-primary/80 text-[10px] font-black tracking-[0.3em] uppercase whitespace-nowrap"
+                   style={{ textShadow: "0 0 8px rgba(163,230,53,0.5)" }}>
+                  ◆ ОТКРОЙ КЕЙС ◆
+                </p>
+                <p className="text-foreground/40 text-[9px] mt-1 tracking-wider whitespace-nowrap">
+                  CINEMA · CASE · ROULETTE
+                </p>
+              </div>
+            </div>
           )}
         </div>
       </div>
