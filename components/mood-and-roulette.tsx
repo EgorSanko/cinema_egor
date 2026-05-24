@@ -303,13 +303,30 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
   const [strip, setStrip] = useState<Movie[]>([]);
   const [offset, setOffset] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
+  // Case "doors" — start closed, open on first spin click forever
+  const [opened, setOpened] = useState(false);
+  // Container width is needed to compute the translate target so that
+  // the winner card lands exactly under the center indicator regardless
+  // of viewport width. ResizeObserver keeps it in sync on resize.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerW, setContainerW] = useState(0);
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const el = containerRef.current;
+    const update = () => setContainerW(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  // Idle preview: when pool loads but no spin happened yet, show
-  // some posters so the strip isn't empty
+  // Idle preview: when pool loads, fill the strip with random posters
+  // so the full width is populated from the start (no empty left).
+  // STRIP_LEN cards is plenty to cover any viewport.
   useEffect(() => {
     if (strip.length === 0 && spinPool.length > 0) {
       const initial: Movie[] = [];
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < STRIP_LEN; i++) {
         initial.push(spinPool[Math.floor(Math.random() * spinPool.length)]);
       }
       setStrip(initial);
@@ -320,9 +337,8 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
   // On a new spin: rebuild strip with winner pinned, snap to 0, then
   // (after browser commits the reset) animate to the winner position.
   useEffect(() => {
-    if (!spinning || !spinPick || spinPool.length === 0) return;
+    if (!spinning || !spinPick || spinPool.length === 0 || containerW === 0) return;
 
-    // 1. Build fresh strip with winner at WINNER_INDEX
     const newStrip: Movie[] = [];
     for (let i = 0; i < STRIP_LEN; i++) {
       newStrip.push(spinPool[Math.floor(Math.random() * spinPool.length)]);
@@ -330,20 +346,30 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
     newStrip[WINNER_INDEX] = spinPick;
     setStrip(newStrip);
 
-    // 2. Reset position WITHOUT transition
     setTransitioning(false);
     setOffset(0);
 
-    // 3. After browser paints the reset, enable transition + scroll
     const id = setTimeout(() => {
       const jitter = Math.floor(Math.random() * 40) - 20;
-      const target = -(WINNER_INDEX * STEP) + jitter;
+      // Target offset: shift strip so winner card's CENTER aligns with
+      // the container CENTER. Winner card center is at:
+      //   WINNER_INDEX * STEP + CARD_W/2  (from strip's left edge)
+      // We want this at containerW/2 (the indicator), so translate by:
+      const winnerCenter = WINNER_INDEX * STEP + CARD_W / 2;
+      const target = containerW / 2 - winnerCenter + jitter;
       setTransitioning(true);
       setOffset(target);
     }, 60);
 
     return () => clearTimeout(id);
-  }, [spinning, spinPick, spinPool]);
+  }, [spinning, spinPick, spinPool, containerW]);
+
+  // Called when user clicks the spin CTA — opens the doors on first
+  // ever click + always kicks off a spin.
+  const handleSpin = () => {
+    if (!opened) setOpened(true);
+    onSpin();
+  };
 
   return (
     <div className="relative rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-foreground/[0.06] via-foreground/[0.02] to-foreground/[0.01] ring-1 ring-white/[0.06] overflow-hidden flex flex-col">
@@ -375,18 +401,16 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
 
       {/* Strip container */}
       <div
+        ref={containerRef}
         className="relative rounded-2xl overflow-hidden bg-gradient-to-b from-black/60 to-black/40 ring-1 ring-white/[0.08] mb-4"
         style={{ height: 220 }}
       >
-        {/* The strip */}
+        {/* The strip — starts at left:0 (full of cards from the start),
+            no paddingLeft trick. Target offset computed from containerW. */}
         {strip.length > 0 ? (
           <div
-            className="absolute top-0 bottom-0 flex items-center"
+            className="absolute top-0 bottom-0 left-0 flex items-center"
             style={{
-              // Start with first card's CENTER under the container center
-              // (the indicator). Then offset slides the strip left until the
-              // winning card's center is under the indicator too.
-              paddingLeft: `calc(50% - ${CARD_W / 2}px)`,
               transform: `translateX(${offset}px)`,
               transition: transitioning
                 ? "transform 5.5s cubic-bezier(.15,.85,.25,1)"
@@ -462,6 +486,68 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
         {/* Edge fades for cinema-feel */}
         <div className="absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-black/80 via-black/40 to-transparent pointer-events-none z-10" />
         <div className="absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-black/80 via-black/40 to-transparent pointer-events-none z-10" />
+
+        {/* ── Case doors — sit on top of strip when closed, slide out
+            on first click revealing the spinning strip behind. After
+            the first spin they stay off. Same idea as CS:GO case open
+            animation. Each half shows the FULL logo positioned so the
+            seam between the two halves shows "SAPKEFLY KINO" centered. */}
+        <div className="absolute inset-0 z-30 flex pointer-events-none">
+          {/* LEFT door */}
+          <div
+            className="relative w-1/2 h-full overflow-hidden transition-transform duration-700 ease-in-out"
+            style={{
+              transform: opened ? "translateX(-100%)" : "translateX(0)",
+              background: "linear-gradient(135deg, rgba(20,24,30,0.96), rgba(8,10,14,0.98))",
+              borderRight: opened ? "none" : "2px solid rgba(163,230,53,0.7)",
+              boxShadow: opened ? "none" : "inset -16px 0 40px -8px rgba(163,230,53,0.30), 8px 0 32px -8px rgba(0,0,0,0.7)",
+            }}
+          >
+            {/* Logo text positioned so its center sits at right edge of
+                this half (= the seam = center of full container).
+                translateX(50%) pushes the box halfway past the seam;
+                overflow-hidden clips off the right half — leaving the
+                LEFT half of the logo visible on this door. */}
+            <div
+              className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 flex items-center gap-2 whitespace-nowrap"
+              style={{ fontSize: "clamp(28px, 5vw, 56px)" }}
+            >
+              <span className="text-3xl sm:text-5xl" aria-hidden>🎬</span>
+              <span className="font-black tracking-tighter text-foreground">SAPKEFLY KINO</span>
+            </div>
+          </div>
+          {/* RIGHT door */}
+          <div
+            className="relative w-1/2 h-full overflow-hidden transition-transform duration-700 ease-in-out"
+            style={{
+              transform: opened ? "translateX(100%)" : "translateX(0)",
+              background: "linear-gradient(225deg, rgba(20,24,30,0.96), rgba(8,10,14,0.98))",
+              borderLeft: opened ? "none" : "2px solid rgba(163,230,53,0.7)",
+              boxShadow: opened ? "none" : "inset 16px 0 40px -8px rgba(163,230,53,0.30), -8px 0 32px -8px rgba(0,0,0,0.7)",
+            }}
+          >
+            {/* Mirror of left door — pull logo box to the left of own bounds
+                so the RIGHT half of the logo is visible. */}
+            <div
+              className="absolute top-1/2 left-0 -translate-y-1/2 -translate-x-1/2 flex items-center gap-2 whitespace-nowrap"
+              style={{ fontSize: "clamp(28px, 5vw, 56px)" }}
+            >
+              <span className="text-3xl sm:text-5xl" aria-hidden>🎬</span>
+              <span className="font-black tracking-tighter text-foreground">SAPKEFLY KINO</span>
+            </div>
+          </div>
+          {/* Seam glow pulse — only visible when closed */}
+          {!opened && (
+            <div
+              className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[3px] pointer-events-none"
+              style={{
+                background: "linear-gradient(180deg, transparent, #a3e635, transparent)",
+                boxShadow: "0 0 20px rgba(163,230,53,0.8), 0 0 40px rgba(163,230,53,0.4)",
+                animation: "seam-pulse 2s ease-in-out infinite",
+              }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Winner banner — appears when spin settles */}
@@ -500,7 +586,7 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
 
       {/* Open case button */}
       <button
-        onClick={onSpin}
+        onClick={handleSpin}
         disabled={spinning}
         className="relative w-full inline-flex items-center justify-center gap-2 h-13 py-3.5 rounded-2xl bg-gradient-to-r from-primary via-yellow-300 to-primary text-primary-foreground font-black text-[15px] tracking-wider uppercase hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed overflow-hidden"
         style={{
@@ -516,6 +602,10 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
       <style jsx>{`
         @keyframes case-flow {
           to { background-position: -200% 0; }
+        }
+        @keyframes seam-pulse {
+          0%, 100% { opacity: 0.55; }
+          50% { opacity: 1; }
         }
       `}</style>
     </div>);
