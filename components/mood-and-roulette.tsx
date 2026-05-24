@@ -124,25 +124,32 @@ export function MoodAndRoulette() {
 
   const spin = async () => {
     if (spinning) return;
-    setSpinning(true);
+    // Clear previous pick FIRST so CaseRoulette useEffect sees pick=null
+    // → spinning=true with new pick (fresh dependency change). Without
+    // this, repeated spins where the new pick equals... no, irrelevant
+    // because we always re-pick random — but the order matters for
+    // strip rebuild reliability.
     setSpinPick(null);
+    setSpinning(true);
+
     const pool = await buildPool();
     if (pool.length === 0) { setSpinning(false); return; }
 
-    // Pick final NOW, preload its poster, then start the timer. By the
-    // time the spin lands (2.2s later) the image is in browser cache so
-    // it appears instantly without flash-of-broken-poster.
+    // Decide the winner NOW (not after timeout). CaseRoulette will see
+    // {spinning:true, spinPick:final} → rebuild strip with winner pinned
+    // at WINNER_INDEX → animate translate from 0 to winner position.
+    // This fixes the "wrong card shown after stop" bug: previously the
+    // strip was built with random items, then rebuilt AFTER stop when
+    // pick arrived → image at center swapped post-animation.
     const final = pool[Math.floor(Math.random() * pool.length)];
     if (final.poster_path) {
-      await preloadOne(`${POSTER}/w500${final.poster_path}`).catch(() => {});
+      await preloadOne(`${POSTER}/w342${final.poster_path}`).catch(() => {});
     }
-    // Also preload a few cycling candidates so the animation looks rich
     preloadPosters(pool.slice(0, 10));
 
-    setTimeout(() => {
-      setSpinPick(final);
-      setSpinning(false);
-    }, 2200);
+    setSpinPick(final);
+    // 5.5s = matches CSS transition duration in CaseRoulette
+    setTimeout(() => setSpinning(false), 5500);
   };
 
   const pickMood = async (id: string) => {
@@ -282,30 +289,61 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
   const STRIP_LEN = 80;
   const WINNER_INDEX = 70; // far enough that scroll feels long
 
-  // Build the scroll strip — random items from pool, with the winner
-  // pinned at WINNER_INDEX so we know exactly where to stop.
-  const strip = useMemo(() => {
-    if (spinPool.length === 0) return [] as Movie[];
-    const out: Movie[] = [];
-    for (let i = 0; i < STRIP_LEN; i++) {
-      out.push(spinPool[Math.floor(Math.random() * spinPool.length)]);
-    }
-    if (spinPick) out[WINNER_INDEX] = spinPick;
-    return out;
-  }, [spinPool, spinPick]);
+  // Internal strip + animation state. State-machine pattern used by
+  // every CS:GO case site: build strip → snap to 0 (no transition) →
+  // RAF tick later set transition + target offset → element animates.
+  //
+  // This fixes TWO bugs from the previous useMemo approach:
+  // 1. Strip rebuilt AFTER spin landed (when spinPick arrived) — image
+  //    at center swapped post-animation. Now strip is built with the
+  //    winner pinned from the very first frame of spinning.
+  // 2. Second spin had transform already at target → CSS transition
+  //    didn't fire → no animation. Now we explicitly snap back to 0
+  //    then animate to new target so the diff always triggers transition.
+  const [strip, setStrip] = useState<Movie[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [transitioning, setTransitioning] = useState(false);
 
-  // Compute translateX needed to land winner under the center indicator
-  // (with a small random visual jitter so it doesn't always stop at
-  // exact pixel center — feels more organic, like CS:GO cases)
-  const jitter = useMemo(() => (spinning ? Math.floor(Math.random() * 40) - 20 : 0), [spinning, spinPick]);
-  const winnerOffset = useMemo(() => {
-    // Container is centered; need to scroll until winner's center is at container center.
-    // Strip starts at left=0. Container center is at width/2.
-    // Winner card center = (WINNER_INDEX * STEP) + CARD_W/2
-    // Translate = container_center - winner_center
-    // We'll compute relative to a fixed reference (we pass container width via CSS calc)
-    return WINNER_INDEX * STEP + CARD_W / 2;
-  }, []);
+  // Idle preview: when pool loads but no spin happened yet, show
+  // some posters so the strip isn't empty
+  useEffect(() => {
+    if (strip.length === 0 && spinPool.length > 0) {
+      const initial: Movie[] = [];
+      for (let i = 0; i < 20; i++) {
+        initial.push(spinPool[Math.floor(Math.random() * spinPool.length)]);
+      }
+      setStrip(initial);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinPool]);
+
+  // On a new spin: rebuild strip with winner pinned, snap to 0, then
+  // (after browser commits the reset) animate to the winner position.
+  useEffect(() => {
+    if (!spinning || !spinPick || spinPool.length === 0) return;
+
+    // 1. Build fresh strip with winner at WINNER_INDEX
+    const newStrip: Movie[] = [];
+    for (let i = 0; i < STRIP_LEN; i++) {
+      newStrip.push(spinPool[Math.floor(Math.random() * spinPool.length)]);
+    }
+    newStrip[WINNER_INDEX] = spinPick;
+    setStrip(newStrip);
+
+    // 2. Reset position WITHOUT transition
+    setTransitioning(false);
+    setOffset(0);
+
+    // 3. After browser paints the reset, enable transition + scroll
+    const id = setTimeout(() => {
+      const jitter = Math.floor(Math.random() * 40) - 20;
+      const target = -(WINNER_INDEX * STEP) + jitter;
+      setTransitioning(true);
+      setOffset(target);
+    }, 60);
+
+    return () => clearTimeout(id);
+  }, [spinning, spinPick, spinPool]);
 
   return (
     <div className="relative rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-foreground/[0.06] via-foreground/[0.02] to-foreground/[0.01] ring-1 ring-white/[0.06] overflow-hidden flex flex-col">
@@ -345,15 +383,14 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
           <div
             className="absolute top-0 bottom-0 flex items-center"
             style={{
-              paddingLeft: `calc(50% - ${CARD_W / 2}px)`, // start with first card centered
-              transform: spinning || spinPick
-                ? `translateX(calc(-${winnerOffset}px + ${jitter}px))`
-                : `translateX(0)`,
-              transition: spinning
+              // Start with first card's CENTER under the container center
+              // (the indicator). Then offset slides the strip left until the
+              // winning card's center is under the indicator too.
+              paddingLeft: `calc(50% - ${CARD_W / 2}px)`,
+              transform: `translateX(${offset}px)`,
+              transition: transitioning
                 ? "transform 5.5s cubic-bezier(.15,.85,.25,1)"
-                : spinPick
-                  ? "none"
-                  : "transform 0.3s ease",
+                : "none",
               willChange: "transform",
               gap: `${GAP}px`,
             }}
