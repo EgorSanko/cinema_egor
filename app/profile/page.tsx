@@ -653,9 +653,9 @@ function StatusAndListsSection({ favorites, history }: { favorites: any[]; histo
       <h2 className="text-lg font-bold text-foreground mb-4">Мои списки</h2>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <ListCard href="/favorites" title="Избранное" count={favorites.length} items={favorites.slice(0, 4)} />
-        <ListCard href="/profile#want" title="Хочу посмотреть" count={want.length} items={want.slice(0, 4)} />
-        <ListCard href="/profile#watching" title="Смотрю" count={watching.length} items={watching.slice(0, 4)} />
-        <ListCard href="/profile#watched" title="Просмотрел" count={watched.length} items={watched.slice(0, 4)} />
+        <ListCard href="/status/want" title="Хочу посмотреть" count={want.length} items={want.slice(0, 4)} />
+        <ListCard href="/status/watching" title="Смотрю" count={watching.length} items={watching.slice(0, 4)} />
+        <ListCard href="/status/watched" title="Просмотрел" count={watched.length} items={watched.slice(0, 4)} />
       </div>
 
       {/* User custom lists */}
