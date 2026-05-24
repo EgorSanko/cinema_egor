@@ -41,8 +41,17 @@ function preloadOne(url: string): Promise<void> {
 }
 function preloadPosters(items: Movie[]) {
   for (const m of items) {
-    if (m.poster_path) { preloadOne(`${POSTER}/w500${m.poster_path}`).catch(() => {}); }
+    if (m.poster_path) { preloadOne(`${POSTER}/w342${m.poster_path}`).catch(() => {}); }
   }
+}
+
+// CS:GO-style rarity tiers — colour + label per rating bucket
+export function rarityOf(rating: number | undefined) {
+  const r = rating ?? 0;
+  if (r >= 8) return { color: "#fbbf24", glow: "rgba(251,191,36,0.55)",  label: "Легенда",  tier: 4 };
+  if (r >= 7) return { color: "#ef4444", glow: "rgba(239,68,68,0.55)",   label: "Эпик",     tier: 3 };
+  if (r >= 6) return { color: "#a78bfa", glow: "rgba(167,139,250,0.55)", label: "Редкий",   tier: 2 };
+  return         { color: "#3b82f6", glow: "rgba(59,130,246,0.55)",  label: "Обычный",  tier: 1 };
 }
 
 export function MoodAndRoulette() {
@@ -52,6 +61,16 @@ export function MoodAndRoulette() {
   const [spinning, setSpinning] = useState(false);
   const [spinPick, setSpinPick] = useState<Movie | null>(null);
   const [spinPool, setSpinPool] = useState<Movie[]>([]);
+  // Default "Для твоего настроения" row — trending picks shown when no
+  // mood is picked yet so the card doesn't have empty space below the
+  // mood grid. Loaded once on mount.
+  const [trending, setTrending] = useState<Movie[]>([]);
+  useEffect(() => {
+    fetch("/tmdb-api/trending/movie/week?api_key=275c9d09780aadb4b13ff57a731eda00&language=ru-RU")
+      .then(r => r.json())
+      .then(d => setTrending((d.results || []).filter((m: any) => m.poster_path).slice(0, 6)))
+      .catch(() => {});
+  }, []);
 
   // Pool = TMDB top_rated + popular (random pages), MINUS what the user
   // already watched/has in history. Goal is *discovery* — recommending
@@ -151,8 +170,16 @@ export function MoodAndRoulette() {
   const closeMood = () => { setOpenMood(null); setResults([]); };
 
   return (
-    <section className="grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-5">
-      {/* ── Mood picker (left, big) ────────────────────────────────── */}
+    <section className="space-y-5">
+      {/* ── CS:GO-style case roulette (FULL WIDTH — strip needs room) ── */}
+      <CaseRoulette
+        spinning={spinning}
+        spinPick={spinPick}
+        spinPool={spinPool}
+        onSpin={spin}
+      />
+
+      {/* ── Mood picker (full width, mood-filtered or trending row inline) */}
       <div className="relative rounded-3xl p-6 sm:p-7 bg-gradient-to-br from-foreground/[0.05] via-foreground/[0.02] to-foreground/[0.01] ring-1 ring-white/[0.06] overflow-hidden">
         <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-primary/[0.10] blur-3xl pointer-events-none" />
         <div className="absolute -bottom-20 -left-12 w-48 h-48 rounded-full bg-purple-500/[0.06] blur-3xl pointer-events-none" />
@@ -167,46 +194,47 @@ export function MoodAndRoulette() {
             ))}
           </div>
 
-          {/* Selected mood results preview row */}
-          {openMood && results.length > 0 && (
-            <div className="mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-foreground font-bold text-[15px] flex items-center gap-2">
-                  <span className="text-base">{MOODS.find(m => m.id === openMood)?.emoji}</span>
-                  Для твоего настроения
-                </h3>
-                <button onClick={closeMood} className="text-foreground/55 text-[12px] font-medium hover:text-primary">Закрыть</button>
+          {/* Movie row — fills the space below the mood grid. Shows either:
+              (a) Mood-filtered picks if user clicked a mood
+              (b) Default trending if nothing picked yet (so the card never
+                  has empty whitespace under the grid) */}
+          {(() => {
+            const items = openMood ? results : trending;
+            const title = openMood ? "Для твоего настроения" : "Хиты недели";
+            const emoji = openMood ? MOODS.find(m => m.id === openMood)?.emoji : "🔥";
+            if (openMood && loading) {
+              return <div className="mt-6 text-center py-8 text-foreground/55 text-[13px]">Подбираю…</div>;
+            }
+            if (items.length === 0) return null;
+            return (
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-foreground font-bold text-[15px] flex items-center gap-2">
+                    <span className="text-base">{emoji}</span>
+                    {title}
+                  </h3>
+                  {openMood && <button onClick={closeMood} className="text-foreground/55 text-[12px] font-medium hover:text-primary">Сбросить</button>}
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
+                  {items.slice(0, 6).map(m => (
+                    <Link key={m.id} href={`/movie/${m.id}`} className="group block">
+                      <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-foreground/[0.04] ring-1 ring-white/[0.06] group-hover:ring-primary/40 transition-all">
+                        {m.poster_path && (
+                          <Image src={`${POSTER}/w342${m.poster_path}`} alt={m.title || ""} fill sizes="180px" className="object-cover transition-transform duration-500 group-hover:scale-105" />
+                        )}
+                        {m.vote_average && m.vote_average > 0 && (
+                          <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/70 text-amber-300 text-[10px] font-bold">★ {m.vote_average.toFixed(1)}</span>
+                        )}
+                      </div>
+                      <p className="mt-1.5 text-foreground/85 text-[11.5px] font-semibold line-clamp-1 group-hover:text-primary">{m.title}</p>
+                    </Link>
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
-                {results.slice(0, 6).map(m => (
-                  <Link key={m.id} href={`/movie/${m.id}`} className="group block">
-                    <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-foreground/[0.04] ring-1 ring-white/[0.06] group-hover:ring-primary/40 transition-all">
-                      {m.poster_path && (
-                        <Image src={`${POSTER}/w342${m.poster_path}`} alt={m.title || ""} fill sizes="180px" className="object-cover transition-transform duration-500 group-hover:scale-105" />
-                      )}
-                      {m.vote_average && m.vote_average > 0 && (
-                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/70 text-amber-300 text-[10px] font-bold">★ {m.vote_average.toFixed(1)}</span>
-                      )}
-                    </div>
-                    <p className="mt-1.5 text-foreground/85 text-[11.5px] font-semibold line-clamp-1 group-hover:text-primary">{m.title}</p>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-          {openMood && loading && (
-            <div className="mt-6 text-center py-8 text-foreground/55 text-[13px]">Подбираю…</div>
-          )}
+            );
+          })()}
         </div>
       </div>
-
-      {/* ── Roulette WHEEL (right, big circle with mood emojis) ────── */}
-      <RouletteWheel
-        spinning={spinning}
-        spinPick={spinPick}
-        spinPool={spinPool}
-        onSpin={spin}
-      />
 
     </section>
   );
@@ -236,169 +264,224 @@ function MoodTile({ mood, onClick }: { mood: typeof MOODS[number]; onClick: () =
   );
 }
 
-/* ── Wheel-of-fortune roulette ─────────────────────────────────
-   Big circle with mood emojis around the perimeter + a center
-   PLAY button. Click → wheel rotates fast then settles; the
-   moviepicked from a pool of unwatched top-rated titles is shown
-   in an inline poster card below. Inspired by reference image. */
-function RouletteWheel({ spinning, spinPick, spinPool, onSpin }: {
+/* ── CS:GO case-opening roulette ────────────────────────────────
+   Horizontal strip of poster cards scrolls fast left → slows down
+   → stops with a center indicator pointing at the winner. Each
+   card has a rarity-colored bottom strip + glow based on TMDB
+   rating: blue (<6) → purple (6-7) → red (7-8) → gold (8+).
+   Reference: csgocases.com, key.gg, hellcase. */
+function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
   spinning: boolean;
   spinPick: Movie | null;
   spinPool: Movie[];
   onSpin: () => void;
 }) {
-  // Wheel rotation deg; resets on each spin. 8 full turns + offset.
-  const [rotation, setRotation] = useState(0);
-  useEffect(() => {
-    if (spinning) {
-      // Random landing offset (0-360) added to 8 full turns
-      const offset = Math.floor(Math.random() * 360);
-      setRotation(prev => prev + 8 * 360 + offset);
+  const CARD_W = 130;
+  const GAP = 8;
+  const STEP = CARD_W + GAP;
+  const STRIP_LEN = 80;
+  const WINNER_INDEX = 70; // far enough that scroll feels long
+
+  // Build the scroll strip — random items from pool, with the winner
+  // pinned at WINNER_INDEX so we know exactly where to stop.
+  const strip = useMemo(() => {
+    if (spinPool.length === 0) return [] as Movie[];
+    const out: Movie[] = [];
+    for (let i = 0; i < STRIP_LEN; i++) {
+      out.push(spinPool[Math.floor(Math.random() * spinPool.length)]);
     }
-  }, [spinning]);
+    if (spinPick) out[WINNER_INDEX] = spinPick;
+    return out;
+  }, [spinPool, spinPick]);
 
-  // Cycle which pool poster to show during spin animation (still used
-  // for the bottom poster card so it doesn't sit static)
-  const [cycleIdx, setCycleIdx] = useState(0);
-  useEffect(() => {
-    if (!spinning || spinPool.length === 0) return;
-    let i = 0;
-    const id = setInterval(() => {
-      i++;
-      setCycleIdx(Math.floor(Math.random() * spinPool.length));
-    }, 90);
-    return () => clearInterval(id);
-  }, [spinning, spinPool.length]);
-
-  // Mood segments to render around the wheel
-  const segments = MOODS.slice(0, 6);
-  // Wheel size
-  const SIZE = 280;
-  const RADIUS = SIZE / 2 - 24; // emoji placement radius
+  // Compute translateX needed to land winner under the center indicator
+  // (with a small random visual jitter so it doesn't always stop at
+  // exact pixel center — feels more organic, like CS:GO cases)
+  const jitter = useMemo(() => (spinning ? Math.floor(Math.random() * 40) - 20 : 0), [spinning, spinPick]);
+  const winnerOffset = useMemo(() => {
+    // Container is centered; need to scroll until winner's center is at container center.
+    // Strip starts at left=0. Container center is at width/2.
+    // Winner card center = (WINNER_INDEX * STEP) + CARD_W/2
+    // Translate = container_center - winner_center
+    // We'll compute relative to a fixed reference (we pass container width via CSS calc)
+    return WINNER_INDEX * STEP + CARD_W / 2;
+  }, []);
 
   return (
-    <div className="relative rounded-3xl p-6 bg-gradient-to-br from-foreground/[0.05] via-foreground/[0.02] to-foreground/[0.01] ring-1 ring-white/[0.06] overflow-hidden flex flex-col">
+    <div className="relative rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-foreground/[0.06] via-foreground/[0.02] to-foreground/[0.01] ring-1 ring-white/[0.06] overflow-hidden flex flex-col">
+      {/* Ambient glows */}
       <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-primary/[0.10] blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-24 -left-16 w-64 h-64 rounded-full bg-purple-500/[0.06] blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-20 -left-16 w-64 h-64 rounded-full bg-purple-500/[0.06] blur-3xl pointer-events-none" />
 
+      {/* Header */}
       <div className="relative flex items-center justify-between gap-3 mb-1">
-        <h2 className="text-foreground font-black text-2xl tracking-tight">Помоги выбрать фильм <span aria-hidden>🎲</span></h2>
-      </div>
-      <p className="relative text-foreground/55 text-[13px] mb-4">Запусти рулетку — пусть удача решит!</p>
-
-      {/* The wheel itself */}
-      <div className="relative flex items-center justify-center my-2" style={{ height: SIZE }}>
-        {/* Outer ambient glow */}
-        <div className="absolute w-[300px] h-[300px] rounded-full bg-primary/[0.15] blur-2xl pointer-events-none" />
-
-        {/* Rotating ring with segments + emoji labels */}
-        <div
-          className="absolute"
-          style={{
-            width: SIZE, height: SIZE,
-            transform: `rotate(${rotation}deg)`,
-            transition: spinning ? "transform 2.4s cubic-bezier(.15,.7,.15,1)" : "none",
-          }}
-        >
-          {/* Conic gradient ring (6 segments alternating shades) */}
-          <div
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: `conic-gradient(from 0deg,
-                rgba(163,230,53,0.25) 0deg 60deg,
-                rgba(163,230,53,0.12) 60deg 120deg,
-                rgba(163,230,53,0.25) 120deg 180deg,
-                rgba(163,230,53,0.12) 180deg 240deg,
-                rgba(163,230,53,0.25) 240deg 300deg,
-                rgba(163,230,53,0.12) 300deg 360deg)`,
-              boxShadow: "0 0 40px rgba(163,230,53,0.2), inset 0 0 0 2px rgba(163,230,53,0.35)",
-            }}
-          />
-          {/* Divider lines between segments */}
-          {segments.map((_, i) => (
-            <div
-              key={i}
-              className="absolute top-1/2 left-1/2 origin-left h-px bg-primary/30"
-              style={{
-                width: SIZE / 2,
-                transform: `rotate(${i * 60}deg)`,
-              }}
-            />
+        <h2 className="text-foreground font-black text-2xl tracking-tight flex items-center gap-2">
+          <span aria-hidden>🎰</span> Рулетка
+        </h2>
+        {/* Rarity legend */}
+        <div className="hidden sm:flex items-center gap-2 text-[10px] font-bold">
+          {[
+            { c: "#3b82f6", l: "<6" },
+            { c: "#a78bfa", l: "6+" },
+            { c: "#ef4444", l: "7+" },
+            { c: "#fbbf24", l: "8+" },
+          ].map(t => (
+            <span key={t.l} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded" style={{ backgroundColor: `${t.c}20`, color: t.c }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: t.c, boxShadow: `0 0 6px ${t.c}` }} />
+              {t.l}
+            </span>
           ))}
-          {/* Mood emoji + label per segment, placed on radius */}
-          {segments.map((m, i) => {
-            // angle in DEGREES centered in each 60° wedge, starting at top
-            const angleDeg = i * 60 + 30 - 90;
-            const rad = (angleDeg * Math.PI) / 180;
-            const x = Math.cos(rad) * RADIUS;
-            const y = Math.sin(rad) * RADIUS;
-            return (
-              <div
-                key={m.id}
-                className="absolute flex flex-col items-center"
-                style={{
-                  left: `calc(50% + ${x}px)`,
-                  top: `calc(50% + ${y}px)`,
-                  transform: `translate(-50%, -50%) rotate(${-rotation}deg)`,
-                  transition: spinning ? "transform 2.4s cubic-bezier(.15,.7,.15,1)" : "none",
-                }}
-              >
-                <span className="text-2xl leading-none drop-shadow-lg" aria-hidden>{m.emoji}</span>
-                <span className="text-white/85 text-[10px] font-semibold mt-1 whitespace-nowrap">
-                  {m.label.replace("Хочу ", "").replace("Чувствую ", "")}
-                </span>
-              </div>
-            );
-          })}
         </div>
+      </div>
+      <p className="relative text-foreground/55 text-[12.5px] mb-4">Открой кейс — выпадет случайный фильм. Чем выше рейтинг — тем реже!</p>
 
-        {/* Center play button — fixed, doesn't rotate */}
-        <button
-          onClick={onSpin}
-          disabled={spinning}
-          className="relative z-10 inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary text-primary-foreground font-bold hover:scale-105 active:scale-95 transition-transform disabled:opacity-70"
-          style={{
-            boxShadow: "0 0 0 4px rgba(163,230,53,0.20), 0 0 28px rgba(163,230,53,0.55), 0 6px 24px -4px rgba(163,230,53,0.40)",
-          }}
-          aria-label="Крутить рулетку"
-        >
-          <Play size={28} fill="currentColor" className="ml-1" />
-        </button>
+      {/* Strip container */}
+      <div
+        className="relative rounded-2xl overflow-hidden bg-gradient-to-b from-black/60 to-black/40 ring-1 ring-white/[0.08] mb-4"
+        style={{ height: 220 }}
+      >
+        {/* The strip */}
+        {strip.length > 0 ? (
+          <div
+            className="absolute top-0 bottom-0 flex items-center"
+            style={{
+              paddingLeft: `calc(50% - ${CARD_W / 2}px)`, // start with first card centered
+              transform: spinning || spinPick
+                ? `translateX(calc(-${winnerOffset}px + ${jitter}px))`
+                : `translateX(0)`,
+              transition: spinning
+                ? "transform 5.5s cubic-bezier(.15,.85,.25,1)"
+                : spinPick
+                  ? "none"
+                  : "transform 0.3s ease",
+              willChange: "transform",
+              gap: `${GAP}px`,
+            }}
+          >
+            {strip.map((m, i) => {
+              const r = rarityOf(m.vote_average);
+              const isWinner = !spinning && spinPick && i === WINNER_INDEX;
+              return (
+                <div
+                  key={i}
+                  className="relative flex-shrink-0 rounded-xl overflow-hidden"
+                  style={{
+                    width: CARD_W,
+                    aspectRatio: "2 / 3",
+                    border: `2px solid ${r.color}`,
+                    boxShadow: isWinner
+                      ? `0 0 0 4px ${r.color}, 0 0 32px ${r.glow}, 0 0 64px ${r.glow}`
+                      : `0 0 12px ${r.glow}`,
+                    transform: isWinner ? "scale(1.04)" : "none",
+                    transition: "box-shadow 0.4s, transform 0.4s",
+                  }}
+                >
+                  {m.poster_path && (
+                    <Image
+                      src={`${POSTER}/w342${m.poster_path}`}
+                      alt=""
+                      fill
+                      sizes="140px"
+                      className="object-cover"
+                      priority={i < 8 || Math.abs(i - WINNER_INDEX) <= 3}
+                    />
+                  )}
+                  {/* Rarity bottom strip */}
+                  <div
+                    className="absolute bottom-0 inset-x-0 h-1"
+                    style={{ backgroundColor: r.color, boxShadow: `0 0 12px ${r.glow}` }}
+                  />
+                  {/* Rating chip top-right */}
+                  {m.vote_average && (
+                    <span
+                      className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-black"
+                      style={{ backgroundColor: r.color, color: "#0a0a0a" }}
+                    >
+                      {m.vote_average.toFixed(1)}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-foreground/30">
+            <Dices size={40} />
+            <p className="text-[12px]">Подгружаем кейс…</p>
+          </div>
+        )}
+
+        {/* Center indicator — vertical line + triangles top/bottom */}
+        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-primary pointer-events-none z-20"
+          style={{ boxShadow: "0 0 14px rgba(163,230,53,0.9), 0 0 28px rgba(163,230,53,0.5)" }}
+        />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20"
+          style={{ width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "10px solid #a3e635", filter: "drop-shadow(0 0 6px rgba(163,230,53,0.9))" }}
+        />
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20"
+          style={{ width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderBottom: "10px solid #a3e635", filter: "drop-shadow(0 0 6px rgba(163,230,53,0.9))" }}
+        />
+
+        {/* Edge fades for cinema-feel */}
+        <div className="absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-black/80 via-black/40 to-transparent pointer-events-none z-10" />
+        <div className="absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-black/80 via-black/40 to-transparent pointer-events-none z-10" />
       </div>
 
-      {/* Picked title preview — appears below when spin settles */}
-      {spinPick && !spinning && (
-        <Link
-          href={`/movie/${spinPick.id}`}
-          className="relative mt-4 flex items-center gap-3 rounded-2xl bg-foreground/[0.04] ring-1 ring-primary/30 p-2.5 hover:bg-foreground/[0.06] transition-colors group"
-          style={{ boxShadow: "0 0 24px -4px rgba(163,230,53,0.30)" }}
-        >
-          {spinPick.poster_path && (
-            <div className="relative w-12 h-16 rounded-lg overflow-hidden flex-shrink-0">
-              <Image src={`${POSTER}/w185${spinPick.poster_path}`} alt={spinPick.title || ""} fill sizes="48px" className="object-cover" />
+      {/* Winner banner — appears when spin settles */}
+      {spinPick && !spinning && (() => {
+        const r = rarityOf(spinPick.vote_average);
+        return (
+          <Link
+            href={`/movie/${spinPick.id}`}
+            className="relative flex items-center gap-3 rounded-2xl p-2.5 mb-3 ring-1 group transition-all"
+            style={{
+              backgroundColor: `${r.color}10`,
+              borderColor: r.color,
+              boxShadow: `0 0 24px ${r.glow}`,
+            }}
+          >
+            {spinPick.poster_path && (
+              <div className="relative w-12 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                <Image src={`${POSTER}/w185${spinPick.poster_path}`} alt={spinPick.title || ""} fill sizes="48px" className="object-cover" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ backgroundColor: r.color, color: "#0a0a0a" }}>
+                  {r.label}
+                </span>
+                {spinPick.vote_average ? (
+                  <span className="text-[11px] font-bold" style={{ color: r.color }}>★ {spinPick.vote_average.toFixed(1)}</span>
+                ) : null}
+              </div>
+              <p className="text-foreground font-bold text-[13.5px] line-clamp-1 group-hover:text-primary mt-0.5">{spinPick.title || spinPick.name}</p>
             </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="text-foreground font-bold text-[13.5px] line-clamp-1 group-hover:text-primary">{spinPick.title || spinPick.name}</p>
-            <div className="flex items-center gap-2 mt-1 text-[11px] text-foreground/55">
-              {spinPick.vote_average ? <span className="text-amber-300 font-bold">★ {spinPick.vote_average.toFixed(1)}</span> : null}
-              {spinPick.release_date && <span>{new Date(spinPick.release_date).getFullYear()}</span>}
-            </div>
-          </div>
-          <Play size={16} fill="currentColor" className="text-primary group-hover:scale-110 transition-transform" />
-        </Link>
-      )}
+            <Play size={18} fill="currentColor" style={{ color: r.color }} className="group-hover:scale-110 transition-transform" />
+          </Link>
+        );
+      })()}
 
-      {/* Big spin button below the wheel */}
+      {/* Open case button */}
       <button
         onClick={onSpin}
         disabled={spinning}
-        className="relative w-full mt-4 inline-flex items-center justify-center gap-2 h-13 py-4 rounded-2xl bg-primary text-primary-foreground font-bold text-[15px] hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-60"
-        style={{ boxShadow: "0 8px 28px -6px rgba(163,230,53,0.55)" }}
+        className="relative w-full inline-flex items-center justify-center gap-2 h-13 py-3.5 rounded-2xl bg-gradient-to-r from-primary via-yellow-300 to-primary text-primary-foreground font-black text-[15px] tracking-wider uppercase hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed overflow-hidden"
+        style={{
+          backgroundSize: "200% 100%",
+          animation: spinning ? "case-flow 1.2s linear infinite" : undefined,
+          boxShadow: "0 8px 28px -6px rgba(163,230,53,0.55), 0 0 24px rgba(163,230,53,0.25)",
+        }}
       >
         <Dices size={18} className={spinning ? "animate-spin" : ""} />
-        {spinning ? "Крутится…" : spinPick ? "Крутить ещё" : "Крутить рулетку"}
+        {spinning ? "Открываем…" : spinPick ? "Открыть ещё раз" : "Открыть кейс"}
       </button>
+
+      <style jsx>{`
+        @keyframes case-flow {
+          to { background-position: -200% 0; }
+        }
+      `}</style>
     </div>);
 }
+
 
