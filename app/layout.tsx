@@ -6,6 +6,7 @@ import type React from "react";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth-context";
 import { MobileNav } from "@/components/mobile-nav";
+import { PWABackButton } from "@/components/pwa-back-button";
 import { ReloadOnStale } from "@/components/reload-on-stale";
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -60,6 +61,7 @@ export default function RootLayout({
         <AuthProvider>{children}</AuthProvider>
         <Analytics />
         <MobileNav />
+        <PWABackButton />
         <ReloadOnStale />
         <Script src="https://telegram.org/js/telegram-web-app.js" strategy="afterInteractive" />
         <Script id="tg-init" strategy="afterInteractive">{`
