@@ -50,23 +50,37 @@ export default function WrappedPage() {
   const genreLookup = useMemo(() => getGenreLookup(), []);
   const stats = useMemo(() => computeStats(yearHistory, favorites, genreLookup), [yearHistory, favorites, genreLookup]);
 
-  // Top 5 most watched titles by total minutes
+  // Top 5 most watched titles by total minutes.
+  // count = distinct episodes for TV / 1 for movie. Skip rows under 60s so
+  // tap-ins don't inflate the "138 сеансов" you never actually watched.
   const topTitles = useMemo(() => {
-    const map = new Map<string, { id: number; type: string; title: string; poster_path: string | null; minutes: number; count: number }>();
+    const map = new Map<string, { id: number; type: string; title: string; poster_path: string | null; minutes: number; episodes: Set<string>; movieWatched: boolean }>();
     for (const h of yearHistory) {
-      if (!h.duration || !h.progress) continue;
+      if (!h.duration || !h.progress || h.progress < 60) continue;
       const key = `${h.type}-${h.id}`;
       const min = (h.progress / 60);
       const prev = map.get(key);
       if (prev) {
         prev.minutes += min;
-        prev.count += 1;
+        if (h.type === "tv") prev.episodes.add(`s${h.season ?? 0}e${h.episode ?? 0}`);
+        else prev.movieWatched = true;
       } else {
-        map.set(key, { id: h.id, type: h.type, title: h.title, poster_path: h.poster_path, minutes: min, count: 1 });
+        const eps = new Set<string>();
+        if (h.type === "tv") eps.add(`s${h.season ?? 0}e${h.episode ?? 0}`);
+        map.set(key, { id: h.id, type: h.type, title: h.title, poster_path: h.poster_path, minutes: min, episodes: eps, movieWatched: h.type === "movie" });
       }
     }
-    return [...map.values()].sort((a, b) => b.minutes - a.minutes).slice(0, 5);
+    return [...map.values()].sort((a, b) => b.minutes - a.minutes).slice(0, 5)
+      .map(t => ({ ...t, count: t.type === "tv" ? t.episodes.size : 1 }));
   }, [yearHistory]);
+
+  // Russian plural for n (1 → one, 2-4 → few, 5+/0/11-14 → many)
+  const ruPlural = (n: number, one: string, few: string, many: string) => {
+    const mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return one;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+    return many;
+  };
 
   // Top genres breakdown
   const topGenres = useMemo(() => {
@@ -176,8 +190,8 @@ export default function WrappedPage() {
               <div className="text-[6rem] sm:text-[8rem] font-black leading-none text-primary tabular-nums" style={{ textShadow: "0 0 60px rgba(163,230,53,0.4)" }}>
                 {hours}
               </div>
-              <div className="text-foreground text-2xl font-bold mt-1">час{hours % 10 === 1 && hours % 100 !== 11 ? "" : hours % 10 >= 2 && hours % 10 <= 4 && (hours % 100 < 10 || hours % 100 >= 20) ? "а" : "ов"}</div>
-              {days > 0 && <div className="text-foreground/45 text-[13px] mt-2">≈ {days} {days === 1 ? "день" : days < 5 ? "дня" : "дней"} без сна</div>}
+              <div className="text-foreground text-2xl font-bold mt-1">{ruPlural(hours, "час", "часа", "часов")}</div>
+              {days > 0 && <div className="text-foreground/45 text-[13px] mt-2">≈ {days} {ruPlural(days, "день", "дня", "дней")} без сна</div>}
             </div>
           </WrappedCard>
 
@@ -259,7 +273,11 @@ export default function WrappedPage() {
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="text-foreground font-bold text-[15px] line-clamp-1 group-hover:text-primary transition-colors">{t.title}</p>
-                        <p className="text-foreground/45 text-[11px] mt-0.5">{Math.round(t.minutes / 60)}ч · {t.count} {t.count === 1 ? "сеанс" : "сеанса"}</p>
+                        <p className="text-foreground/45 text-[11px] mt-0.5">{Math.round(t.minutes / 60)}ч · {t.count} {
+                          t.type === "tv"
+                            ? ruPlural(t.count, "серия", "серии", "серий")
+                            : ruPlural(t.count, "просмотр", "просмотра", "просмотров")
+                        }</p>
                       </div>
                     </Link>
                   </li>
@@ -293,7 +311,7 @@ export default function WrappedPage() {
                 </div>
                 <div>
                   <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold">Серия подряд</div>
-                  <div className="text-foreground font-black text-2xl leading-tight">{stats.consecutiveDays} дней</div>
+                  <div className="text-foreground font-black text-2xl leading-tight">{stats.consecutiveDays} {ruPlural(stats.consecutiveDays, "день", "дня", "дней")}</div>
                   <div className="text-foreground/65 text-sm mt-0.5">Ты смотришь без перерыва</div>
                 </div>
               </div>
