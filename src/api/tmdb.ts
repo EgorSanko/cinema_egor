@@ -60,6 +60,9 @@ export interface StreamData {
   streams: Record<string, string>;
   qualities: string[];
   translators: { id: number; name: string }[];
+  /** Translator the returned stream actually corresponds to — backend reports
+   *  this so the player UI doesn't lie about which dub is playing. */
+  active_translator_id?: number;
   is_series: boolean;
   url: string;
 }

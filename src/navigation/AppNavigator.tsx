@@ -95,7 +95,7 @@ export function AppNavigator() {
   if (user === undefined) return null;
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, orientation: 'portrait' }}>
       {!user ? (
         <Stack.Screen name="Auth">{() => <AuthScreen onAuth={setUser} />}</Stack.Screen>
       ) : (
