@@ -98,6 +98,13 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
         except Exception as ex:
             print(f"Translators error: {ex}")
 
+        # Default to first translator so the response always carries an
+        # active_translator_id. Without this the client labelled translators[0]
+        # as active but the stream HDRezka actually returned could be a
+        # different dub — UI lied about the playing voiceover.
+        if translator_id is None and translators:
+            translator_id = translators[0]["id"]
+
         s = int(season or 1)
         e = int(episode or 1)
         # If matched a split-season entry [ТВ-N], reset season to 1 inside that entry
@@ -114,6 +121,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
         try_fn = try_series if is_series else try_movie
         stream = None
         last_err = None
+        active_translator_id = translator_id
         try:
             stream = await try_fn(translator_id)
         except Exception as ex:
@@ -122,6 +130,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
             for _, tid in list(player.post.translators.name_id.items())[:8]:
                 try:
                     stream = await try_fn(tid)
+                    active_translator_id = tid
                     break
                 except Exception as ex:
                     last_err = ex
@@ -147,7 +156,8 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
                         return {
                             "title": post.name, "stream": best_url, "quality": best_quality,
                             "streams": streams, "qualities": list(streams.keys()),
-                            "translators": translators, "is_series": is_series, "url": str(post.url),
+                            "translators": translators, "active_translator_id": translator_id,
+                            "is_series": is_series, "url": str(post.url),
                         }
             except Exception as fb_err:
                 print(f"HTML fallback failed: {fb_err}")
@@ -176,6 +186,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
             "streams": streams,
             "qualities": list(streams.keys()),
             "translators": translators,
+            "active_translator_id": active_translator_id,
             "is_series": is_series,
             "url": str(post.url),
         }

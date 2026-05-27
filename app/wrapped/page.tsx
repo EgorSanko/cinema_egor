@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Navbar } from "@/components/navbar";
-import { getHistory, getFavorites } from "@/lib/storage";
+import { getHistory, getFavorites, syncFromServer } from "@/lib/storage";
 import { computeStats } from "@/lib/achievements";
 import { getGenreLookup, GENRES, pickPersona } from "@/lib/genre-persona";
 import { enrichHistoryWithGenres } from "@/lib/genre-enrich";
@@ -20,10 +20,23 @@ export default function WrappedPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const h = getHistory();
-    setFavorites(getFavorites());
-    enrichHistoryWithGenres(h).then(setHistory);
-  }, []);
+    let cancelled = false;
+    const load = async () => {
+      // For logged users pull canonical data from server first — local history
+      // can be stale because of the old addToHistory dedupe bug (single row
+      // per TV series). Server merges by id+type+season+episode so it holds
+      // the full per-episode picture.
+      if (user?.email) {
+        try { await syncFromServer(user.email); } catch {}
+      }
+      if (cancelled) return;
+      const h = getHistory();
+      setFavorites(getFavorites());
+      enrichHistoryWithGenres(h).then(out => { if (!cancelled) setHistory(out); });
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [user?.email]);
 
   const year = new Date().getFullYear();
   const yearStart = new Date(year, 0, 1).getTime();

@@ -148,7 +148,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       if (data.stream) {
         // Auto-skip HDRezka premium dubs on first play — they serve a 60-sec
         // "buy subscription" pre-roll instead of the stream.
-        const playedId: number | undefined = effectiveTr ?? data.translators?.[0]?.id;
+        // Backend now reports `active_translator_id` so we know which dub
+        // is actually playing instead of assuming translators[0].
+        const playedId: number | undefined = effectiveTr ?? data.active_translator_id ?? data.translators?.[0]?.id;
         const playedIsPremium = data.translators?.find((t: any) => t.id === playedId)?.is_premium;
         const freeAlt = data.translators?.find((t: any) => !t.is_premium);
         if (!translatorId && playedIsPremium && freeAlt && freeAlt.id !== playedId) {
@@ -162,10 +164,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         if (data.translators && data.translators.length > 0 && translators.length === 0) {
           setTranslators(data.translators);
           if (!selectedTranslator) {
-            setSelectedTranslator(data.translators[0].id);
+            setSelectedTranslator(data.active_translator_id ?? data.translators[0].id);
           }
         }
-        const activeId = effectiveTr ?? data.translators?.[0]?.id;
+        const activeId = effectiveTr ?? data.active_translator_id ?? data.translators?.[0]?.id;
         const activeName = data.translators?.find((t: any) => t.id === activeId)?.name;
         if (activeName) recordTranslatorTry(activeName);
         return;
@@ -180,10 +182,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
             if (data2.translators && data2.translators.length > 0 && translators.length === 0) {
               setTranslators(data2.translators);
               if (!selectedTranslator) {
-                setSelectedTranslator(data2.translators[0].id);
+                setSelectedTranslator(data2.active_translator_id ?? data2.translators[0].id);
               }
             }
-            const activeId2 = effectiveTr ?? data2.translators?.[0]?.id;
+            const activeId2 = effectiveTr ?? data2.active_translator_id ?? data2.translators?.[0]?.id;
             const activeName2 = data2.translators?.find((t: any) => t.id === activeId2)?.name;
             if (activeName2) recordTranslatorTry(activeName2);
             return;
@@ -201,7 +203,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           setSelectedQuality(dataAlt.quality);
           if (dataAlt.translators && dataAlt.translators.length > 0 && translators.length === 0) {
             setTranslators(dataAlt.translators);
-            if (!selectedTranslator) setSelectedTranslator(dataAlt.translators[0].id);
+            if (!selectedTranslator) setSelectedTranslator(dataAlt.active_translator_id ?? dataAlt.translators[0].id);
           }
           return;
         }

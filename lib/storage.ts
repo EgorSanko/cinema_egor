@@ -219,7 +219,15 @@ export function getHistory(): HistoryItem[] {
 
 export function addToHistory(item: HistoryItem): void {
   const history = getHistory();
-  const filtered = history.filter(h => !(h.id === item.id && h.type === item.type));
+  // Dedupe key: movies = id+type (one row per movie), TV = id+type+season+episode
+  // (one row per episode so /wrapped + achievements count cumulative hours
+  // and episodes correctly). Pre-fix this collapsed all episodes of a
+  // series into a single row, undercounting heavily.
+  const filtered = history.filter(h => {
+    if (h.id !== item.id || h.type !== item.type) return true;
+    if (item.type === "tv") return h.season !== item.season || h.episode !== item.episode;
+    return false;
+  });
   filtered.unshift({ ...item, watchedAt: Date.now() });
   localStorage.setItem("kino_history", JSON.stringify(filtered.slice(0, 500)));
   scheduleSyncToServer();

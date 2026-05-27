@@ -193,9 +193,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
       const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam);
       const data = await res.json();
       if (data.stream) {
-        // If we got a premium dub by default (no explicit choice), retry with the
-        // first non-premium translator — avoids the 60-sec HDRezka "buy" pre-roll.
-        const playedId: number | undefined = effectiveTr ?? data.translators?.[0]?.id;
+        // Resolve which translator the returned stream actually represents.
+        // Backend now reports `active_translator_id`; before relying on it,
+        // selectedTranslator/list[0] divergence caused the UI to label the
+        // wrong dub.
+        const playedId: number | undefined = effectiveTr ?? data.active_translator_id ?? data.translators?.[0]?.id;
         const playedIsPremium = data.translators?.find((t: any) => t.id === playedId)?.is_premium;
         const freeAlt = data.translators?.find((t: any) => !t.is_premium);
         if (!translatorId && playedIsPremium && freeAlt && freeAlt.id !== playedId) {
@@ -209,11 +211,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
         if (data.translators && data.translators.length > 0 && translators.length === 0) {
           setTranslators(data.translators);
           if (!selectedTranslator) {
-            setSelectedTranslator(data.translators[0].id);
+            setSelectedTranslator(data.active_translator_id ?? data.translators[0].id);
           }
         }
         // Track which dub user is actually watching with — counts toward Polyglot
-        const activeId = effectiveTr ?? data.translators?.[0]?.id;
+        const activeId = effectiveTr ?? data.active_translator_id ?? data.translators?.[0]?.id;
         const activeName = data.translators?.find((t: any) => t.id === activeId)?.name;
         if (activeName) recordTranslatorTry(activeName);
         return;
@@ -228,10 +230,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
             if (data2.translators && data2.translators.length > 0 && translators.length === 0) {
               setTranslators(data2.translators);
               if (!selectedTranslator) {
-                setSelectedTranslator(data2.translators[0].id);
+                setSelectedTranslator(data2.active_translator_id ?? data2.translators[0].id);
               }
             }
-            const activeId2 = effectiveTr ?? data2.translators?.[0]?.id;
+            const activeId2 = effectiveTr ?? data2.active_translator_id ?? data2.translators?.[0]?.id;
             const activeName2 = data2.translators?.find((t: any) => t.id === activeId2)?.name;
             if (activeName2) recordTranslatorTry(activeName2);
             return;
