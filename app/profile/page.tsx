@@ -10,7 +10,7 @@ import { getCanon, setCanon, getCanonCandidates, type CanonPick } from "@/lib/ca
 import { getAllByStatus, type WatchStatus } from "@/lib/status";
 import { getLists, createList, type UserList } from "@/lib/lists";
 import { canFreezeNow, freezeDay, getFrozenDays, daysUntilNextFreeze } from "@/lib/streak-freeze";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   LogIn, LogOut, Heart, Clock, Award, Film, Tv, Trophy, Lock,
   Flame, Flag, TrendingUp, AudioLines, ArrowRight, Play, Bookmark,
@@ -1437,8 +1437,11 @@ function WatchHeatmap({ data }: { data: HeatCell[][] }) {
   const flat = data.flat();
   const maxMin = Math.max(30, ...flat.map(c => c.minutes)); // floor at 30 so 1 episode lights up enough
   const dayLabels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+  const [hover, setHover] = useState<{ x: number; y: number; cell: HeatCell } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   return (
-    <div className="flex gap-2.5">
+    <div ref={containerRef} className="relative flex gap-2.5">
       <div className="flex flex-col gap-[3px] py-[2px] text-foreground/35 text-[9px] font-medium">
         {dayLabels.map(d => <span key={d} className="h-[14px] leading-[14px]">{d}</span>)}
       </div>
@@ -1448,10 +1451,6 @@ function WatchHeatmap({ data }: { data: HeatCell[][] }) {
             {week.map((cell, di) => {
               const intensity = cell.minutes === 0 ? 0 : Math.min(1, cell.minutes / maxMin);
               const opacity = cell.minutes === 0 ? 0.05 : 0.15 + intensity * 0.75;
-              const dateStr = `${cell.date.getDate()} ${RU_MONTHS[cell.date.getMonth()]}`;
-              const tip = cell.minutes > 0
-                ? `${dateStr} · ${fmtDuration(cell.minutes)} · ${cell.count} ${cell.count === 1 ? "запись" : cell.count < 5 ? "записи" : "записей"}`
-                : `${dateStr} · ничего не смотрел`;
               return (
                 <div
                   key={di}
@@ -1460,13 +1459,52 @@ function WatchHeatmap({ data }: { data: HeatCell[][] }) {
                     backgroundColor: cell.minutes === 0 ? "rgba(255,255,255,0.04)" : `rgba(163,230,53,${opacity})`,
                     boxShadow: intensity > 0.5 ? `0 0 6px rgba(163,230,53,${intensity * 0.4})` : undefined,
                   }}
-                  title={tip}
+                  onMouseEnter={(e) => {
+                    const containerRect = containerRef.current?.getBoundingClientRect();
+                    const cellRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    if (!containerRect) return;
+                    setHover({
+                      x: cellRect.left - containerRect.left + cellRect.width / 2,
+                      y: cellRect.top - containerRect.top,
+                      cell,
+                    });
+                  }}
+                  onMouseLeave={() => setHover(null)}
+                  onTouchStart={(e) => {
+                    const containerRect = containerRef.current?.getBoundingClientRect();
+                    const cellRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    if (!containerRect) return;
+                    setHover({
+                      x: cellRect.left - containerRect.left + cellRect.width / 2,
+                      y: cellRect.top - containerRect.top,
+                      cell,
+                    });
+                    setTimeout(() => setHover(null), 2500);
+                  }}
                 />
               );
             })}
           </div>
         ))}
       </div>
+      {hover && (
+        <div
+          className="pointer-events-none absolute z-50 -translate-x-1/2 -translate-y-full mt-[-6px] px-2.5 py-1.5 rounded-lg bg-black/95 ring-1 ring-primary/30 text-foreground text-[11px] font-medium whitespace-nowrap shadow-lg"
+          style={{ left: hover.x, top: hover.y, boxShadow: "0 6px 20px -4px rgba(0,0,0,0.6), 0 0 0 1px rgba(163,230,53,0.15)" }}
+        >
+          <div className="text-primary text-[10px] uppercase tracking-wider font-bold">
+            {hover.cell.date.getDate()} {RU_MONTHS[hover.cell.date.getMonth()]}
+          </div>
+          {hover.cell.minutes > 0 ? (
+            <div className="mt-0.5 text-foreground/85">
+              <span className="text-foreground font-bold">{fmtDuration(hover.cell.minutes)}</span>
+              <span className="text-foreground/55"> · {hover.cell.count} {hover.cell.count === 1 ? "запись" : hover.cell.count < 5 ? "записи" : "записей"}</span>
+            </div>
+          ) : (
+            <div className="mt-0.5 text-foreground/55">ничего не смотрел</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
