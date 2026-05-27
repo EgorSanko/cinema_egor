@@ -1390,24 +1390,52 @@ function LostTimePanel({ hours }: { hours: number }) {
   );
 }
 
-/* ── Watch heatmap: 12 weeks × 7 days, intensity by views/day ── */
-function buildHeatmap(history: any[]): number[][] {
+/* ── Watch heatmap: 12 weeks × 7 days, intensity by minutes/day ── */
+type HeatCell = { count: number; minutes: number; date: Date };
+
+function buildHeatmap(history: any[]): HeatCell[][] {
   const weeks = 12;
-  const data: number[][] = Array.from({ length: weeks }, () => Array(7).fill(0));
-  const now = Date.now();
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  // Pre-fill each cell with its calendar date. Column wi=11 is the week
+  // containing today (rightmost). Row di is "days into the week" so wi=11,
+  // di=0 = today. wi=0, di=6 = 11*7+6 = 83 days ago.
+  const data: HeatCell[][] = Array.from({ length: weeks }, (_, wi) =>
+    Array.from({ length: 7 }, (_, di) => {
+      const daysAgo = (weeks - 1 - wi) * 7 + di;
+      const d = new Date(todayStart);
+      d.setDate(d.getDate() - daysAgo);
+      return { count: 0, minutes: 0, date: d };
+    })
+  );
   for (const h of history) {
+    if (!h.progress || h.progress < 60) continue; // skip tap-ins
     const diffDays = Math.floor((todayStart.getTime() - new Date(h.watchedAt).setHours(0, 0, 0, 0)) / 86400_000);
     if (diffDays < 0 || diffDays >= weeks * 7) continue;
     const week = Math.floor(diffDays / 7);
     const day = diffDays % 7;
-    data[weeks - 1 - week][day]++;
+    const cell = data[weeks - 1 - week][day];
+    cell.count += 1;
+    // Count the lesser of progress and duration so a bogus duration=0 row
+    // doesn't poison the heatmap. Cap at episode length for partial watches.
+    const sec = h.duration > 0 ? Math.min(h.progress, h.duration) : h.progress;
+    cell.minutes += sec / 60;
   }
   return data;
 }
 
-function WatchHeatmap({ data }: { data: number[][] }) {
-  const max = Math.max(1, ...data.flat());
+const RU_MONTHS = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+
+function fmtDuration(mins: number): string {
+  if (mins < 1) return "<1 мин";
+  if (mins < 60) return `${Math.round(mins)} мин`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins - h * 60);
+  return m === 0 ? `${h} ч` : `${h} ч ${m} мин`;
+}
+
+function WatchHeatmap({ data }: { data: HeatCell[][] }) {
+  const flat = data.flat();
+  const maxMin = Math.max(30, ...flat.map(c => c.minutes)); // floor at 30 so 1 episode lights up enough
   const dayLabels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
   return (
     <div className="flex gap-2.5">
@@ -1417,18 +1445,22 @@ function WatchHeatmap({ data }: { data: number[][] }) {
       <div className="flex-1 grid grid-cols-12 gap-[3px]">
         {data.map((week, wi) => (
           <div key={wi} className="grid grid-rows-7 gap-[3px]">
-            {week.map((count, di) => {
-              const intensity = count === 0 ? 0 : Math.min(1, count / max);
-              const opacity = count === 0 ? 0.05 : 0.15 + intensity * 0.75;
+            {week.map((cell, di) => {
+              const intensity = cell.minutes === 0 ? 0 : Math.min(1, cell.minutes / maxMin);
+              const opacity = cell.minutes === 0 ? 0.05 : 0.15 + intensity * 0.75;
+              const dateStr = `${cell.date.getDate()} ${RU_MONTHS[cell.date.getMonth()]}`;
+              const tip = cell.minutes > 0
+                ? `${dateStr} · ${fmtDuration(cell.minutes)} · ${cell.count} ${cell.count === 1 ? "запись" : cell.count < 5 ? "записи" : "записей"}`
+                : `${dateStr} · ничего не смотрел`;
               return (
                 <div
                   key={di}
-                  className="w-full h-[14px] rounded-sm transition-all hover:scale-125"
+                  className="w-full h-[14px] rounded-sm transition-all hover:scale-125 cursor-pointer"
                   style={{
-                    backgroundColor: count === 0 ? "rgba(255,255,255,0.04)" : `rgba(163,230,53,${opacity})`,
+                    backgroundColor: cell.minutes === 0 ? "rgba(255,255,255,0.04)" : `rgba(163,230,53,${opacity})`,
                     boxShadow: intensity > 0.5 ? `0 0 6px rgba(163,230,53,${intensity * 0.4})` : undefined,
                   }}
-                  title={count > 0 ? `${count} просмотр${count === 1 ? "" : count < 5 ? "а" : "ов"}` : "Нет просмотров"}
+                  title={tip}
                 />
               );
             })}
