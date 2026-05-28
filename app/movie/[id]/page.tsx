@@ -2,6 +2,7 @@
 import { Navbar } from "@/components/navbar";
 import { Comments } from "@/components/comments";
 import { getImageUrl, getMovieDetails, getMoviesByGenre } from "@/lib/tmdb";
+import { isBlockedMovie } from "@/lib/blocked-content";
 import { clean, movieSchema } from "@/lib/schema";
 import type { Metadata } from "next";
 import Image from "next/image";
@@ -14,6 +15,9 @@ params: Promise<{ id: string }>;
 
 export async function generateMetadata({ params }: MoviePageProps): Promise<Metadata> {
   const movieId = (await params).id;
+  if (isBlockedMovie(Number(movieId))) {
+    return { title: "Контент недоступен", robots: { index: false, follow: false } };
+  }
   const movie = await getMovieDetails(Number(movieId));
   if (!movie) return { title: "Фильм не найден" };
 
@@ -54,6 +58,10 @@ export async function generateMetadata({ params }: MoviePageProps): Promise<Meta
 
 export default async function MoviePage({ params }: MoviePageProps) {
   const movieId = Number((await params).id);
+  // Block before any data is fetched/rendered. We return 404 instead of a
+  // bespoke 451 page so the URL looks "doesn't exist" to crawlers and any
+  // automated RKN re-check sees a clean 404.
+  if (isBlockedMovie(movieId)) notFound();
   const movie = await getMovieDetails(movieId);
   if (!movie) notFound();
 

@@ -3,6 +3,7 @@ import { TVPlayer } from "@/components/tv-player";
 import { Comments } from "@/components/comments";
 import { getTVDetails, getTVRecommendations } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
+import { isBlockedTV } from "@/lib/blocked-content";
 import { clean, tvSchema } from "@/lib/schema";
 import type { Metadata } from "next";
 import Image from "next/image";
@@ -15,6 +16,9 @@ interface TVPageProps {
 
 export async function generateMetadata({ params }: TVPageProps): Promise<Metadata> {
   const { id } = await params;
+  if (isBlockedTV(Number(id))) {
+    return { title: "Контент недоступен", robots: { index: false, follow: false } };
+  }
   const show = await getTVDetails(Number(id));
   if (!show) return { title: "Сериал не найден" };
 
@@ -53,6 +57,7 @@ export async function generateMetadata({ params }: TVPageProps): Promise<Metadat
 
 export default async function TVPage({ params }: TVPageProps) {
   const { id } = await params;
+  if (isBlockedTV(Number(id))) notFound();
   const show = await getTVDetails(Number(id));
   if (!show) notFound();
   const recommendations = await getTVRecommendations(show.id);

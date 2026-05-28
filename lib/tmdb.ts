@@ -1,4 +1,6 @@
-﻿const API_BASE_URL = process.env.NEXT_PUBLIC_TMDB_BASE_URL;
+﻿import { filterBlocked, isBlockedMovie, isBlockedTV } from "./blocked-content";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_TMDB_BASE_URL;
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const IMAGE_BASE_URL = process.env.NEXT_PUBLIC_TMDB_IMAGE_BASE_URL;
 const BACKDROP_BASE_URL = process.env.NEXT_PUBLIC_TMDB_BACKDROP_BASE_URL;
@@ -138,7 +140,7 @@ export async function getTrendingMovies(timeWindow: "day" | "week" = "week") {
 			}
 		);
 		const data = await response.json();
-		return data.results as Movie[];
+		return filterBlocked(data.results as Movie[], "movie");
 	} catch (error) {
 		console.error("Error fetching trending movies:", error);
 		return [];
@@ -154,7 +156,7 @@ export async function getLatestMovies() {
 			}
 		);
 		const data = await response.json();
-		return data.results as Movie[];
+		return filterBlocked(data.results as Movie[], "movie");
 	} catch (error) {
 		console.error("Error fetching latest movies:", error);
 		return [];
@@ -170,7 +172,7 @@ export async function getPopularMovies(page: number = 1) {
 			}
 		);
 		const data = await response.json();
-		return data.results as Movie[];
+		return filterBlocked(data.results as Movie[], "movie");
 	} catch (error) {
 		console.error("Error fetching popular movies:", error);
 		return [];
@@ -203,7 +205,7 @@ export async function searchMovies(query: string, page = 1) {
 			{ next: { revalidate: 300 } }
 		);
 		const data = await response.json();
-		return data.results as Movie[];
+		return filterBlocked(data.results as Movie[], "movie");
 	} catch (error) {
 		console.error("Error searching movies:", error);
 		return [];
@@ -212,6 +214,10 @@ export async function searchMovies(query: string, page = 1) {
 
 export async function getMovieDetails(movieId: number) {
 	if (!movieId || isNaN(movieId)) return null;
+	// Belt-and-suspenders: pages already short-circuit on isBlockedMovie before
+	// calling this, but any other caller that forgets to gate will get null
+	// and render an empty/not-found state.
+	if (isBlockedMovie(movieId)) return null;
 	try {
 		const response = await fetchWithRetry(
 			`${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=ru-RU`,
@@ -234,10 +240,24 @@ export async function getMoviesByGenre(genreId: number, page = 1) {
 			{ next: { revalidate: 3600 } }
 		);
 		const data = await response.json();
-		return data.results as Movie[];
+		return filterBlocked(data.results as Movie[], "movie");
 	} catch (error) {
 		console.error("Error fetching movies by genre:", error);
 		return [];
+	}
+}
+
+// Lightweight: one popular movie + total count per genre, for the genres page cards
+export async function getGenreInfo(genreId: number): Promise<{ total: number; backdrop: string | null }> {
+	try {
+		const r = await fetchWithRetry(
+			`${API_BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=${genreId}&language=ru-RU&sort_by=popularity.desc&page=1`,
+			{ next: { revalidate: 86400 } }
+		);
+		const data = await r.json();
+		return { total: data.total_results || 0, backdrop: data.results?.[0]?.backdrop_path || null };
+	} catch {
+		return { total: 0, backdrop: null };
 	}
 }
 
@@ -249,7 +269,7 @@ export async function getTrendingTV(timeWindow: "day" | "week" = "week") {
       { next: { revalidate: 3600 } }
     );
     const data = await response.json();
-    return data.results as TVShow[];
+    return filterBlocked(data.results as TVShow[], "tv");
   } catch (error) {
     console.error("Error fetching trending TV:", error);
     return [];
@@ -263,7 +283,7 @@ export async function getPopularTV(page: number = 1) {
       { next: { revalidate: 3600 } }
     );
     const data = await response.json();
-    return data.results as TVShow[];
+    return filterBlocked(data.results as TVShow[], "tv");
   } catch (error) {
     console.error("Error fetching popular TV:", error);
     return [];
@@ -272,6 +292,7 @@ export async function getPopularTV(page: number = 1) {
 
 export async function getTVDetails(tvId: number) {
   if (!tvId || isNaN(tvId)) return null;
+  if (isBlockedTV(tvId)) return null;
   try {
     const response = await fetchWithRetry(
       `${API_BASE_URL}/tv/${tvId}?api_key=${API_KEY}&language=ru-RU`,
@@ -282,6 +303,20 @@ export async function getTVDetails(tvId: number) {
   } catch (error) {
     console.error(`Error fetching TV details for ID ${tvId}:`, error);
     return null;
+  }
+}
+
+export async function getTVRecommendations(tvId: number): Promise<TVShow[]> {
+  if (!tvId || isNaN(tvId)) return [];
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/tv/${tvId}/recommendations?api_key=${API_KEY}&language=ru-RU&page=1`,
+      { next: { revalidate: 3600 } }
+    );
+    const data = await response.json();
+    return filterBlocked((data.results as TVShow[]) || [], "tv");
+  } catch {
+    return [];
   }
 }
 
