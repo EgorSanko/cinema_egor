@@ -159,7 +159,7 @@ export function Navbar() {
             </Link>
 
             {/* Nav pill (desktop) */}
-            <div className={`hidden md:flex ${pillContainer}`}>
+            <div className={`hidden lg:flex ${pillContainer}`}>
               {NAV_LINKS.map(({ label, href, Icon }) => {
                 const active = isActive(href);
                 return (
@@ -184,7 +184,7 @@ export function Navbar() {
               {/* Android app download — chip style, primary-tinted */}
               <Link
                 href="/download"
-                className="hidden md:inline-flex items-center gap-1.5 h-10 px-3.5 rounded-full bg-primary/12 ring-1 ring-primary/30 text-primary text-[12.5px] font-semibold hover:bg-primary/18 transition-colors"
+                className="hidden lg:inline-flex items-center gap-1.5 h-10 px-3.5 rounded-full bg-primary/12 ring-1 ring-primary/30 text-primary text-[12.5px] font-semibold hover:bg-primary/18 transition-colors"
                 title="Скачать приложение для Android"
               >
                 <Smartphone size={14} />
@@ -321,7 +321,7 @@ export function Navbar() {
             {/* Mobile toggle */}
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="md:hidden p-2 rounded-lg hover:bg-foreground/5 transition-colors"
+              className="lg:hidden p-2 rounded-lg hover:bg-foreground/5 transition-colors"
               aria-label="Меню"
             >
               {isOpen ? <X size={22} /> : <Menu size={22} />}
@@ -331,7 +331,7 @@ export function Navbar() {
           {/* Mobile menu */}
           {isOpen && (
             <div
-              className="md:hidden border-t border-white/[0.06] py-3 pb-20 space-y-1 animate-in slide-in-from-top-5 duration-300 max-h-[calc(100vh-4rem)] overflow-y-auto"
+              className="lg:hidden border-t border-white/[0.06] py-3 pb-20 space-y-1 animate-in slide-in-from-top-5 duration-300 max-h-[calc(100vh-4rem)] overflow-y-auto"
               style={{ overscrollBehavior: "contain" }}
             >
               <form onSubmit={handleSearch} className="px-1 pb-2">

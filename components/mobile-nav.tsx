@@ -19,7 +19,7 @@ export function MobileNav() {
   if (pathname.match(/^\/watch\/[A-Z0-9]{4,}$/i)) return null;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-t border-border sm:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-t border-border lg:hidden">
       <div className="flex items-center justify-around h-16 px-1">
         {tabs.map(({ href, icon: Icon, label }) => {
           const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
