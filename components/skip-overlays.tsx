@@ -63,13 +63,21 @@ export function SkipOverlays({ videoRef, tmdbId, type, season, episode, hasNextE
   useEffect(() => {
     if (!data) return;
     let timerId: ReturnType<typeof setInterval> | null = null;
+    // Forgiving window: show the button a bit before the intro actually
+    // begins and keep it for a few seconds after — gives the user time to
+    // notice and tap. Mirror at the start to make sure pause-then-resume
+    // doesn't snap the button away.
+    const PRE_BUFFER = 5;
+    const POST_BUFFER = 5;
     const tick = () => {
       const v = videoRef.current;
-      if (!v || v.paused) return;
+      if (!v) return;
       const ct = v.currentTime;
 
       if (data.intro && !dismissedRef.current) {
-        const inIntro = ct >= data.intro.start && ct < data.intro.end;
+        const inIntro =
+          ct >= Math.max(0, data.intro.start - PRE_BUFFER)
+          && ct < data.intro.end + POST_BUFFER;
         setShowSkipIntro(prev => prev === inIntro ? prev : inIntro);
       } else if (showSkipIntro) {
         setShowSkipIntro(false);
