@@ -15,6 +15,7 @@ import { BingoCard } from "./bingo-card";
 import { StatusButtons } from "./status-buttons";
 import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
+import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -414,6 +415,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                 }}
                 onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
               />
+              <SkipOverlays videoRef={videoRef} tmdbId={movie.id} type="movie" />
               {translatorLoading && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
                   <div className="flex flex-col items-center gap-3">

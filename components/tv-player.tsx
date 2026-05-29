@@ -16,6 +16,7 @@ import { BingoCard } from "./bingo-card";
 import { StatusButtons } from "./status-buttons";
 import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
+import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -543,6 +544,15 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   // attaches) and got reset to 0 by the source swap.
                 }}
                 onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
+              />
+              <SkipOverlays
+                videoRef={videoRef}
+                tmdbId={show.id}
+                type="tv"
+                season={selectedSeason}
+                episode={selectedEpisode}
+                hasNextEpisode={hasNextEpisode}
+                onNextEpisode={nextEpisode}
               />
               {translatorLoading && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
