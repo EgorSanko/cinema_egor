@@ -15,6 +15,7 @@ import { FavoriteButton } from "./favorite-button";
 import { BingoCard } from "./bingo-card";
 import { StatusButtons } from "./status-buttons";
 import { TrailerButton } from "./trailer-modal";
+import { useAuthGate } from "./auth-gate";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -43,6 +44,7 @@ interface Translator {
 export function TVPlayer({ show }: TVPlayerProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const requireAuth = useAuthGate();
   const [showPlayer, setShowPlayer] = useState(false);
   const [showBingo, setShowBingo] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -455,7 +457,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
           {!showPlayer ? (
-            <div className="w-full h-full relative cursor-pointer" onClick={() => { setShowPlayer(true); fetchStream(selectedSeason, selectedEpisode); }}>
+            <div className="w-full h-full relative cursor-pointer" onClick={() => {
+              if (!requireAuth("Войдите, чтобы смотреть сериалы и сохранять прогресс")) return;
+              setShowPlayer(true); fetchStream(selectedSeason, selectedEpisode);
+            }}>
               {backdropUrl && <img src={backdropUrl} alt={show.name} className={`absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-105 ${show.backdrop_path ? "object-cover" : "object-contain bg-black/90"}`} />}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/10 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-5">
@@ -638,6 +643,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 <div className="flex items-center gap-2 flex-wrap pt-1">
                   <button
                     onClick={() => {
+                      if (!requireAuth("Войдите, чтобы смотреть сериалы и сохранять прогресс")) return;
                       if (!showPlayer) {
                         setShowPlayer(true);
                         // fetchStream itself falls back to storage when translatorId
@@ -650,7 +656,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     <Play size={15} fill="currentColor" /> {resumeTime ? "Продолжить просмотр" : "Смотреть"}
                   </button>
                   <button
-                    onClick={() => { if (showPlayer) nextEpisode(); else { const n = nextEpisode; n(); setShowPlayer(true); } }}
+                    onClick={() => {
+                      if (!requireAuth("Войдите, чтобы смотреть сериалы и сохранять прогресс")) return;
+                      if (showPlayer) nextEpisode(); else { const n = nextEpisode; n(); setShowPlayer(true); }
+                    }}
                     className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-foreground/[0.06] ring-1 ring-white/[0.08] text-foreground/85 hover:bg-foreground/[0.1] transition-colors text-[13px] font-medium"
                   >
                     <SkipForward size={15} /> {"Следующая серия"}

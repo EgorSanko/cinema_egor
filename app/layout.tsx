@@ -5,6 +5,7 @@ import Script from "next/script";
 import type React from "react";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth-context";
+import { AuthGate } from "@/components/auth-gate";
 import { MobileNav } from "@/components/mobile-nav";
 import { PWABackButton } from "@/components/pwa-back-button";
 import { ReloadOnStale } from "@/components/reload-on-stale";
@@ -58,7 +59,10 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`dark ${righteous.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          <AuthGate />
+        </AuthProvider>
         <Analytics />
         <MobileNav />
         <PWABackButton />

@@ -7,9 +7,12 @@ import { X, Eye, EyeOff, LogIn, UserPlus } from "lucide-react";
 interface AuthModalProps {
 isOpen: boolean;
 onClose: () => void;
+/** Optional subtitle shown above the form — explains WHY the user was
+ *  forced to log in (e.g. "Войдите, чтобы смотреть фильм"). */
+reason?: string;
 }
 
-export function AuthModal({ isOpen, onClose }: AuthModalProps) {
+export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
 const { login, register } = useAuth();
 const [mode, setMode] = useState<"login" | "register">("login");
 const [name, setName] = useState("");
@@ -41,7 +44,7 @@ finally { setLoading(false); }
 return (
 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
 <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-<div className="flex items-center justify-between mb-6">
+<div className="flex items-center justify-between mb-3">
 <h2 className="text-xl font-bold text-foreground">
 {mode === "login" ? "Вход" : "Регистрация"}
 </h2>
@@ -49,6 +52,11 @@ return (
 <X size={20} />
 </button>
 </div>
+{reason && (
+<div className="mb-5 px-3 py-2.5 rounded-lg bg-primary/10 ring-1 ring-primary/25 text-primary text-[13px] font-medium">
+{reason}
+</div>
+)}
 
 <form onSubmit={handleSubmit} className="space-y-4">
 {mode === "register" && (

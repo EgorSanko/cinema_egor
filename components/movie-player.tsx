@@ -14,6 +14,7 @@ import { FavoriteButton } from "./favorite-button";
 import { BingoCard } from "./bingo-card";
 import { StatusButtons } from "./status-buttons";
 import { TrailerButton } from "./trailer-modal";
+import { useAuthGate } from "./auth-gate";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -28,6 +29,7 @@ interface Translator {
 }
 
 export function MoviePlayer({ movie }: MoviePlayerProps) {
+  const requireAuth = useAuthGate();
   const [showPlayer, setShowPlayer] = useState(false);
   const [showBingo, setShowBingo] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -307,7 +309,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
           {!showPlayer ? (
-            <div className="w-full h-full relative cursor-pointer" onClick={() => { if (!isNotReleased) { setShowPlayer(true); fetchStream(); } }}>
+            <div className="w-full h-full relative cursor-pointer" onClick={() => {
+              if (isNotReleased) return;
+              if (!requireAuth("Войдите, чтобы смотреть фильмы и сохранять прогресс")) return;
+              setShowPlayer(true); fetchStream();
+            }}>
               {backdropUrl && <img src={backdropUrl} alt={movie.title} className={"absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-105 " + (movie.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/10 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-5">
@@ -507,6 +513,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   <button
                     onClick={() => {
                       if (isNotReleased) return;
+                      if (!requireAuth("Войдите, чтобы смотреть фильмы и сохранять прогресс")) return;
                       if (!showPlayer) { setShowPlayer(true); fetchStream(); }
                       else if (resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
                     }}

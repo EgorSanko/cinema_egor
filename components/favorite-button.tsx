@@ -3,6 +3,7 @@
 import { Heart } from "lucide-react";
 import { useState, useEffect } from "react";
 import { isFavorite, toggleFavorite, type FavoriteItem } from "@/lib/storage";
+import { useAuthGate } from "./auth-gate";
 
 interface FavoriteButtonProps {
   item: FavoriteItem;
@@ -11,6 +12,7 @@ interface FavoriteButtonProps {
 }
 
 export function FavoriteButton({ item, className = "", size = "sm" }: FavoriteButtonProps) {
+  const requireAuth = useAuthGate();
   const [fav, setFav] = useState(false);
   const [animate, setAnimate] = useState(false);
 
@@ -21,6 +23,7 @@ export function FavoriteButton({ item, className = "", size = "sm" }: FavoriteBu
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!requireAuth("Войдите, чтобы сохранять фильмы в избранное")) return;
     const result = toggleFavorite(item);
     setFav(result);
     if (result) {
