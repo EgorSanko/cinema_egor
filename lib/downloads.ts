@@ -114,51 +114,40 @@ export function buildFilename(entry: Omit<DownloadEntry, "downloadedAt" | "url">
 }
 
 /** HDRezka's CDN wraps the mp4 in an HLS manifest URL like
- *  `.../filename.mp4:hls:manifest.m3u8`. Browsers see the `.m3u8` ending and
- *  try to PLAY the stream instead of downloading it (Android Chrome opens the
- *  embedded player). The same CDN happily serves the underlying mp4 if we
- *  strip the suffix — same hash, same auth, Content-Type: video/mp4. */
-export function toDownloadUrl(streamUrl: string): string {
+ *  `.../filename.mp4:hls:manifest.m3u8`. Strip that suffix to get the raw
+ *  mp4 (same hash, same auth, Content-Type: video/mp4). */
+export function stripManifestSuffix(streamUrl: string): string {
   return streamUrl.replace(/:hls:manifest\.m3u8$/i, "");
 }
 
-/** Trigger the browser download.
- *
- * Per-platform strategy because no single API works everywhere:
- *
- * - iOS Safari: ignores `download` attribute for cross-origin URLs and just
- *   navigates. Open in a new tab so the user can long-press and save.
- * - Android Chrome: also ignores `download` for cross-origin. Both
- *   `<a download>` and `window.open` end up playing the video in a tab
- *   instead of downloading. Workaround: hidden iframe that loads the mp4 —
- *   the browser sees video/mp4 Content-Type and starts a download into
- *   the Notifications shade without navigating anywhere.
- * - Desktop: `<a download>` works cross-origin since Chrome 65 / Firefox 67.
- */
+/** Build the same-origin proxy URL. Going through /api/dl achieves two things
+ *  that direct CDN links cannot:
+ *   - Same-origin → `<a download>` works on Android (cross-origin is ignored).
+ *   - We can attach Content-Disposition with a proper UTF-8 filename so
+ *     Cyrillic names don't turn into mojibake. */
+export function toDownloadUrl(streamUrl: string, filename?: string): string {
+  const raw = stripManifestSuffix(streamUrl);
+  const name = filename || "video.mp4";
+  return `/api/dl?url=${encodeURIComponent(raw)}&name=${encodeURIComponent(name)}`;
+}
+
+/** Trigger the browser download via our same-origin proxy. Works the same
+ *  on desktop, Android, and (with a new-tab fallback) iOS — the proxy sets
+ *  Content-Disposition: attachment so the browser saves rather than plays. */
 export function triggerBrowserDownload(streamUrl: string, filename: string): void {
-  const url = toDownloadUrl(streamUrl);
+  const url = toDownloadUrl(streamUrl, filename);
   const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
   const isIOS = /iPhone|iPad|iPod/i.test(ua);
-  const isAndroid = /Android/i.test(ua);
 
   if (isIOS) {
+    // iOS Safari ignores `download` even same-origin; opens a new tab and
+    // the user long-presses → Save. Content-Disposition still gives them
+    // the proper filename when they save.
     window.open(url, "_blank");
     return;
   }
 
-  if (isAndroid) {
-    // Hidden iframe trick — works around Chrome's cross-origin `download`
-    // attribute ignore. The 60s removal is long enough for the download
-    // to register; if the file is larger, the browser holds its own ref.
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.src = url;
-    document.body.appendChild(iframe);
-    setTimeout(() => iframe.remove(), 60_000);
-    return;
-  }
-
-  // Desktop
+  // Desktop + Android: same-origin `<a download>` is honored everywhere.
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
