@@ -227,9 +227,10 @@ export function MovieDownloadButton(props: Props) {
                       setEpisode(1);
                     }}
                     className="w-full mt-1 px-2 py-1.5 rounded-md bg-white/[0.08] text-white text-[13px] focus:outline-none"
+                    style={{ colorScheme: "dark" }}
                   >
                     {Array.from({ length: props.show.number_of_seasons || 1 }, (_, i) => i + 1).map(s => (
-                      <option key={s} value={s}>{s}</option>
+                      <option key={s} value={s} style={{ backgroundColor: "#18181b", color: "#fff" }}>{s}</option>
                     ))}
                   </select>
                 </div>
@@ -239,9 +240,10 @@ export function MovieDownloadButton(props: Props) {
                     value={episode}
                     onChange={(e) => setEpisode(Number(e.target.value))}
                     className="w-full mt-1 px-2 py-1.5 rounded-md bg-white/[0.08] text-white text-[13px] focus:outline-none"
+                    style={{ colorScheme: "dark" }}
                   >
                     {Array.from({ length: epCount }, (_, i) => i + 1).map(e => (
-                      <option key={e} value={e}>{e}</option>
+                      <option key={e} value={e} style={{ backgroundColor: "#18181b", color: "#fff" }}>{e}</option>
                     ))}
                   </select>
                 </div>
