@@ -172,7 +172,7 @@ export function DownloadButton(props: Props) {
                       onPress={() => setSelectedTranslator(t.id)}
                       style={[styles.chip, selectedTranslator === t.id && styles.chipActive]}
                     >
-                      <Text style={[styles.chipText, selectedTranslator === t.id && styles.chipTextActive]}>{t.name}</Text>
+                      <Text style={[styles.chipText, selectedTranslator === t.id && styles.chipTextActive]}>{t.is_premium ? `🔒 ${t.name}` : t.name}</Text>
                     </Pressable>
                   ))}
                 </ScrollView>
