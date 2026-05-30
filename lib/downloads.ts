@@ -131,19 +131,28 @@ export function toDownloadUrl(streamUrl: string, filename?: string): string {
   return `/api/dl?url=${encodeURIComponent(raw)}&name=${encodeURIComponent(name)}`;
 }
 
-/** Trigger the browser download via our same-origin proxy. Works the same
- *  on desktop, Android, and (with a new-tab fallback) iOS — the proxy sets
+/** Trigger the browser download via our same-origin proxy. The proxy sets
  *  Content-Disposition: attachment so the browser saves rather than plays. */
 export function triggerBrowserDownload(streamUrl: string, filename: string): void {
   const url = toDownloadUrl(streamUrl, filename);
   const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
-  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua)
+    // iPadOS 13+ reports as Mac; detect by touch points.
+    || (/Macintosh/.test(ua) && typeof document !== "undefined" && "ontouchend" in document);
 
   if (isIOS) {
-    // iOS Safari ignores `download` even same-origin; opens a new tab and
-    // the user long-presses → Save. Content-Disposition still gives them
-    // the proper filename when they save.
-    window.open(url, "_blank");
+    // iOS Safari: `window.open(url, "_blank")` to an attachment URL just opens
+    // a BLANK tab and downloads nothing — the bug the user reported. The
+    // reliable trigger is a SAME-TAB anchor click: Safari 13+ sees the
+    // Content-Disposition: attachment, shows its own "Download" prompt, saves
+    // to Files, and does NOT navigate away (because it's an attachment, not a
+    // document). No target=_blank, no download attr (iOS ignores it anyway).
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_self";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 1000);
     return;
   }
 
