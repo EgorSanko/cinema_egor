@@ -753,6 +753,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
                       poster_path: show.poster_path,
                       first_air_date: show.first_air_date,
                       number_of_seasons: show.number_of_seasons || 1,
+                      // TMDB returns `seasons: [{season_number, episode_count, ...}]`
+                      // — pass it so the modal can render an exact dropdown of
+                      // episodes per season instead of a free-form input.
+                      seasons: (show as any).seasons,
                     }}
                     initialSeason={selectedSeason}
                     initialEpisode={selectedEpisode}

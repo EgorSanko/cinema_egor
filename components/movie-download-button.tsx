@@ -20,6 +20,10 @@ interface TVMeta {
   poster_path: string | null;
   first_air_date?: string;
   number_of_seasons: number;
+  /** TMDB returns `seasons: [{season_number, episode_count}]`. Pass it so
+   *  the Series dropdown can render the exact list of episodes per season
+   *  (otherwise we'd guess 1..20 or force a free-form number input). */
+  seasons?: Array<{ season_number: number; episode_count: number }>;
 }
 
 interface MovieDownloadProps {
@@ -33,6 +37,8 @@ interface TVDownloadProps {
   initialEpisode?: number;
 }
 type Props = MovieDownloadProps | TVDownloadProps;
+
+interface Translator { id: number; name: string; is_premium?: boolean }
 
 const BYTES_PER_SEC: Record<string, number> = {
   "360p": 70_000,    // ~0.5 Mbps
@@ -64,6 +70,10 @@ export function MovieDownloadButton(props: Props) {
   const [episode, setEpisode] = useState<number>(
     props.type === "tv" ? props.initialEpisode ?? 1 : 1
   );
+  // Translators are loaded from the same /hdrezka/api/search call. Default
+  // selected = whatever the backend reports as active for the request.
+  const [translators, setTranslators] = useState<Translator[]>([]);
+  const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const id = props.type === "movie" ? props.movie.id : props.show.id;
   const targetSeason = props.type === "tv" ? season : undefined;
@@ -90,7 +100,7 @@ export function MovieDownloadButton(props: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const fetchStreamsForCurrent = async () => {
+  const fetchStreamsForCurrent = async (overrideTr?: number | null) => {
     setLoading(true);
     setError(null);
     setStreams(null);
@@ -100,9 +110,11 @@ export function MovieDownloadButton(props: Props) {
       const date = props.type === "movie" ? m.release_date : m.first_air_date;
       const year = date ? new Date(date).getFullYear() : "";
       const q = encodeURIComponent((title || "").replace(/["«»""]/g, "").trim());
+      const tr = overrideTr ?? selectedTranslator;
+      const trParam = tr ? `&translator_id=${tr}` : "";
       const url = props.type === "movie"
-        ? `/hdrezka/api/search?q=${q}&year=${year}&type=movie`
-        : `/hdrezka/api/search?q=${q}&year=${year}&type=tv&season=${season}&episode=${episode}`;
+        ? `/hdrezka/api/search?q=${q}&year=${year}&type=movie${trParam}`
+        : `/hdrezka/api/search?q=${q}&year=${year}&type=tv&season=${season}&episode=${episode}${trParam}`;
       const res = await fetch(url);
       const data = await res.json();
       if (!data.streams || Object.keys(data.streams).length === 0) {
@@ -110,9 +122,16 @@ export function MovieDownloadButton(props: Props) {
         return;
       }
       setStreams(data.streams);
-      // Prefer real runtime when known. Movies pass runtime in minutes,
-      // TV episodes vary widely so we use a 25-min fallback (sitcom-ish);
-      // estimate is just to nudge "1080p is bigger than 360p" awareness.
+      // Capture translators list on first fetch; respect backend's reported
+      // active_translator_id when user hasn't picked anything yet.
+      if (Array.isArray(data.translators) && data.translators.length > 0) {
+        setTranslators(data.translators);
+        if (selectedTranslator == null) {
+          setSelectedTranslator(data.active_translator_id ?? data.translators[0].id);
+        }
+      }
+      // Real runtime where known. Movies pass it in minutes; TV episodes
+      // vary so we default to 25 min as a sitcom-ish fallback.
       const fallbackSec = props.type === "movie"
         ? ((props.movie.runtime || 90) * 60)
         : 1500;
@@ -130,24 +149,34 @@ export function MovieDownloadButton(props: Props) {
     if (!streams) fetchStreamsForCurrent();
   };
 
+  // Re-fetch streams when the user changes season/episode (TV) or the
+  // translator (both kinds). selectedTranslator is set automatically on
+  // first fetch, so we skip the very first run.
   useEffect(() => {
     if (open && props.type === "tv") fetchStreamsForCurrent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, episode]);
+  useEffect(() => {
+    if (open && selectedTranslator != null && streams) fetchStreamsForCurrent(selectedTranslator);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTranslator]);
 
   const startDownload = (quality: string, url: string) => {
     const m: any = props.type === "movie" ? props.movie : props.show;
     const title = props.type === "movie" ? m.title : m.name;
+    const trName = translators.find(t => t.id === selectedTranslator)?.name;
     const entry: Parameters<typeof addDownload>[0] = props.type === "movie"
       ? {
           id, type: "movie", title, poster_path: m.poster_path,
           release_date: m.release_date,
           quality, url,
+          translatorName: trName,
         }
       : {
           id, type: "tv", title, poster_path: m.poster_path,
           first_air_date: m.first_air_date,
           season, episode, quality, url,
+          translatorName: trName,
         };
     addDownload(entry);
     triggerBrowserDownload(url, buildFilename(entry));
@@ -179,31 +208,63 @@ export function MovieDownloadButton(props: Props) {
             </button>
           </div>
 
-          {props.type === "tv" && (
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-white/45 font-semibold">Сезон</label>
-                <select
-                  value={season}
-                  onChange={(e) => setSeason(Number(e.target.value))}
-                  className="w-full mt-1 px-2 py-1.5 rounded-md bg-white/[0.08] text-white text-[13px] focus:outline-none"
-                >
-                  {Array.from({ length: props.show.number_of_seasons || 1 }, (_, i) => i + 1).map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+          {props.type === "tv" && (() => {
+            // Episode count for currently-selected season. Falls back to 20
+            // if TMDB didn't send a count (unknown future seasons).
+            const seasonInfo = props.show.seasons?.find(s => s.season_number === season);
+            const epCount = Math.max(1, seasonInfo?.episode_count || 20);
+            return (
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-white/45 font-semibold">Сезон</label>
+                  <select
+                    value={season}
+                    onChange={(e) => {
+                      const next = Number(e.target.value);
+                      setSeason(next);
+                      // Reset episode to 1 when switching seasons so we don't
+                      // get stuck on an episode that doesn't exist in the new one.
+                      setEpisode(1);
+                    }}
+                    className="w-full mt-1 px-2 py-1.5 rounded-md bg-white/[0.08] text-white text-[13px] focus:outline-none"
+                  >
+                    {Array.from({ length: props.show.number_of_seasons || 1 }, (_, i) => i + 1).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-white/45 font-semibold">Серия</label>
+                  <select
+                    value={episode}
+                    onChange={(e) => setEpisode(Number(e.target.value))}
+                    className="w-full mt-1 px-2 py-1.5 rounded-md bg-white/[0.08] text-white text-[13px] focus:outline-none"
+                  >
+                    {Array.from({ length: epCount }, (_, i) => i + 1).map(e => (
+                      <option key={e} value={e}>{e}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-white/45 font-semibold">Серия</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={99}
-                  value={episode}
-                  onChange={(e) => setEpisode(Math.max(1, Math.min(99, Number(e.target.value) || 1)))}
-                  className="w-full mt-1 px-2 py-1.5 rounded-md bg-white/[0.08] text-white text-[13px] focus:outline-none"
-                />
-              </div>
+            );
+          })()}
+
+          {/* Translator picker — shown once we know the available dubs. Dedupe
+              by id since HDRezka sometimes returns duplicates. */}
+          {translators.length > 1 && (
+            <div className="mb-3">
+              <label className="text-[10px] uppercase tracking-wider text-white/45 font-semibold">Озвучка</label>
+              <select
+                value={selectedTranslator ?? ""}
+                onChange={(e) => setSelectedTranslator(Number(e.target.value))}
+                className="w-full mt-1 px-2 py-1.5 rounded-md bg-white/[0.08] text-white text-[13px] focus:outline-none"
+              >
+                {Array.from(new Map(translators.map(t => [t.id, t])).values()).map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{t.is_premium ? " (Premium)" : ""}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

@@ -113,10 +113,20 @@ export function buildFilename(entry: Omit<DownloadEntry, "downloadedAt" | "url">
   return safe(`${entry.title}${year ? ` (${year})` : ""} [${entry.quality}].mp4`);
 }
 
-/** Trigger the browser download. Uses `<a download>` for desktop and falls
- *  back to a new tab on iOS (Safari ignores `download` attribute for
- *  cross-origin URLs and just navigates instead, which interrupts playback). */
-export function triggerBrowserDownload(url: string, filename: string): void {
+/** HDRezka's CDN wraps the mp4 in an HLS manifest URL like
+ *  `.../filename.mp4:hls:manifest.m3u8`. Browsers see the `.m3u8` ending and
+ *  try to PLAY the stream instead of downloading it (Android Chrome opens the
+ *  embedded player). The same CDN happily serves the underlying mp4 if we
+ *  strip the suffix — same hash, same auth, Content-Type: video/mp4. */
+export function toDownloadUrl(streamUrl: string): string {
+  return streamUrl.replace(/:hls:manifest\.m3u8$/i, "");
+}
+
+/** Trigger the browser download. Uses `<a download>` for desktop/Android and
+ *  falls back to a new tab on iOS (Safari ignores `download` on cross-origin
+ *  and just navigates instead, which interrupts playback). */
+export function triggerBrowserDownload(streamUrl: string, filename: string): void {
+  const url = toDownloadUrl(streamUrl);
   const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   if (isIOS) {
     // iOS will navigate to the URL; user then long-presses → Download
@@ -127,7 +137,9 @@ export function triggerBrowserDownload(url: string, filename: string): void {
   a.href = url;
   a.download = filename;
   a.rel = "noopener";
-  a.target = "_blank";
+  // No target=_blank — opening a new tab on Android Chrome makes the browser
+  // ignore `download` (cross-origin) and just navigate, so the new tab plays
+  // the video. Same-tab navigation respects `download` better.
   document.body.appendChild(a);
   a.click();
   setTimeout(() => a.remove(), 1000);
