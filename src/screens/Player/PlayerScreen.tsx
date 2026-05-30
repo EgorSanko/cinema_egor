@@ -641,9 +641,28 @@ export function PlayerScreen() {
       const searchQ = searchTitle || title.replace(/\sS\d+E\d+$/, '');
       const data = await getStream(searchQ, year || '', mediaType || 'movie', opts);
       if (data.stream) {
+        // Did the backend give us the dub we asked for? When the chosen
+        // voiceover hasn't covered this episode (e.g. Яроцкий dubbed eps 1-2
+        // but not 3), HDRezka silently substitutes another dub — usually a
+        // premium one whose stream is a 1-min "buy subscription" stub. Trust
+        // active_translator_id (what actually plays), not the requested id.
+        const actualId = data.active_translator_id ?? data.translators?.[0]?.id;
+        const actualTr = data.translators?.find(t => t.id === actualId);
+        const substituted = actualId != null && actualId !== translator.id;
+        if (substituted && (actualTr as any)?.is_premium) {
+          // Don't play the stub. Keep the panel open so the user picks another.
+          if (data.translators?.length) setStreamData(s => ({ ...s, translators: data.translators }));
+          setTranslatorLoading(false);
+          Alert.alert(
+            'Озвучка недоступна',
+            'Этой озвучки нет на этой серии (ещё не вышла). Выберите другую озвучку.',
+          );
+          setShowTranslatorPanel(true);
+          return;
+        }
         setStreamData(data);
         setCurrentQuality(data.quality);
-        setCurrentTranslator(translator);
+        setCurrentTranslator(actualTr ?? translator);
         // Persist user's translator choice for this title
         saveLastTranslator(movieId, mediaType || 'movie', translator.id, translator.name);
         setIsBuffering(true);
@@ -724,6 +743,23 @@ export function PlayerScreen() {
       if (currentTranslator) opts.translator_id = currentTranslator.id;
       const data = await getStream(searchTitle, year || '', 'tv', opts);
       if (data.stream) {
+        // Did this episode keep the chosen dub? If the requested voiceover
+        // hasn't covered the new episode, HDRezka substitutes a premium dub
+        // whose stream is a 1-min "buy subscription" stub. Detect via
+        // active_translator_id and refuse to play the stub.
+        if (currentTranslator) {
+          const actualId = data.active_translator_id ?? data.translators?.[0]?.id;
+          const actualTr = data.translators?.find(t => t.id === actualId);
+          const substituted = actualId != null && actualId !== currentTranslator.id;
+          if (substituted && (actualTr as any)?.is_premium) {
+            setEpisodeSwitchLoading(false);
+            Alert.alert(
+              'Серия в этой озвучке ещё не вышла',
+              `Серия ${episode} пока недоступна в озвучке «${currentTranslator.name}». Выберите другую озвучку.`,
+            );
+            return;
+          }
+        }
         // Save current position before switch
         const pos = positionRef.current;
         const dur = durationRef.current;

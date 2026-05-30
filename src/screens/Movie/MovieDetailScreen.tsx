@@ -18,7 +18,7 @@ import {
 } from '../../api/tmdb';
 import type { MovieDetails, TVShowDetails, StreamData, CastMember, Movie, TVShow } from '../../api/tmdb';
 import { MovieDetailSkeleton } from '../../components/SkeletonLoader';
-import { toggleFavorite, isFavorite, getComments, addComment, deleteComment, getLastTranslator, type Comment } from '../../utils/storage';
+import { toggleFavorite, isFavorite, getComments, addComment, deleteComment, getLastTranslator, saveLastTranslator, type Comment } from '../../utils/storage';
 import { SectionRow } from '../../components/SectionRow';
 import { TrailerButton } from '../../components/TrailerButton';
 import { SendToTV } from '../../components/SendToTV';
@@ -166,7 +166,24 @@ export function MovieDetailScreen() {
       if (!data.stream && origSearch && origSearch !== searchTitle) {
         data = await getStream(origSearch, year, isTV ? 'tv' : 'movie', opts);
       }
+      // Premium-stub guard: if the dub we got (saved pref or backend default)
+      // is premium — its stream is a 1-min "buy subscription" clip — and a
+      // free dub exists, re-fetch with the free one so we never auto-open the
+      // stub. Mirrors the web players' first-play behaviour.
       if (data.stream) {
+        const actualId = data.active_translator_id ?? data.translators?.[0]?.id;
+        const actualTr = data.translators?.find((t: any) => t.id === actualId);
+        const freeAlt = data.translators?.find((t: any) => !t.is_premium);
+        if ((actualTr as any)?.is_premium && freeAlt && freeAlt.id !== actualId) {
+          const freeData = await getStream(searchTitle, year, isTV ? 'tv' : 'movie', { ...opts, translator_id: freeAlt.id });
+          if (freeData.stream) {
+            data = freeData;
+            await saveLastTranslator(detail.id, isTV ? 'tv' : 'movie', freeAlt.id, freeAlt.name);
+          }
+        }
+      }
+      if (data.stream) {
+        const playedId = data.active_translator_id ?? data.translators?.[0]?.id;
         nav.navigate('Player', {
           streamData: data,
           title: isTV ? `${detailTitle} S${selectedSeason}E${selectedEpisode}` : detailTitle,
@@ -177,14 +194,9 @@ export function MovieDetailScreen() {
           searchTitle, year,
           totalSeasons: isTV ? (detail as TVShowDetails).number_of_seasons : undefined,
           baseTitle: detailTitle,
-          // Pass the translator ID we actually requested so PlayerScreen
-          // can initialize currentTranslator correctly. Falls back to the
-          // backend's reported active_translator_id when the user has no
-          // saved preference — without that fallback PlayerScreen labelled
-          // translators[0] as active even though HDRezka served a different
-          // dub (e.g. Silicon Valley showed "Кубик в Кубе" while playing
-          // "TVShows").
-          initialTranslatorId: lastTr?.id ?? data.active_translator_id,
+          // Pass the dub that ACTUALLY plays (active_translator_id) so
+          // PlayerScreen labels the right one. Falls back to saved pref.
+          initialTranslatorId: playedId ?? lastTr?.id,
         });
       } else {
         Alert.alert('Пока недоступно', 'Этот контент ещё не вышел в онлайн-кинотеатрах. Ждём релиза!');
