@@ -228,7 +228,11 @@ export function ArtPlayerView(props: ArtPlayerProps) {
       poster: poster || "",
       theme: "#a3e635",
       setting: true,
-      fullscreen: true,
+      // Native HTML5 fullscreen on mobile hoists the <video> out of the React
+      // tree, so our SkipOverlays + close button disappear. Disable it on
+      // touch devices — the parent component owns a CSS-based fullscreen
+      // toggle (covers the same screen but keeps overlays mounted).
+      fullscreen: typeof window !== "undefined" && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent),
       fullscreenWeb: true,
       pip: true,
       airplay: true,

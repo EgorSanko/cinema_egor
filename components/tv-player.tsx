@@ -574,9 +574,22 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   </div>
                 </div>
               )}
-              {cssFullscreen && (
-                <button onClick={() => setCssFullscreen(false)} className="fixed top-3 right-3 z-[10000] bg-black/70 backdrop-blur text-white px-3 py-2 rounded-lg text-sm">{"\u2715 Закрыть"}</button>
-              )}
+              {/* Always-visible close X — mobile/PWA users had no way out */}
+              <button
+                onClick={() => { setShowPlayer(false); setCssFullscreen(false); }}
+                aria-label="Закрыть плеер"
+                className={(cssFullscreen ? "fixed" : "absolute") + " top-3 left-3 z-[10001] flex items-center justify-center w-10 h-10 rounded-full bg-black/70 backdrop-blur text-white ring-1 ring-white/15 hover:bg-black/85 active:scale-95 transition-all text-base leading-none"}
+              >
+                ✕
+              </button>
+              {/* Mobile-only fullscreen toggle (native disabled on touch). */}
+              <button
+                onClick={toggleFullscreen}
+                aria-label={cssFullscreen ? "Свернуть" : "На весь экран"}
+                className={"md:hidden " + (cssFullscreen ? "fixed" : "absolute") + " top-3 right-3 z-[10001] flex items-center justify-center w-10 h-10 rounded-full bg-black/70 backdrop-blur text-white ring-1 ring-white/15 hover:bg-black/85 active:scale-95 transition-all text-base leading-none"}
+              >
+                {cssFullscreen ? "⤢" : "⛶"}
+              </button>
             </>
           ) : null}
         </div>
