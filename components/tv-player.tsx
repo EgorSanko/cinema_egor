@@ -60,6 +60,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [showSeasons, setShowSeasons] = useState(false);
   const [showEpisodes, setShowEpisodes] = useState(false);
   const [cssFullscreen, setCssFullscreen] = useState(false);
+  // ArtPlayer container — once captured, SkipOverlays portals into it so
+  // they stay visible in every fullscreen mode (web/native/mobile).
+  const [playerContainer, setPlayerContainer] = useState<HTMLElement | null>(null);
   const [resumeTime, setResumeTime] = useState<number | null>(null);
   const [showResume, setShowResume] = useState(false);
   const [translators, setTranslators] = useState<Translator[]>([]);
@@ -544,9 +547,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   // attaches) and got reset to 0 by the source swap.
                 }}
                 onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
+                onPlayerContainerReady={setPlayerContainer}
               />
               <SkipOverlays
                 videoRef={videoRef}
+                playerContainer={playerContainer}
                 tmdbId={show.id}
                 type="tv"
                 season={selectedSeason}
@@ -574,22 +579,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   </div>
                 </div>
               )}
-              {/* Always-visible close X — mobile/PWA users had no way out */}
-              <button
-                onClick={() => { setShowPlayer(false); setCssFullscreen(false); }}
-                aria-label="Закрыть плеер"
-                className={(cssFullscreen ? "fixed" : "absolute") + " top-3 left-3 z-[10001] flex items-center justify-center w-10 h-10 rounded-full bg-black/70 backdrop-blur text-white ring-1 ring-white/15 hover:bg-black/85 active:scale-95 transition-all text-base leading-none"}
-              >
-                ✕
-              </button>
-              {/* Mobile-only fullscreen toggle (native disabled on touch). */}
-              <button
-                onClick={toggleFullscreen}
-                aria-label={cssFullscreen ? "Свернуть" : "На весь экран"}
-                className={"md:hidden " + (cssFullscreen ? "fixed" : "absolute") + " top-3 right-3 z-[10001] flex items-center justify-center w-10 h-10 rounded-full bg-black/70 backdrop-blur text-white ring-1 ring-white/15 hover:bg-black/85 active:scale-95 transition-all text-base leading-none"}
-              >
-                {cssFullscreen ? "⤢" : "⛶"}
-              </button>
+
             </>
           ) : null}
         </div>

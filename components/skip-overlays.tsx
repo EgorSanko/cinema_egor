@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { SkipForward } from "lucide-react";
 
 interface Segment { start: number; end: number }
@@ -9,6 +10,12 @@ export interface SkipData { intro: Segment | null; outro: Segment | null; source
 interface Props {
   /** Live ref to the playing video element. Polled via timeupdate. */
   videoRef: React.MutableRefObject<HTMLVideoElement | null>;
+  /** ArtPlayer's $player container. If provided, overlays are portalled
+   *  INTO it instead of rendered inline. This is what lets them survive
+   *  every fullscreen mode (web/native, mobile/desktop) — when the player
+   *  goes fullscreen its container goes with it and our overlays travel
+   *  inside it. Without a portal target, overlays render inline as before. */
+  playerContainer?: HTMLElement | null;
   /** TMDB id of the title. */
   tmdbId: number;
   /** Whether this is a movie or a TV series. Determines if we fetch with
@@ -25,7 +32,7 @@ interface Props {
 
 const AUTO_NEXT_SECONDS = 10;
 
-export function SkipOverlays({ videoRef, tmdbId, type, season, episode, hasNextEpisode, onNextEpisode }: Props) {
+export function SkipOverlays({ videoRef, playerContainer, tmdbId, type, season, episode, hasNextEpisode, onNextEpisode }: Props) {
   const [data, setData] = useState<SkipData | null>(null);
   const [showSkipIntro, setShowSkipIntro] = useState(false);
   const [showOutroCard, setShowOutroCard] = useState(false);
@@ -125,12 +132,12 @@ export function SkipOverlays({ videoRef, tmdbId, type, season, episode, hasNextE
     advanceTriggeredRef.current = true; // don't re-show this episode
   };
 
-  return (
+  const overlays = (
     <>
       {showSkipIntro && data?.intro && (
         <button
           onClick={skipIntro}
-          className="absolute bottom-20 right-6 z-30 flex items-center gap-2 px-4 h-11 rounded-full bg-black/80 backdrop-blur-md text-white text-[13px] font-semibold ring-1 ring-white/15 hover:bg-white hover:text-black transition-colors shadow-lg pointer-events-auto"
+          className="absolute bottom-20 right-6 z-[2147483647] flex items-center gap-2 px-4 h-11 rounded-full bg-black/80 backdrop-blur-md text-white text-[13px] font-semibold ring-1 ring-white/15 hover:bg-white hover:text-black transition-colors shadow-lg pointer-events-auto"
           style={{ boxShadow: "0 6px 24px -4px rgba(0,0,0,0.6)" }}
         >
           <SkipForward size={16} />
@@ -140,7 +147,7 @@ export function SkipOverlays({ videoRef, tmdbId, type, season, episode, hasNextE
 
       {showOutroCard && (
         <div
-          className="absolute top-4 right-4 z-30 w-[280px] sm:w-[320px] p-4 rounded-2xl bg-black/85 backdrop-blur-md ring-1 ring-white/15 shadow-xl pointer-events-auto"
+          className="absolute top-4 right-4 z-[2147483647] w-[280px] sm:w-[320px] p-4 rounded-2xl bg-black/85 backdrop-blur-md ring-1 ring-white/15 shadow-xl pointer-events-auto"
           style={{ boxShadow: "0 10px 40px -6px rgba(0,0,0,0.7)" }}
         >
           {type === "tv" && hasNextEpisode ? (
@@ -192,4 +199,10 @@ export function SkipOverlays({ videoRef, tmdbId, type, season, episode, hasNextE
       )}
     </>
   );
+
+  // Portal into ArtPlayer's container when provided — this is what makes
+  // the overlays travel inside any fullscreen mode (web CSS, native HTML5,
+  // mobile webkit). Falls back to inline rendering if the portal target
+  // isn't ready yet (first paint before ArtPlayer 'ready' fires).
+  return playerContainer ? createPortal(overlays, playerContainer) : overlays;
 }

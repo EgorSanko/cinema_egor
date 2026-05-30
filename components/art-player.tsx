@@ -40,6 +40,11 @@ interface ArtPlayerProps {
   resumeTime?: number;
   onVideoReady?: (v: HTMLVideoElement) => void;
   onVideoUnmount?: () => void;
+  /** Called once ArtPlayer is mounted. Hands back the ArtPlayer-owned
+   *  container element (the one that goes fullscreen). Used by SkipOverlays
+   *  to portal itself INTO this container so the overlays survive any
+   *  fullscreen mode (web CSS, native HTML5, mobile fullscreen). */
+  onPlayerContainerReady?: (el: HTMLElement) => void;
 }
 
 // Inline SVG icons for settings menu items
@@ -206,6 +211,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     resumeTime,
     onVideoReady,
     onVideoUnmount,
+    onPlayerContainerReady,
   } = props;
 
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -228,11 +234,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
       poster: poster || "",
       theme: "#a3e635",
       setting: true,
-      // Native HTML5 fullscreen on mobile hoists the <video> out of the React
-      // tree, so our SkipOverlays + close button disappear. Disable it on
-      // touch devices — the parent component owns a CSS-based fullscreen
-      // toggle (covers the same screen but keeps overlays mounted).
-      fullscreen: typeof window !== "undefined" && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent),
+      fullscreen: true,
       fullscreenWeb: true,
       pip: true,
       airplay: true,
@@ -286,6 +288,13 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // until loadedmetadata so the seek sticks.
     art.on("ready", () => {
       onVideoReady?.(art.video);
+      // art.template.$player is the ArtPlayer-owned wrapper that becomes
+      // fixed/fullscreen. Portalled overlays go INSIDE it so they survive
+      // every fullscreen mode without us having to track state.
+      try {
+        const playerEl = (art as any)?.template?.$player as HTMLElement | undefined;
+        if (playerEl) onPlayerContainerReady?.(playerEl);
+      } catch {}
     });
 
     // Auto-resume position. The seek must happen AFTER MSE parses the
