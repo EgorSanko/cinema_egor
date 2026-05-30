@@ -26,6 +26,7 @@ import { savePosition, addToHistory, getPosition, saveLastTranslator, recordTran
 import { scheduleSyncToServer } from '../../utils/auth';
 import { getStream, getSeasonEpisodes, isEpisodeReleased, type StreamData, type Episode } from '../../api/tmdb';
 import { getWatchSocket, setWatchSocket } from '../../utils/watchSocket';
+import { API_BASE } from '../../constants/theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -73,6 +74,16 @@ export function PlayerScreen() {
   const autoplayTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoplayTriggeredRef = useRef(false);
   const hasNextEpisodeRef = useRef(false);
+
+  // Skip-intro markers fetched from our /api/skip-segments cascade
+  // (IntroDB + AniSkip + IntroHater + 30-day cache). When intro is in
+  // [start..end] we surface a Pressable "Пропустить заставку" pill. When
+  // position passes outro.start we kick the autoplay countdown early so
+  // the user doesn't have to sit through credits before the next episode
+  // prompts.
+  const [skipMarkers, setSkipMarkers] = useState<{ intro: { start: number; end: number } | null; outro: { start: number; end: number } | null }>({ intro: null, outro: null });
+  const skipIntroDismissedRef = useRef(false);
+  const [showSkipIntro, setShowSkipIntro] = useState(false);
 
   const videoRef = useRef<Video>(null);
   const [streamData, setStreamData] = useState<StreamData>(initialStreamData);
@@ -434,21 +445,36 @@ export function PlayerScreen() {
     }
     setDuration(status.durationMillis || 0);
 
+    // === SKIP INTRO BUTTON ===
+    // Forgiving window: 5s pre-buffer, 5s post-buffer so the user has time
+    // to notice and tap. Same logic as the web SkipOverlays.
+    const posSec = (status.positionMillis || 0) / 1000;
+    if (skipMarkers.intro && !skipIntroDismissedRef.current) {
+      const inIntro =
+        posSec >= Math.max(0, skipMarkers.intro.start - 5)
+        && posSec < skipMarkers.intro.end + 5;
+      setShowSkipIntro(prev => (prev === inIntro ? prev : inIntro));
+    } else if (showSkipIntro) {
+      setShowSkipIntro(false);
+    }
+
     // === AUTOPLAY NEXT EPISODE ===
-    // Show 10-second countdown when ≤10s remain (so user has chance to cancel)
-    // OR on natural end (covers cases where progress jumps over the threshold).
+    // Trigger countdown either when crowdsourced outro start is hit
+    // (best — user gets card before credits roll), or in the last 10s,
+    // or on natural end (covers progress jumps over the threshold).
     if (mediaType === 'tv' && hasNextEpisodeRef.current && !autoplayTriggeredRef.current) {
       const dur = status.durationMillis || 0;
       const pos = status.positionMillis || 0;
       const remaining = dur - pos;
       const justFinished = (status as any).didJustFinish;
+      const hitOutro = skipMarkers.outro && posSec >= skipMarkers.outro.start;
       // Only trigger by-time on episodes longer than 90s (avoid trailers/clips)
-      if (justFinished || (remaining > 0 && remaining <= 10000 && dur > 90000)) {
+      if (justFinished || hitOutro || (remaining > 0 && remaining <= 10000 && dur > 90000)) {
         autoplayTriggeredRef.current = true;
         startAutoplayCountdown();
       }
     }
-  }, [isSeeking, mediaType]);
+  }, [isSeeking, mediaType, skipMarkers, showSkipIntro]);
 
   const startAutoplayCountdown = () => {
     setAutoplayCountdown(10);
@@ -485,6 +511,30 @@ export function PlayerScreen() {
       if (autoplayTimerRef.current) clearInterval(autoplayTimerRef.current);
     };
   }, []);
+
+  // Fetch crowdsourced skip markers for the current title/episode. Same
+  // cascade endpoint as the web (IntroDB → AniSkip → IntroHater), so the
+  // app inherits any coverage we add server-side later.
+  useEffect(() => {
+    setSkipMarkers({ intro: null, outro: null });
+    setShowSkipIntro(false);
+    skipIntroDismissedRef.current = false;
+    if (!movieId) return;
+    let cancelled = false;
+    const qs = new URLSearchParams({ tmdb: String(movieId), type: mediaType || 'movie' });
+    if (mediaType === 'tv' && currentSeason && currentEpisode) {
+      qs.set('season', String(currentSeason));
+      qs.set('episode', String(currentEpisode));
+    }
+    fetch(`${API_BASE}/api/skip-segments?${qs}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((d: any) => {
+        if (cancelled || !d) return;
+        setSkipMarkers({ intro: d.intro || null, outro: d.outro || null });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [movieId, mediaType, currentSeason, currentEpisode]);
 
   const toggleUI = () => {
     if (locked) return;
@@ -884,6 +934,25 @@ export function PlayerScreen() {
           {translatorLoading && <Text style={styles.bufferingText}>Загрузка озвучки...</Text>}
           {episodeSwitchLoading && <Text style={styles.bufferingText}>Загрузка серии...</Text>}
         </View>
+      )}
+
+      {/* Skip Intro pill — only when crowdsourced intro data exists for this episode */}
+      {showSkipIntro && skipMarkers.intro && (
+        <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={styles.skipIntroWrap}>
+          <Pressable
+            onPress={() => {
+              if (skipMarkers.intro && videoRef.current) {
+                videoRef.current.setPositionAsync(skipMarkers.intro.end * 1000).catch(() => {});
+                skipIntroDismissedRef.current = true;
+                setShowSkipIntro(false);
+              }
+            }}
+            style={styles.skipIntroBtn}
+          >
+            <Ionicons name="play-skip-forward" size={16} color="#fff" />
+            <Text style={styles.skipIntroText}>Пропустить заставку</Text>
+          </Pressable>
+        </Animated.View>
       )}
 
       {/* Autoplay countdown overlay */}
@@ -1562,6 +1631,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   chatSendBtn: { padding: 6 },
+
+  // Skip Intro pill (bottom-right, above the seek bar)
+  skipIntroWrap: {
+    position: 'absolute',
+    bottom: 90,
+    right: 20,
+    zIndex: 40,
+  },
+  skipIntroBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    height: 40,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  skipIntroText: {
+    color: '#fff',
+    fontSize: 13,
+    fontFamily: FONTS.semibold,
+  },
 
   // Autoplay countdown overlay
   autoplayOverlay: {

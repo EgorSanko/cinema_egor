@@ -1,4 +1,5 @@
 import { API_BASE, TMDB_IMG } from '../constants/theme';
+import { filterBlocked, isBlockedMovie, isBlockedTV } from '../utils/blocked-content';
 
 // Proxied through our server to bypass TMDB block in Russia
 const TMDB_API = `${API_BASE}/tmdb-api`;
@@ -81,53 +82,57 @@ async function tmdbFetch<T>(path: string): Promise<T> {
 
 // Movies
 export const getTrending = () =>
-  tmdbFetch<{ results: Movie[] }>('/trending/movie/week').then(d => d.results);
+  tmdbFetch<{ results: Movie[] }>('/trending/movie/week').then(d => filterBlocked(d.results, 'movie'));
 
 export const getPopular = (page = 1) =>
-  tmdbFetch<{ results: Movie[] }>(`/movie/popular?page=${page}`).then(d => d.results);
+  tmdbFetch<{ results: Movie[] }>(`/movie/popular?page=${page}`).then(d => filterBlocked(d.results, 'movie'));
 
 export const getLatest = () =>
-  tmdbFetch<{ results: Movie[] }>('/movie/now_playing?page=1').then(d => d.results);
+  tmdbFetch<{ results: Movie[] }>('/movie/now_playing?page=1').then(d => filterBlocked(d.results, 'movie'));
 
 export const getTopRated = () =>
-  tmdbFetch<{ results: Movie[] }>('/movie/top_rated?page=1').then(d => d.results);
+  tmdbFetch<{ results: Movie[] }>('/movie/top_rated?page=1').then(d => filterBlocked(d.results, 'movie'));
 
-export const getMovieDetails = (id: number) =>
-  tmdbFetch<MovieDetails>(`/movie/${id}`);
+export const getMovieDetails = (id: number) => {
+  if (isBlockedMovie(id)) return Promise.reject(new Error('blocked'));
+  return tmdbFetch<MovieDetails>(`/movie/${id}`);
+};
 
 export const getMoviesByGenre = (genreId: number, page = 1) =>
-  tmdbFetch<{ results: Movie[] }>(`/discover/movie?with_genres=${genreId}&sort_by=popularity.desc&page=${page}`).then(d => d.results);
+  tmdbFetch<{ results: Movie[] }>(`/discover/movie?with_genres=${genreId}&sort_by=popularity.desc&page=${page}`).then(d => filterBlocked(d.results, 'movie'));
 
 export const getMovieCredits = (id: number) =>
   tmdbFetch<{ cast: CastMember[] }>(`/movie/${id}/credits`).then(d => d.cast.slice(0, 20));
 
 export const getMovieRecommendations = (id: number) =>
-  tmdbFetch<{ results: Movie[] }>(`/movie/${id}/recommendations`).then(d => d.results);
+  tmdbFetch<{ results: Movie[] }>(`/movie/${id}/recommendations`).then(d => filterBlocked(d.results, 'movie'));
 
 export const getSimilarMovies = (id: number) =>
-  tmdbFetch<{ results: Movie[] }>(`/movie/${id}/similar`).then(d => d.results);
+  tmdbFetch<{ results: Movie[] }>(`/movie/${id}/similar`).then(d => filterBlocked(d.results, 'movie'));
 
 // TV
 export const searchMovies = (query: string) =>
-  tmdbFetch<{ results: Movie[] }>(`/search/movie?query=${encodeURIComponent(query)}`).then(d => d.results);
+  tmdbFetch<{ results: Movie[] }>(`/search/movie?query=${encodeURIComponent(query)}`).then(d => filterBlocked(d.results, 'movie'));
 
 export const searchTV = (query: string) =>
-  tmdbFetch<{ results: TVShow[] }>(`/search/tv?query=${encodeURIComponent(query)}`).then(d => d.results);
+  tmdbFetch<{ results: TVShow[] }>(`/search/tv?query=${encodeURIComponent(query)}`).then(d => filterBlocked(d.results, 'tv'));
 
 export const getTrendingTV = () =>
-  tmdbFetch<{ results: TVShow[] }>('/trending/tv/week').then(d => d.results);
+  tmdbFetch<{ results: TVShow[] }>('/trending/tv/week').then(d => filterBlocked(d.results, 'tv'));
 
 export const getPopularTV = () =>
-  tmdbFetch<{ results: TVShow[] }>('/tv/popular?page=1').then(d => d.results);
+  tmdbFetch<{ results: TVShow[] }>('/tv/popular?page=1').then(d => filterBlocked(d.results, 'tv'));
 
-export const getTVDetails = (id: number) =>
-  tmdbFetch<TVShowDetails>(`/tv/${id}`);
+export const getTVDetails = (id: number) => {
+  if (isBlockedTV(id)) return Promise.reject(new Error('blocked'));
+  return tmdbFetch<TVShowDetails>(`/tv/${id}`);
+};
 
 export const getTVCredits = (id: number) =>
   tmdbFetch<{ cast: CastMember[] }>(`/tv/${id}/credits`).then(d => d.cast.slice(0, 20));
 
 export const getTVRecommendations = (id: number) =>
-  tmdbFetch<{ results: TVShow[] }>(`/tv/${id}/recommendations`).then(d => d.results);
+  tmdbFetch<{ results: TVShow[] }>(`/tv/${id}/recommendations`).then(d => filterBlocked(d.results, 'tv'));
 
 export interface Episode {
   id: number;
