@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, RADIUS, FONTS, SPACING } from '../../constants/theme';
 import { getUser, logout, type User } from '../../utils/auth';
 import { getHistory, getFavorites, getTriedTranslators } from '../../utils/storage';
+import { getDownloads } from '../../lib/downloads';
 import {
   computeStats, evaluateAchievements, type UserStats, type UnlockedAchievement,
 } from '../../utils/achievements';
@@ -57,13 +58,17 @@ export function ProfileScreen() {
   const [stats, setStats] = useState<UserStats>(() => computeStats([], []));
   const [history, setHistory] = useState<any[]>([]);
   const [favorites, setFavorites] = useState<any[]>([]);
+  const [downloads, setDownloads] = useState<any[]>([]);
   const [showAllAch, setShowAllAch] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [u, hist, favs, tried] = await Promise.all([getUser(), getHistory(), getFavorites(), getTriedTranslators()]);
+    const [u, hist, favs, tried, dls] = await Promise.all([
+      getUser(), getHistory(), getFavorites(), getTriedTranslators(), getDownloads(),
+    ]);
     setUser(u);
     setHistory(hist);
     setFavorites(favs);
+    setDownloads(dls);
     setStats(computeStats(hist, favs, tried));
   }, []);
 
@@ -316,6 +321,12 @@ export function ProfileScreen() {
               count={history.length}
               items={history.slice(0, 4)}
               onPress={() => Alert.alert('История', 'История доступна на сайте sapkeflykino.ru/history')}
+            />
+            <ListCard
+              title="Загрузки"
+              count={downloads.length}
+              items={downloads.slice(0, 4)}
+              onPress={() => nav.navigate('Downloads')}
             />
             <ListCard
               title="Шедевры"

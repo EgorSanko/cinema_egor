@@ -22,6 +22,7 @@ import { toggleFavorite, isFavorite, getComments, addComment, deleteComment, get
 import { SectionRow } from '../../components/SectionRow';
 import { TrailerButton } from '../../components/TrailerButton';
 import { SendToTV } from '../../components/SendToTV';
+import { DownloadButton } from '../../components/DownloadButton';
 import { COLORS, RADIUS, FONTS, SPACING, SHADOWS } from '../../constants/theme';
 import { scheduleSyncToServer, getUser } from '../../utils/auth';
 
@@ -410,6 +411,30 @@ export function MovieDetailScreen() {
             <Ionicons name={fav ? 'heart' : 'heart-outline'} size={20} color={fav ? COLORS.primary : COLORS.textSecondary} />
             <Text style={[styles.favBtnText, fav && { color: COLORS.primary }]}>{fav ? 'В избранном' : 'В избранное'}</Text>
           </Pressable>
+
+          {/* Download — proxies through web /api/dl for proper UTF-8 filename */}
+          {isTV ? (
+            <DownloadButton
+              type="tv"
+              id={detail.id}
+              title={detailTitle || ''}
+              poster_path={(detail as TVShowDetails).poster_path}
+              first_air_date={(detail as TVShowDetails).first_air_date}
+              number_of_seasons={(detail as TVShowDetails).number_of_seasons}
+              seasons={(detail as TVShowDetails).seasons || []}
+              initialSeason={selectedSeason}
+              initialEpisode={selectedEpisode}
+            />
+          ) : (
+            <DownloadButton
+              type="movie"
+              id={detail.id}
+              title={detailTitle || ''}
+              poster_path={(detail as MovieDetails).poster_path}
+              release_date={(detail as MovieDetails).release_date}
+              runtime={(detail as MovieDetails).runtime}
+            />
+          )}
 
           {/* Overview */}
           {detail.overview ? (
