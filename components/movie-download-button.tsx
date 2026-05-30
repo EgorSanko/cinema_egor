@@ -260,9 +260,10 @@ export function MovieDownloadButton(props: Props) {
                 value={selectedTranslator ?? ""}
                 onChange={(e) => setSelectedTranslator(Number(e.target.value))}
                 className="w-full mt-1 px-2 py-1.5 rounded-md bg-white/[0.08] text-white text-[13px] focus:outline-none"
+                style={{ colorScheme: "dark" }}
               >
                 {Array.from(new Map(translators.map(t => [t.id, t])).values()).map(t => (
-                  <option key={t.id} value={t.id}>
+                  <option key={t.id} value={t.id} style={{ backgroundColor: "#18181b", color: "#fff" }}>
                     {t.name}{t.is_premium ? " (Premium)" : ""}
                   </option>
                 ))}
