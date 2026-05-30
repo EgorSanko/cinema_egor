@@ -264,7 +264,7 @@ export function MovieDownloadButton(props: Props) {
               >
                 {Array.from(new Map(translators.map(t => [t.id, t])).values()).map(t => (
                   <option key={t.id} value={t.id} style={{ backgroundColor: "#18181b", color: "#fff" }}>
-                    {t.name}{t.is_premium ? " (Premium)" : ""}
+                    {t.is_premium ? `🔒 ${t.name}` : t.name}
                   </option>
                 ))}
               </select>
