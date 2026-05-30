@@ -225,19 +225,42 @@ export function TVPlayer({ show }: TVPlayerProps) {
       const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam);
       const data = await res.json();
       if (data.stream) {
-        // Resolve which translator the returned stream actually represents.
-        // Backend now reports `active_translator_id`; before relying on it,
-        // selectedTranslator/list[0] divergence caused the UI to label the
-        // wrong dub.
-        const playedId: number | undefined = effectiveTr ?? data.active_translator_id ?? data.translators?.[0]?.id;
-        const playedIsPremium = data.translators?.find((t: any) => t.id === playedId)?.is_premium;
-        const freeAlt = data.translators?.find((t: any) => !t.is_premium);
-        if (!translatorId && playedIsPremium && freeAlt && freeAlt.id !== playedId) {
+        // What translator is ACTUALLY playing? Trust the backend's
+        // active_translator_id — NOT effectiveTr. They diverge when the
+        // requested dub hasn't covered this episode (e.g. Яроцкий dubbed
+        // eps 1-2 but not 3): HDRezka silently substitutes another dub,
+        // usually a premium one whose stream is a 1-min "buy subscription"
+        // stub. Using effectiveTr here hid that — the old code thought it
+        // was playing the free dub and happily showed the stub.
+        const actualId: number | undefined = data.active_translator_id ?? data.translators?.[0]?.id;
+        const actualTr = data.translators?.find((t: any) => t.id === actualId);
+        const actualIsPremium = !!actualTr?.is_premium;
+        const requestedId = effectiveTr;
+        const substituted = requestedId != null && actualId != null && requestedId !== actualId;
+        const freeAlt = data.translators?.find((t: any) => !t.is_premium && t.id !== requestedId);
+
+        // Case A — first load with no explicit pick: if the server default is
+        // a premium stub, silently switch to a free dub (existing behaviour).
+        if (!translatorId && actualIsPremium && freeAlt) {
           setTranslators(data.translators);
           setSelectedTranslator(freeAlt.id);
           saveLastTranslator(show.id, "tv", freeAlt.id, freeAlt.name);
           return fetchStream(season, episode, freeAlt.id);
         }
+
+        // Case B — the requested dub was substituted with a premium stub:
+        // this episode isn't dubbed in the chosen voiceover. Do NOT play the
+        // 1-min stub. Show the dub list + a notice; let the user pick another.
+        if (substituted && actualIsPremium) {
+          if (data.translators?.length) setTranslators(data.translators);
+          setStreamData(null);
+          setError(
+            `Серия ${episode} в выбранной озвучке ещё не вышла. Выберите другую озвучку.`,
+          );
+          setShowTranslators(true);
+          return;
+        }
+
         setStreamData(data);
         setSelectedQuality(data.quality);
         if (data.translators && data.translators.length > 0 && translators.length === 0) {

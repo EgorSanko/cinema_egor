@@ -162,19 +162,34 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam);
       const data = await res.json();
       if (data.stream) {
-        // Auto-skip HDRezka premium dubs on first play — they serve a 60-sec
-        // "buy subscription" pre-roll instead of the stream.
-        // Backend now reports `active_translator_id` so we know which dub
-        // is actually playing instead of assuming translators[0].
-        const playedId: number | undefined = effectiveTr ?? data.active_translator_id ?? data.translators?.[0]?.id;
-        const playedIsPremium = data.translators?.find((t: any) => t.id === playedId)?.is_premium;
-        const freeAlt = data.translators?.find((t: any) => !t.is_premium);
-        if (!translatorId && playedIsPremium && freeAlt && freeAlt.id !== playedId) {
+        // What dub is ACTUALLY playing? Trust the backend's
+        // active_translator_id, NOT effectiveTr — they diverge when HDRezka
+        // substitutes a premium dub (whose stream is a 60-sec "buy
+        // subscription" pre-roll). Using effectiveTr hid the substitution.
+        const actualId: number | undefined = data.active_translator_id ?? data.translators?.[0]?.id;
+        const actualIsPremium = !!data.translators?.find((t: any) => t.id === actualId)?.is_premium;
+        const requestedId = effectiveTr;
+        const substituted = requestedId != null && actualId != null && requestedId !== actualId;
+        const freeAlt = data.translators?.find((t: any) => !t.is_premium && t.id !== requestedId);
+
+        // First play / no explicit pick: if the default is a premium stub,
+        // silently switch to a free dub.
+        if (!translatorId && actualIsPremium && freeAlt) {
           setTranslators(data.translators);
           setSelectedTranslator(freeAlt.id);
           saveLastTranslator(movie.id, "movie", freeAlt.id, freeAlt.name);
           return fetchStream(freeAlt.id);
         }
+
+        // Requested dub got substituted with a premium stub — don't play it.
+        if (substituted && actualIsPremium) {
+          if (data.translators?.length) setTranslators(data.translators);
+          setStreamData(null);
+          setError("Этот фильм в выбранной озвучке доступен только по подписке. Выберите другую озвучку.");
+          setShowTranslators(true);
+          return;
+        }
+
         setStreamData(data);
         setSelectedQuality(data.quality);
         if (data.translators && data.translators.length > 0 && translators.length === 0) {
