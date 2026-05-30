@@ -304,10 +304,18 @@ export function Navbar() {
                         <Link href="/downloads" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 transition-colors">
                           <span className="text-base leading-none">⬇️</span> Загрузки
                         </Link>
+                        <Link href="/support" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 transition-colors">
+                          <span className="text-base leading-none">💬</span> Поддержка
+                        </Link>
                         {(process.env.NEXT_PUBLIC_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).includes(user.email?.toLowerCase() || "") && (
-                          <Link href="/admin/logs" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 transition-colors border-t border-white/[0.06]">
-                            <span className="text-base leading-none">⚙️</span> Админ-логи
-                          </Link>
+                          <>
+                            <Link href="/admin/tickets" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 transition-colors border-t border-white/[0.06]">
+                              <span className="text-base leading-none">📨</span> Заявки (админ)
+                            </Link>
+                            <Link href="/admin/logs" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 transition-colors">
+                              <span className="text-base leading-none">⚙️</span> Админ-логи
+                            </Link>
+                          </>
                         )}
                         <button onClick={() => { logout(); setShowUserMenu(false); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-red-400/90 hover:text-red-400 hover:bg-red-400/5 transition-colors border-t border-white/[0.06]">
                           <LogOut size={15} /> Выйти
