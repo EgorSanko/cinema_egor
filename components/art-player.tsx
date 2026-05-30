@@ -288,12 +288,77 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // until loadedmetadata so the seek sticks.
     art.on("ready", () => {
       onVideoReady?.(art.video);
-      // art.template.$player is the ArtPlayer-owned wrapper that becomes
-      // fixed/fullscreen. Portalled overlays go INSIDE it so they survive
-      // every fullscreen mode without us having to track state.
       try {
         const playerEl = (art as any)?.template?.$player as HTMLElement | undefined;
         if (playerEl) onPlayerContainerReady?.(playerEl);
+      } catch {}
+
+      // Double-tap seek: matches YouTube / Netflix. Tap-tap left half → -10s,
+      // right half → +10s. We attach to the player element (touch-only) and
+      // use a 300ms double-tap window. Single-tap is left to ArtPlayer (it
+      // toggles controls). A brief visual flash shows direction + amount.
+      try {
+        const playerEl = (art as any)?.template?.$player as HTMLElement | undefined;
+        if (!playerEl) return;
+        let lastTap = 0;
+        let lastX = 0;
+        const SEEK_SECS = 10;
+        const flash = (direction: "back" | "fwd") => {
+          const overlay = document.createElement("div");
+          overlay.textContent = direction === "back" ? "⏪ −10 с" : "+10 с ⏩";
+          overlay.style.cssText = `
+            position: absolute;
+            ${direction === "back" ? "left: 12%" : "right: 12%"};
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 2147483646;
+            background: rgba(0,0,0,0.72);
+            color: white;
+            font-size: 22px;
+            font-weight: 700;
+            padding: 14px 24px;
+            border-radius: 999px;
+            pointer-events: none;
+            animation: kino-seek-flash 600ms ease-out forwards;
+          `;
+          playerEl.appendChild(overlay);
+          setTimeout(() => overlay.remove(), 600);
+        };
+        // Inject the keyframe once
+        if (!document.getElementById("kino-seek-flash-style")) {
+          const s = document.createElement("style");
+          s.id = "kino-seek-flash-style";
+          s.textContent = "@keyframes kino-seek-flash { 0%{opacity:0;transform:translateY(-50%) scale(0.85);} 30%{opacity:1;transform:translateY(-50%) scale(1.05);} 100%{opacity:0;transform:translateY(-50%) scale(1);} }";
+          document.head.appendChild(s);
+        }
+        const onTouch = (e: TouchEvent) => {
+          const now = Date.now();
+          const x = e.changedTouches[0]?.clientX ?? 0;
+          const rect = playerEl.getBoundingClientRect();
+          const rel = x - rect.left;
+          // Ignore taps in the bottom 60px (controls), top 50px (settings)
+          const y = e.changedTouches[0]?.clientY ?? 0;
+          const relY = y - rect.top;
+          if (relY < 50 || relY > rect.height - 60) { lastTap = 0; return; }
+          if (now - lastTap < 350 && Math.abs(x - lastX) < 120) {
+            // Double tap detected
+            const v = art.video as HTMLVideoElement;
+            if (rel < rect.width / 2) {
+              v.currentTime = Math.max(0, v.currentTime - SEEK_SECS);
+              flash("back");
+            } else {
+              v.currentTime = Math.min(v.duration || Infinity, v.currentTime + SEEK_SECS);
+              flash("fwd");
+            }
+            lastTap = 0; // reset so triple-tap doesn't double-fire
+            e.preventDefault();
+            e.stopPropagation();
+          } else {
+            lastTap = now;
+            lastX = x;
+          }
+        };
+        playerEl.addEventListener("touchend", onTouch, { passive: false });
       } catch {}
     });
 

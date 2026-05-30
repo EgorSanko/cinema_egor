@@ -78,7 +78,24 @@ export default function RootLayout({
         `}</Script>
         <Script id="sw-reg" strategy="afterInteractive">{`
           if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').catch(() => {});
+            navigator.serviceWorker.register('/sw.js').then(function(reg){
+              if (!reg) return;
+              // Force update check immediately AND on every tab-focus.
+              // Mobile PWA tabs stay alive for days — without these the
+              // service worker only checks for updates on hard reload,
+              // so a deployed fix never reaches iPhone home-screen apps
+              // until the user manually closes the standalone window.
+              try { reg.update(); } catch (e) {}
+              document.addEventListener('visibilitychange', function(){
+                if (document.visibilityState === 'visible') {
+                  try { reg.update(); } catch (e) {}
+                }
+              });
+              // Re-check every 30 minutes in case the tab stays foreground
+              setInterval(function(){
+                try { reg.update(); } catch (e) {}
+              }, 30 * 60 * 1000);
+            }).catch(function(){});
           }
         `}</Script>
       </body>

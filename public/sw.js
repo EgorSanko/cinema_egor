@@ -3,7 +3,7 @@
 // perfectly. SW-caching was layering a second cache on top that occasionally
 // served stale entries after deploy, producing ChunkLoadErrors that bubbled
 // up as the Next.js "Oops!" screen.
-const CACHE_NAME = "kino-v17-resume-watchdog";
+const CACHE_NAME = "kino-v18-skip-overlays-portal";
 const IMG_CACHE = "kino-images-v1";
 const MAX_IMG_CACHE = 200;
 

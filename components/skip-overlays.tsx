@@ -90,8 +90,16 @@ export function SkipOverlays({ videoRef, playerContainer, tmdbId, type, season, 
         setShowSkipIntro(false);
       }
 
-      if (data.outro) {
-        const inOutro = ct >= data.outro.start;
+      // Outro window: prefer the API-provided start, fall back to "last 60s"
+      // heuristic for TV episodes when the DB has no outro data — so the
+      // next-episode card still shows up even on shows without crowdsourced
+      // outro markers (which is most of IntroDB's catalogue today).
+      let outroStart: number | null = data.outro?.start ?? null;
+      if (outroStart == null && type === "tv" && hasNextEpisode && v.duration > 120) {
+        outroStart = v.duration - 60;
+      }
+      if (outroStart != null) {
+        const inOutro = ct >= outroStart;
         if (inOutro && !showOutroCard && !advanceTriggeredRef.current) {
           setShowOutroCard(true);
           setAutoNextSecs(AUTO_NEXT_SECONDS);
