@@ -114,21 +114,22 @@ export function buildFilename(entry: Omit<DownloadEntry, "downloadedAt" | "url">
 }
 
 /** HDRezka's CDN wraps the mp4 in an HLS manifest URL like
- *  `.../filename.mp4:hls:manifest.m3u8`. Strip that suffix to get the raw
- *  mp4 (same hash, same auth, Content-Type: video/mp4). */
+ *  `.../filename.mp4:hls:manifest.m3u8`. */
 export function stripManifestSuffix(streamUrl: string): string {
   return streamUrl.replace(/:hls:manifest\.m3u8$/i, "");
 }
 
-/** Build the same-origin proxy URL. Going through /api/dl achieves two things
- *  that direct CDN links cannot:
+/** Build the same-origin proxy URL. Going through /api/dl achieves three
+ *  things that direct CDN links cannot:
  *   - Same-origin → `<a download>` works on Android (cross-origin is ignored).
- *   - We can attach Content-Disposition with a proper UTF-8 filename so
- *     Cyrillic names don't turn into mojibake. */
+ *   - UTF-8 Content-Disposition so Cyrillic names don't become mojibake.
+ *   - For HLS (HDRezka's real format), the server ffmpeg-remuxes the ~50 .ts
+ *     segments into a full mp4. We pass the ORIGINAL manifest URL (with
+ *     :hls:manifest.m3u8) so the route detects HLS — stripping it gave either
+ *     an 8 MB stub or a raw m3u8 that iOS Safari plays instead of saving. */
 export function toDownloadUrl(streamUrl: string, filename?: string): string {
-  const raw = stripManifestSuffix(streamUrl);
   const name = filename || "video.mp4";
-  return `/api/dl?url=${encodeURIComponent(raw)}&name=${encodeURIComponent(name)}`;
+  return `/api/dl?url=${encodeURIComponent(streamUrl)}&name=${encodeURIComponent(name)}`;
 }
 
 /** Trigger the browser download via our same-origin proxy. The proxy sets
