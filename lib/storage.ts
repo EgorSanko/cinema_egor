@@ -70,8 +70,10 @@ async function syncToServer(email: string) {
   try {
     let lists: any[] = [];
     let statuses: any = {};
+    let downloads: any[] = [];
     try { lists = JSON.parse(localStorage.getItem("kino_lists_v1") || "[]"); } catch {}
     try { statuses = JSON.parse(localStorage.getItem("kino_status_v1") || "{}"); } catch {}
+    try { downloads = JSON.parse(localStorage.getItem("kino_downloads_v1") || "[]"); } catch {}
     const data = {
       favorites: getFavorites(),
       history: getHistory(),
@@ -79,6 +81,7 @@ async function syncToServer(email: string) {
       comments: getAllComments(),
       lists,
       statuses,
+      downloads,
     };
     const res = await fetch("/api/sync", {
       method: "POST",
@@ -107,6 +110,8 @@ export async function syncFromServer(email: string): Promise<boolean> {
     let statuses: any = {};
     try { lists = JSON.parse(localStorage.getItem("kino_lists_v1") || "[]"); } catch {}
     try { statuses = JSON.parse(localStorage.getItem("kino_status_v1") || "{}"); } catch {}
+    let downloads: any[] = [];
+    try { downloads = JSON.parse(localStorage.getItem("kino_downloads_v1") || "[]"); } catch {}
     const localData = {
       favorites: getFavorites(),
       history: getHistory(),
@@ -114,6 +119,7 @@ export async function syncFromServer(email: string): Promise<boolean> {
       comments: getAllComments(),
       lists,
       statuses,
+      downloads,
     };
 
     const res = await fetch("/api/sync", {
@@ -144,6 +150,10 @@ function applyServerData(data: any) {
   if (data.history) localStorage.setItem("kino_history", JSON.stringify(data.history));
   if (data.comments) localStorage.setItem("kino_comments", JSON.stringify(data.comments));
   if (data.lists) localStorage.setItem("kino_lists_v1", JSON.stringify(data.lists));
+  if (data.downloads) {
+    localStorage.setItem("kino_downloads_v1", JSON.stringify(data.downloads));
+    try { window.dispatchEvent(new CustomEvent("downloads-changed")); } catch {}
+  }
   if (data.statuses && typeof data.statuses === "object") {
     // Merge with local — keep newest by updatedAt per entry
     try {

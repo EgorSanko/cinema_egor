@@ -145,6 +145,22 @@ export async function POST(req: NextRequest) {
         if (!cur || (incoming.updatedAt || 0) > (cur.updatedAt || 0)) statusMap[k] = incoming;
       }
 
+      // Merge downloads by (id, type, season, episode, quality) keeping newest
+      // downloadedAt. Trim to 500 most recent so the user-data JSON doesn't
+      // grow unbounded.
+      const dlMap = new Map<string, any>();
+      const dlKey = (d: any) => `${d.type}-${d.id}-s${d.season ?? 0}e${d.episode ?? 0}-${d.quality}`;
+      const existDls = Array.isArray(existing.downloads) ? existing.downloads : [];
+      const incomingDls = Array.isArray(data.downloads) ? data.downloads : [];
+      for (const d of existDls) dlMap.set(dlKey(d), d);
+      for (const d of incomingDls) {
+        const prev = dlMap.get(dlKey(d));
+        if (!prev || (d.downloadedAt || 0) > (prev.downloadedAt || 0)) dlMap.set(dlKey(d), d);
+      }
+      const mergedDownloads = Array.from(dlMap.values())
+        .sort((a: any, b: any) => (b.downloadedAt || 0) - (a.downloadedAt || 0))
+        .slice(0, 500);
+
       const merged = {
         favorites: mergedFavs,
         history: mergedHistory,
@@ -152,6 +168,7 @@ export async function POST(req: NextRequest) {
         comments: mergedComments,
         lists: mergedLists,
         statuses: statusMap,
+        downloads: mergedDownloads,
         friendCode: existing.friendCode || generateFriendCode(),
       };
 

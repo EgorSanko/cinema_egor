@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react";
 
 interface LogEntry { src: string; line: string; ts: number }
 
+const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
+  .split(",")
+  .map(e => e.trim().toLowerCase())
+  .filter(Boolean);
+
 /**
  * Live prod log viewer. Hits /api/admin/logs (SSE) and tails PM2 stdout/stderr
  * of kino-web (+ kino-api / kino-socket when those logs are present). Token-
@@ -14,6 +19,7 @@ interface LogEntry { src: string; line: string; ts: number }
  */
 export default function AdminLogs() {
   const [token, setToken] = useState("");
+  const [adminEmail, setAdminEmail] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -21,23 +27,36 @@ export default function AdminLogs() {
   const [autoScroll, setAutoScroll] = useState(true);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
-  // Persist token across reloads — typing it on a phone is painful.
+  // Resolve auth on mount. Email-first (just reads existing user session);
+  // token fallback for when no user is logged in.
   useEffect(() => {
-    const saved = localStorage.getItem("admin_logs_token");
-    if (saved) setToken(saved);
+    try {
+      const u = JSON.parse(localStorage.getItem("user") || "null");
+      const email = u?.email?.toLowerCase?.();
+      if (email && ADMIN_EMAILS.includes(email)) setAdminEmail(email);
+    } catch {}
+    const savedToken = localStorage.getItem("admin_logs_token");
+    if (savedToken) setToken(savedToken);
   }, []);
   useEffect(() => {
     if (token) localStorage.setItem("admin_logs_token", token);
   }, [token]);
 
+  // Build the SSE URL once we have either auth signal.
+  const sseUrl = adminEmail
+    ? `/api/admin/logs?email=${encodeURIComponent(adminEmail)}`
+    : token
+      ? `/api/admin/logs?token=${encodeURIComponent(token)}`
+      : null;
+
   useEffect(() => {
-    if (!token) return;
+    if (!sseUrl) return;
     setError(null);
-    const es = new EventSource(`/api/admin/logs?token=${encodeURIComponent(token)}`);
+    const es = new EventSource(sseUrl);
     es.onopen = () => setConnected(true);
     es.onerror = () => {
       setConnected(false);
-      setError("Соединение разорвано. Проверьте токен или перезагрузите страницу.");
+      setError("Соединение разорвано. Проверьте токен или email.");
       es.close();
     };
     es.onmessage = (e) => {
@@ -47,7 +66,7 @@ export default function AdminLogs() {
       } catch {}
     };
     return () => { es.close(); setConnected(false); };
-  }, [token]);
+  }, [sseUrl]);
 
   useEffect(() => {
     if (!autoScroll || !scrollerRef.current) return;
@@ -73,24 +92,39 @@ export default function AdminLogs() {
           <span className={`text-[11px] px-2 py-0.5 rounded-full ${connected ? "bg-green-500/20 text-green-300" : "bg-red-500/20 text-red-300"}`}>
             {connected ? "online" : "offline"}
           </span>
+          {adminEmail && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/20 text-primary">
+              {adminEmail}
+            </span>
+          )}
           <span className="text-[11px] text-white/40">{logs.length} строк</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value.trim())}
-            placeholder="ADMIN_TOKEN"
-            className="px-3 py-2 rounded-lg bg-white/[0.06] text-white text-[13px] placeholder-white/30 focus:outline-none focus:bg-white/[0.10]"
-          />
+        {!adminEmail && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value.trim())}
+              placeholder="ADMIN_TOKEN (или войди под админ-аккаунтом)"
+              className="px-3 py-2 rounded-lg bg-white/[0.06] text-white text-[13px] placeholder-white/30 focus:outline-none focus:bg-white/[0.10]"
+            />
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="фильтр (ERROR, OK, /api/...)"
+              className="px-3 py-2 rounded-lg bg-white/[0.06] text-white text-[13px] placeholder-white/30 focus:outline-none focus:bg-white/[0.10]"
+            />
+          </div>
+        )}
+        {adminEmail && (
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="фильтр (ERROR, OK, /api/...)"
-            className="px-3 py-2 rounded-lg bg-white/[0.06] text-white text-[13px] placeholder-white/30 focus:outline-none focus:bg-white/[0.10]"
+            className="w-full px-3 py-2 rounded-lg bg-white/[0.06] text-white text-[13px] placeholder-white/30 focus:outline-none focus:bg-white/[0.10]"
           />
-        </div>
+        )}
 
         <div className="flex items-center gap-3 text-[12px]">
           <label className="inline-flex items-center gap-1.5 cursor-pointer">

@@ -2,6 +2,7 @@
 
 import type { MovieDetails } from "@/lib/tmdb";
 import { SendToTV } from './send-to-tv';
+import { MovieDownloadButton } from './movie-download-button';
 import {
   Play, Film, ChevronDown, Mic, Clock, CalendarDays, Users,
   Tv as TvIcon, Subtitles, Maximize,
@@ -554,6 +555,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                       }}
                     />
                   )}
+                  <MovieDownloadButton type="movie" movie={{
+                    id: movie.id,
+                    title: movie.title,
+                    poster_path: movie.poster_path,
+                    release_date: movie.release_date,
+                    runtime: movie.runtime,
+                  }} />
                   <Link
                     href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
                     className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"

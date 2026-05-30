@@ -18,6 +18,23 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
+  .split(",")
+  .map(e => e.trim().toLowerCase())
+  .filter(Boolean);
+
+/** Two acceptable auth methods:
+ *  1. Email — page passes ?email=user@x.com. Backed by ADMIN_EMAILS allow-list.
+ *  2. Token — ?token=hex. Fallback if you've got no auth (fresh tab).
+ *  At least one must validate. */
+function isAuthorized(req: NextRequest): boolean {
+  const sp = req.nextUrl.searchParams;
+  const email = sp.get("email")?.trim().toLowerCase();
+  if (email && ADMIN_EMAILS.includes(email)) return true;
+  const token = sp.get("token")?.trim();
+  if (token && ADMIN_TOKEN && token === ADMIN_TOKEN) return true;
+  return false;
+}
 
 // PM2 default log paths on the VPS. Falls back to common alternatives if
 // the env hasn't been set up so the endpoint still works during local dev.
@@ -35,11 +52,10 @@ function findLogPaths(): string[] {
 }
 
 export async function GET(req: NextRequest) {
-  if (!ADMIN_TOKEN) {
-    return new Response("Admin token not configured", { status: 503 });
+  if (!ADMIN_TOKEN && ADMIN_EMAILS.length === 0) {
+    return new Response("Admin not configured", { status: 503 });
   }
-  const provided = req.nextUrl.searchParams.get("token");
-  if (provided !== ADMIN_TOKEN) {
+  if (!isAuthorized(req)) {
     return new Response("Unauthorized", { status: 401 });
   }
 
