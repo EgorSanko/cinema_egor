@@ -145,7 +145,7 @@ async function queryAniSkip(malId: number, episode: number, episodeLength?: numb
   } catch { return null; }
 }
 
-async function queryIntroHater(imdbId: string): Promise<SkipResult | null> {
+async function queryIntroHater(imdbId: string, season: number | null, episode: number | null): Promise<SkipResult | null> {
   if (!INTROHATER_API_KEY) return null;
   try {
     const res = await fetch(`https://introhater.com/api/v1/segments/${imdbId}`, {
@@ -154,9 +154,27 @@ async function queryIntroHater(imdbId: string): Promise<SkipResult | null> {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    // IntroHater returns aggregated segments — pick first intro/outro.
-    const intro = data?.intro ? { start: Math.round(data.intro.start_sec ?? data.intro.start), end: Math.round(data.intro.end_sec ?? data.intro.end) } : null;
-    const outro = data?.outro ? { start: Math.round(data.outro.start_sec ?? data.outro.start), end: Math.round(data.outro.end_sec ?? data.outro.end) } : null;
+    if (!Array.isArray(data)) return null;
+    // Response is the full segment list for the show. We filter to the
+    // specific (season, episode) and bucket by label. For movies videoId
+    // is just the imdb id with no :s:e suffix; we accept any match.
+    const wanted = season != null && episode != null
+      ? `${imdbId}:${season}:${episode}`
+      : imdbId;
+    const forEp = data.filter((s: any) => s.videoId === wanted);
+    if (forEp.length === 0) return null;
+    // Prefer verified entries; among ties take the one with most votes.
+    const pick = (label: string) => {
+      const candidates = forEp.filter((s: any) => (s.label || "").toLowerCase() === label);
+      if (candidates.length === 0) return null;
+      candidates.sort((a: any, b: any) =>
+        (Number(!!b.verified) - Number(!!a.verified)) || ((b.votes || 0) - (a.votes || 0))
+      );
+      const top = candidates[0];
+      return { start: Math.round(top.start), end: Math.round(top.end) };
+    };
+    const intro = pick("intro");
+    const outro = pick("outro") || pick("credits");
     if (!intro && !outro) return null;
     return { intro, outro, source: "introhater" };
   } catch { return null; }
@@ -199,7 +217,7 @@ export async function GET(req: NextRequest) {
   // not the sum. Each promise resolves to null on failure so merge() is safe.
   const promises: Promise<SkipResult | null>[] = [];
   if (imdbId) promises.push(queryIntroDB(imdbId, season, episode));
-  if (imdbId && INTROHATER_API_KEY) promises.push(queryIntroHater(imdbId));
+  if (imdbId && INTROHATER_API_KEY) promises.push(queryIntroHater(imdbId, season, episode));
   if (type === "tv" && episode && meta) {
     promises.push(
       resolveMalId(tmdbId, type, meta).then(mal => mal ? queryAniSkip(mal, episode, episodeLength) : null)
