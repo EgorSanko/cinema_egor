@@ -74,6 +74,11 @@ export function MovieDownloadButton(props: Props) {
   // selected = whatever the backend reports as active for the request.
   const [translators, setTranslators] = useState<Translator[]>([]);
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
+  // Set when the backend substituted a different dub because the chosen one
+  // doesn't have this episode. Drives the warning + download block.
+  const [translatorMismatch, setTranslatorMismatch] = useState<
+    { requestedId: number; gotName: string; gotIsPremium: boolean } | null
+  >(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const id = props.type === "movie" ? props.movie.id : props.show.id;
   const targetSeason = props.type === "tv" ? season : undefined;
@@ -121,6 +126,26 @@ export function MovieDownloadButton(props: Props) {
         setError("Не удалось получить файлы. Возможно эпизод ещё не вышел.");
         return;
       }
+      // Detect silent translator substitution. When the chosen dub hasn't
+      // covered this episode yet (e.g. Яроцкий dubbed eps 1-2 but not 3),
+      // HDRezka falls back to a DIFFERENT translator — often a premium one
+      // that serves a 1-minute "buy subscription" stub. The old code kept
+      // showing the requested dub's name while silently downloading the stub.
+      // Now: if backend returned a different translator than we asked for,
+      // flag it so the UI can warn and block the download.
+      const requestedTr = tr;
+      const gotTr = data.active_translator_id ?? null;
+      const activeTrObj = Array.isArray(data.translators)
+        ? data.translators.find((t: Translator) => t.id === gotTr)
+        : undefined;
+      const substituted =
+        requestedTr != null && gotTr != null && requestedTr !== gotTr;
+      setTranslatorMismatch(
+        substituted
+          ? { requestedId: requestedTr, gotName: activeTrObj?.name ?? "другую озвучку", gotIsPremium: !!activeTrObj?.is_premium }
+          : null,
+      );
+
       setStreams(data.streams);
       // Capture translators list on first fetch; respect backend's reported
       // active_translator_id when user hasn't picked anything yet.
@@ -162,6 +187,10 @@ export function MovieDownloadButton(props: Props) {
   }, [selectedTranslator]);
 
   const startDownload = (quality: string, url: string) => {
+    // Block download when the backend substituted a different dub for this
+    // episode — otherwise we'd save the 1-min "buy subscription" stub of a
+    // premium translator instead of the real video.
+    if (translatorMismatch) return;
     const m: any = props.type === "movie" ? props.movie : props.show;
     const title = props.type === "movie" ? m.title : m.name;
     const trName = translators.find(t => t.id === selectedTranslator)?.name;
@@ -268,6 +297,12 @@ export function MovieDownloadButton(props: Props) {
                   </option>
                 ))}
               </select>
+              {translatorMismatch && (
+                <div className="mt-1.5 text-[11px] text-amber-400/90 leading-snug">
+                  ⚠️ Этой озвучки нет на этой серии. Доступна только «{translatorMismatch.gotName}»
+                  {translatorMismatch.gotIsPremium ? " (по подписке)" : ""}. Выбери другую озвучку или серию.
+                </div>
+              )}
             </div>
           )}
 
@@ -292,14 +327,19 @@ export function MovieDownloadButton(props: Props) {
                   return (
                     <button
                       key={quality}
+                      disabled={!!translatorMismatch}
                       onClick={() => startDownload(quality, url as string)}
-                      className="w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg bg-white/[0.05] hover:bg-primary/15 hover:ring-1 hover:ring-primary/30 transition-colors text-[13px] text-left"
+                      className={`w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg transition-colors text-[13px] text-left ${
+                        translatorMismatch
+                          ? "bg-white/[0.03] text-white/30 cursor-not-allowed"
+                          : "bg-white/[0.05] hover:bg-primary/15 hover:ring-1 hover:ring-primary/30"
+                      }`}
                     >
-                      <span className="flex items-center gap-2 text-white font-semibold">
-                        {alreadyThisQuality && <Check size={13} className="text-primary" />}
+                      <span className="flex items-center gap-2 font-semibold">
+                        {alreadyThisQuality && !translatorMismatch && <Check size={13} className="text-primary" />}
                         {quality}
                       </span>
-                      {sizeStr && <span className="text-white/50 text-[11.5px]">{sizeStr}</span>}
+                      {sizeStr && <span className={translatorMismatch ? "text-white/25 text-[11.5px]" : "text-white/50 text-[11.5px]"}>{sizeStr}</span>}
                     </button>
                   );
                 })}
