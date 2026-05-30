@@ -94,49 +94,62 @@ export function ContinueWatching() {
           return (
             <Link key={`${item.type}-${item.id}-${idx}`} href={href}>
               <div className="group cursor-pointer h-full">
-                <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-card">
+                {/* Outer frosted-glass frame */}
+                <div className="rounded-[15px] p-[1.5px] bg-gradient-to-br from-white/20 via-white/[0.06] to-white/[0.02] shadow-lg shadow-black/20 transition-shadow duration-300 group-hover:shadow-2xl group-hover:shadow-black/60">
+                  {/* Inner glass layer */}
+                  <div className="rounded-[14px] p-[1px] bg-gradient-to-br from-white/[0.04] to-transparent backdrop-blur-sm">
+                <div className="relative overflow-hidden rounded-[13px] aspect-[2/3] bg-card transition-all duration-300 group-hover:ring-2 group-hover:ring-primary/30">
                   <Image
-                    src={getImageUrl(item.poster_path, "w342") || "/placeholder.svg"}
+                    src={getImageUrl(item.poster_path, "w500") || "/placeholder.svg"}
                     alt={item.title}
                     fill
-                    className="object-cover group-hover:scale-110 transition-all duration-300"
-                    sizes="(max-width: 768px) 50vw, 185px"
+                    className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                    sizes="(max-width: 768px) 50vw, 240px"
                   />
-                  {/* Progress bar at bottom */}
-                  <div className="absolute bottom-0 left-0 right-0">
-                    <div className="h-1 bg-gray-800">
-                      <div className="h-full bg-primary" style={{ width: `${progress}%` }} />
-                    </div>
-                  </div>
-                  {/* Play overlay */}
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-12 h-12 rounded-full bg-primary/90 flex items-center justify-center">
-                      <Play size={24} className="text-white ml-1" fill="white" />
-                    </div>
-                  </div>
-                  {/* Time remaining (hidden for next-episode card) */}
-                  {!item.isNextEpisode && (
-                    <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">
-                      {formatTime(item.duration - item.progress)}
-                    </div>
-                  )}
-                  {/* "Next" badge */}
-                  {item.isNextEpisode && (
-                    <div className="absolute bottom-2 right-2 bg-primary text-black text-[10px] font-bold px-2 py-1 rounded">
-                      {"\u0421\u041b\u0415\u0414."}
-                    </div>
-                  )}
+
+                  {/* Bottom gradient so time + progress bar read clean */}
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
+
+                  {/* Episode badge \u2014 pill, top-left */}
                   {item.type === "tv" && showSeason && showEpisode && (
-                    <div className="absolute top-2 left-2 bg-primary/90 text-white text-[10px] font-bold px-2 py-1 rounded-md">
+                    <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-md ring-1 ring-white/15 text-white text-[10px] font-bold tracking-wide">
                       S{showSeason}E{showEpisode}
                     </div>
                   )}
+
+                  {/* Next-episode badge replaces the time when applicable */}
+                  {item.isNextEpisode ? (
+                    <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-extrabold tracking-wide shadow-md shadow-black/30">
+                      {"\u0421\u041b\u0415\u0414."}
+                    </div>
+                  ) : (
+                    <div className="absolute bottom-3 right-3 text-white text-[12px] font-semibold tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]">
+                      {formatTime(item.duration - item.progress)}
+                    </div>
+                  )}
+
+                  {/* Play overlay on hover */}
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-2xl shadow-primary/40 ring-2 ring-white/20 transition-transform duration-300 group-hover:scale-105">
+                      <Play size={24} className="text-primary-foreground ml-0.5" fill="currentColor" />
+                    </div>
+                  </div>
+
+                  {/* Progress bar at the bottom \u2014 thicker, soft track, vivid fill */}
+                  <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-white/10">
+                    <div
+                      className="h-full bg-primary rounded-r-full shadow-[0_0_10px_rgba(163,230,53,0.45)]"
+                      style={{ width: `${Math.min(progress, 100)}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="mt-2 px-1">
-                  <h3 className="text-foreground text-sm font-medium line-clamp-1 group-hover:text-primary transition-colors">
+                  </div>
+                </div>
+                <div className="mt-3 px-0.5">
+                  <h3 className="text-foreground text-[14px] font-semibold tracking-tight line-clamp-1 group-hover:text-primary transition-colors">
                     {item.title}
                   </h3>
-                  <p className="text-muted-foreground text-xs">
+                  <p className="text-foreground/55 text-[12px] mt-0.5">
                     {item.isNextEpisode
                       ? `\u041d\u0430\u0447\u0430\u0442\u044c S${showSeason}E${showEpisode}`
                       : item.type === "tv" && showSeason && showEpisode

@@ -1,6 +1,6 @@
-﻿import { Navbar } from "@/components/navbar"
+import { Navbar } from "@/components/navbar"
 import { GenreGrid } from "@/components/genre-grid"
-import { getGenres } from "@/lib/tmdb"
+import { getGenres, getGenreInfo } from "@/lib/tmdb"
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
@@ -10,23 +10,26 @@ export const metadata: Metadata = {
 
 export default async function GenresPage() {
   const genres = await getGenres()
+  const enriched = await Promise.all(
+    genres.map(async (g) => ({ ...g, ...(await getGenreInfo(g.id)) }))
+  )
 
   return (
     <>
       <Navbar />
       <main className="bg-background min-h-screen">
-        <div className="max-w-7xl mx-auto px-4 py-12">
-          <div className="mb-12">
-            <h1 className="text-4xl font-bold text-foreground mb-3">Жанры</h1>
-            <p className="text-muted-foreground text-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="mb-10">
+            <h1 className="text-4xl sm:text-5xl font-bold text-foreground tracking-tight">Жанры</h1>
+            <p className="text-foreground/55 text-base sm:text-lg mt-3">
               Выбирайте фильмы по жанрам. Нажмите на жанр, чтобы увидеть все доступные фильмы.
             </p>
           </div>
-          {genres.length > 0 ? (
-            <GenreGrid genres={genres} />
+          {enriched.length > 0 ? (
+            <GenreGrid genres={enriched} />
           ) : (
             <div className="text-center py-16">
-              <p className="text-muted-foreground">Не удалось загрузить жанры. Попробуйте позже.</p>
+              <p className="text-foreground/55">Не удалось загрузить жанры. Попробуйте позже.</p>
             </div>
           )}
         </div>
