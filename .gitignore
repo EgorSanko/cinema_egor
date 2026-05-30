@@ -25,3 +25,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local dev tools (codegraph cache, scratch bug notes)
+/.codegraph/
+/BUG_REPORT_*.md
+
+# user data + tickets — server-side, never commit
+/user-data/
+/tickets/
+
+# build temp tarball used by deploy script
+/movie-build.tar.gz
