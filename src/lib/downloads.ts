@@ -1,28 +1,24 @@
 /**
- * Download tracking + native file download.
+ * Download tracking + Gallery save.
  *
- * Mirrors the web app's lib/downloads.ts in spirit: history is the source of
- * truth so the user can see what they grabbed and re-download. The download
- * itself goes through the web's /api/dl proxy so we inherit:
- *   - Proper Cyrillic filename via Content-Disposition (RFC 5987 UTF-8)
- *   - Same-origin auth/headers
- *   - Single code path to maintain
+ * Flow (Android):
+ *   1. expo-file-system downloads mp4 to cacheDirectory (private, invisible)
+ *   2. expo-media-library moves it into the "sapkeflykino" album in
+ *      /Movies/sapkeflykino — visible in Gallery and Files app
+ *   3. DownloadEntry stores localUri (MediaLibrary asset URI) so the
+ *      Downloads screen can play it offline and delete it later
  *
- * After download completes, expo-sharing opens the system "Save to..." sheet
- * so the user can drop the file in Downloads, send it to Telegram, etc.
- * That sheet is friendlier than asking for MediaLibrary permissions and works
- * uniformly across Android 11/12/13/14.
+ * Two paths for cancellation/error: cache file is best-effort cleaned up;
+ * if we crash mid-download the OS will evict the cache eventually.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
-// expo-file-system v19 moved the legacy `cacheDirectory` + `createDownloadResumable`
-// API to a subpath. The new API (Paths/File/Directory) doesn't have a clean
-// resumable-with-progress path yet, so legacy is the right tool here.
 import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import * as MediaLibrary from "expo-media-library";
 import { Platform } from "react-native";
 
 const KEY = "kino_downloads_v1";
 const PROXY_BASE = "https://sapkeflykino.ru/api/dl";
+const ALBUM_NAME = "sapkeflykino";
 
 export interface DownloadEntry {
   id: number;
@@ -33,11 +29,18 @@ export interface DownloadEntry {
   episode?: number;
   episodeName?: string;
   quality: string;
-  url: string;
+  url: string;                  // original HDRezka stream URL
   downloadedAt: number;
   release_date?: string;
   first_air_date?: string;
   translatorName?: string;
+  /** MediaLibrary URI (file:// or content://) once saved to gallery.
+   *  Used for offline playback. Empty if the file was deleted from gallery. */
+  localUri?: string;
+  /** MediaLibrary asset id — needed to delete the file from the album later. */
+  mediaAssetId?: string;
+  /** File size in bytes (filled after successful save). */
+  sizeBytes?: number;
 }
 
 export async function getDownloads(): Promise<DownloadEntry[]> {
@@ -49,7 +52,11 @@ export async function getDownloads(): Promise<DownloadEntry[]> {
   }
 }
 
-export async function addDownload(entry: Omit<DownloadEntry, "downloadedAt">): Promise<void> {
+async function writeDownloads(items: DownloadEntry[]): Promise<void> {
+  try { await AsyncStorage.setItem(KEY, JSON.stringify(items.slice(0, 500))); } catch {}
+}
+
+export async function addDownload(entry: Omit<DownloadEntry, "downloadedAt">): Promise<DownloadEntry> {
   const all = await getDownloads();
   const sameKey = (a: DownloadEntry) =>
     a.id === entry.id && a.type === entry.type
@@ -57,26 +64,56 @@ export async function addDownload(entry: Omit<DownloadEntry, "downloadedAt">): P
     && (a.episode ?? null) === (entry.episode ?? null)
     && a.quality === entry.quality;
   const filtered = all.filter(d => !sameKey(d));
-  filtered.unshift({ ...entry, downloadedAt: Date.now() });
-  try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(filtered.slice(0, 500)));
-  } catch {}
+  const fresh: DownloadEntry = { ...entry, downloadedAt: Date.now() };
+  filtered.unshift(fresh);
+  await writeDownloads(filtered);
+  return fresh;
+}
+
+export async function updateDownload(
+  id: number, type: "movie" | "tv",
+  patch: Partial<DownloadEntry>,
+  season?: number, episode?: number, quality?: string,
+): Promise<void> {
+  const all = await getDownloads();
+  const idx = all.findIndex(d => d.id === id && d.type === type
+    && (season === undefined || d.season === season)
+    && (episode === undefined || d.episode === episode)
+    && (quality === undefined || d.quality === quality));
+  if (idx === -1) return;
+  all[idx] = { ...all[idx], ...patch };
+  await writeDownloads(all);
 }
 
 export async function deleteDownload(
-  id: number, type: "movie" | "tv", season?: number, episode?: number, quality?: string,
+  entry: DownloadEntry,
+  alsoDeleteFile = true,
 ): Promise<void> {
+  if (alsoDeleteFile && entry.mediaAssetId) {
+    try {
+      await MediaLibrary.deleteAssetsAsync([entry.mediaAssetId]);
+    } catch {
+      // User denied / asset already gone — fall through to remove the entry
+    }
+  }
   const all = await getDownloads();
   const filtered = all.filter(d => !(
-    d.id === id && d.type === type
-    && (season === undefined || d.season === season)
-    && (episode === undefined || d.episode === episode)
-    && (quality === undefined || d.quality === quality)
+    d.id === entry.id && d.type === entry.type
+    && (d.season ?? null) === (entry.season ?? null)
+    && (d.episode ?? null) === (entry.episode ?? null)
+    && d.quality === entry.quality
   ));
-  try { await AsyncStorage.setItem(KEY, JSON.stringify(filtered)); } catch {}
+  await writeDownloads(filtered);
 }
 
-export async function clearAllDownloads(): Promise<void> {
+export async function clearAllDownloads(alsoDeleteFiles = false): Promise<void> {
+  if (alsoDeleteFiles) {
+    const all = await getDownloads();
+    const ids = all.map(d => d.mediaAssetId).filter(Boolean) as string[];
+    if (ids.length > 0) {
+      try { await MediaLibrary.deleteAssetsAsync(ids); } catch {}
+    }
+  }
   try { await AsyncStorage.removeItem(KEY); } catch {}
 }
 
@@ -93,44 +130,53 @@ export function buildFilename(entry: Omit<DownloadEntry, "downloadedAt" | "url">
   return safe(`${entry.title}${year ? ` (${year})` : ""} [${entry.quality}].mp4`);
 }
 
-/** Build the same-origin web proxy URL. Server adds UTF-8 Content-Disposition. */
 export function toProxyUrl(streamUrl: string, filename: string): string {
-  // Strip the :hls:manifest.m3u8 suffix to get the raw mp4
   const raw = streamUrl.replace(/:hls:manifest\.m3u8$/i, "");
   return `${PROXY_BASE}?url=${encodeURIComponent(raw)}&name=${encodeURIComponent(filename)}`;
 }
 
 export type ProgressCb = (fraction: number, bytesWritten: number, totalBytes: number) => void;
 
+export interface SaveResult {
+  localUri: string;        // file:// or content:// URI usable by expo-av
+  mediaAssetId: string;
+  sizeBytes: number;
+}
+
 /**
- * Download to a temp file in the app cache, then hand off to the system share
- * sheet so the user can drop it in Downloads, Telegram, etc.
+ * Download to cache, then move into the sapkeflykino album in the system
+ * Gallery. Returns the asset URI + id so DownloadEntry can be updated.
  *
- * Returns the local file URI on success. The temp file lives in cacheDirectory
- * and the OS can evict it under storage pressure — by then the user has
- * already moved it via Sharing.
+ * On permission denial: returns null and caller should surface that.
  */
-export async function downloadToDevice(
+export async function downloadToGallery(
   proxyUrl: string,
   filename: string,
   onProgress?: ProgressCb,
-): Promise<string> {
+): Promise<SaveResult> {
   if (Platform.OS === "web") {
     throw new Error("Web platform: use the browser <a download> path");
   }
-  const cacheDir = FileSystem.cacheDirectory;
-  if (!cacheDir) throw new Error("No cache directory available");
-  const dir = `${cacheDir}downloads/`;
-  try { await FileSystem.makeDirectoryAsync(dir, { intermediates: true }); } catch {}
-  const target = `${dir}${filename}`;
 
-  // Delete any leftover from a previous attempt — createDownloadResumable
-  // will resume only if size matches and we trust the file is good.
-  try { await FileSystem.deleteAsync(target, { idempotent: true }); } catch {}
+  // Permission first — saveToLibraryAsync needs WRITE on Android 9 and below,
+  // and READ_MEDIA_VIDEO on Android 13+. The granular permission flow is
+  // handled by expo-media-library.
+  const perm = await MediaLibrary.requestPermissionsAsync(true);
+  if (!perm.granted) {
+    throw new Error("Нет разрешения на Галерею. Разреши в настройках Android → Приложения → sapkeflykino → Разрешения.");
+  }
+
+  const cacheDir = FileSystem.cacheDirectory;
+  if (!cacheDir) throw new Error("No cache directory");
+  const tmpDir = `${cacheDir}downloads/`;
+  try { await FileSystem.makeDirectoryAsync(tmpDir, { intermediates: true }); } catch {}
+  const tmpPath = `${tmpDir}${filename}`;
+
+  try { await FileSystem.deleteAsync(tmpPath, { idempotent: true }); } catch {}
 
   const resumable = FileSystem.createDownloadResumable(
     proxyUrl,
-    target,
+    tmpPath,
     {},
     (progress) => {
       if (onProgress && progress.totalBytesExpectedToWrite > 0) {
@@ -143,19 +189,45 @@ export async function downloadToDevice(
     },
   );
   const result = await resumable.downloadAsync();
-  if (!result?.uri) throw new Error("Download failed");
+  if (!result?.uri) throw new Error("Download failed (no uri)");
 
-  // Offer the system share sheet — user picks "Save to Downloads" / Telegram / etc.
-  if (await Sharing.isAvailableAsync()) {
+  // Move from cache to MediaLibrary, then to our album. Cache copy is
+  // deleted afterwards because MediaLibrary makes its own copy.
+  const asset = await MediaLibrary.createAssetAsync(result.uri);
+  let album = await MediaLibrary.getAlbumAsync(ALBUM_NAME);
+  if (!album) {
+    album = await MediaLibrary.createAlbumAsync(ALBUM_NAME, asset, false);
+  } else {
     try {
-      await Sharing.shareAsync(result.uri, {
-        mimeType: "video/mp4",
-        dialogTitle: filename,
-        UTI: "public.movie",
-      });
+      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
     } catch {
-      // User cancelled — fine, file still in cache
+      // Some Android versions report success-as-error on first add; ignore.
     }
   }
-  return result.uri;
+  try { await FileSystem.deleteAsync(result.uri, { idempotent: true }); } catch {}
+
+  // Size for display in Downloads list
+  let sizeBytes = 0;
+  try {
+    const info = await MediaLibrary.getAssetInfoAsync(asset);
+    sizeBytes = (info as any)?.fileSize ?? 0;
+  } catch {}
+
+  return {
+    localUri: asset.uri,
+    mediaAssetId: asset.id,
+    sizeBytes,
+  };
+}
+
+/** Check whether a saved asset still exists on device. Users delete from
+ *  the Gallery app and we need to react. */
+export async function isLocalFileStillThere(entry: DownloadEntry): Promise<boolean> {
+  if (!entry.mediaAssetId) return false;
+  try {
+    const info = await MediaLibrary.getAssetInfoAsync(entry.mediaAssetId);
+    return !!info?.localUri || !!info?.uri;
+  } catch {
+    return false;
+  }
 }

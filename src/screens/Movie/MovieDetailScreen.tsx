@@ -432,7 +432,6 @@ export function MovieDetailScreen() {
               title={detailTitle || ''}
               poster_path={(detail as MovieDetails).poster_path}
               release_date={(detail as MovieDetails).release_date}
-              runtime={(detail as MovieDetails).runtime}
             />
           )}
 

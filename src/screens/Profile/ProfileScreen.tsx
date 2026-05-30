@@ -340,6 +340,12 @@ export function ProfileScreen() {
               items={history.filter(h => h.vote_average >= 8).slice(0, 4)}
               onPress={() => {}}
             />
+            <ListCard
+              title="Поддержка"
+              count={0}
+              items={[]}
+              onPress={() => nav.navigate('Support')}
+            />
           </View>
         </View>
 

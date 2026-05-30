@@ -31,6 +31,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { VersionGate } from './src/components/VersionGate';
 import { COLORS } from './src/constants/theme';
+import { DownloadsProvider } from './src/lib/DownloadsContext';
 
 const DarkTheme = {
   ...DefaultTheme,
@@ -68,7 +69,9 @@ function AppInner() {
       <NavigationContainer theme={DarkTheme}>
         <StatusBar style="light" />
         <VersionGate>
-          <AppNavigator />
+          <DownloadsProvider>
+            <AppNavigator />
+          </DownloadsProvider>
         </VersionGate>
       </NavigationContainer>
     </GestureHandlerRootView>

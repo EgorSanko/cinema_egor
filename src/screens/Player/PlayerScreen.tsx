@@ -35,30 +35,39 @@ const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 export function PlayerScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
-  const {
-    streamData: initialStreamData, title: initialTitle, movieId, poster,
-    season: initialSeason, episode: initialEpisode, type: mediaType, roomCode,
-    searchTitle, year, totalSeasons, baseTitle, initialTranslatorId,
-  } = route.params as {
-    streamData: StreamData;
-    title: string;
-    movieId: number;
-    poster: string | null;
-    season?: number;
-    episode?: number;
-    type?: 'movie' | 'tv';
-    roomCode?: string;
-    searchTitle?: string;
-    year?: string;
-    totalSeasons?: number;
-    baseTitle?: string;
-    // Parent screen passes which translator it ACTUALLY requested when
-    // calling getStream. Without this we defaulted to translators[0],
-    // which mismatched the audio when the backend used a different
-    // index (e.g. "Кураж Бомбей" was requested but translators[0] in
-    // the response was "ТВ-шоу" — UI lied about active voiceover).
-    initialTranslatorId?: number;
-  };
+  const params = route.params as any;
+  const offlineUri: string | undefined = params?.offlineUri;
+  const isOffline = !!offlineUri;
+
+  // Offline path: build a minimal StreamData from the local URI so the rest of
+  // the player code doesn't need to special-case the offline case in 50 places.
+  // We skip skip-segments fetch, translator switching, episode switching
+  // (those need the HDRezka API which is, by definition, unavailable here).
+  const initialStreamData: StreamData = isOffline
+    ? {
+        stream: offlineUri,
+        url: offlineUri,
+        quality: params.quality || 'local',
+        qualities: [params.quality || 'local'],
+        streams: { [params.quality || 'local']: offlineUri },
+        translators: [],
+        is_series: params.type === 'tv',
+        title: params.title,
+      }
+    : params.streamData;
+
+  const initialTitle: string = isOffline ? params.title : params.title;
+  const movieId: number = isOffline ? params.tmdbId : params.movieId;
+  const poster: string | null = isOffline ? null : params.poster;
+  const initialSeason: number | undefined = params.season;
+  const initialEpisode: number | undefined = params.episode;
+  const mediaType: 'movie' | 'tv' | undefined = params.type;
+  const roomCode: string | undefined = isOffline ? undefined : params.roomCode;
+  const searchTitle: string | undefined = isOffline ? undefined : params.searchTitle;
+  const year: string | undefined = isOffline ? undefined : params.year;
+  const totalSeasons: number | undefined = isOffline ? undefined : params.totalSeasons;
+  const baseTitle: string | undefined = isOffline ? undefined : params.baseTitle;
+  const initialTranslatorId: number | undefined = isOffline ? undefined : params.initialTranslatorId;
 
   // Episode/season as STATE (not route param) so switching doesn't reset speed/translator
   const [currentSeason, setCurrentSeason] = useState<number | undefined>(initialSeason);

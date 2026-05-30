@@ -1,12 +1,14 @@
 /**
- * Downloads history screen.
+ * Downloads screen.
  *
- * Lists what the user has downloaded (from AsyncStorage). The actual files
- * live in cache and may have been evicted by the OS — this screen is about
- * "what did I grab?" not "where is the file?". Re-tap to re-download via
- * the same proxy URL flow.
+ * Top section: any currently-running downloads (from DownloadsContext).
+ * Bottom section: completed history (from AsyncStorage via getDownloads).
+ *
+ * Tapping a completed item that still has a localUri opens our PlayerScreen
+ * in offline mode (no stream fetch, plays the file from disk). If the file
+ * was deleted from gallery, we offer re-download.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View, Text, FlatList, Pressable, StyleSheet, Alert, ActivityIndicator,
 } from "react-native";
@@ -17,23 +19,46 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../constants/theme";
 import {
   DownloadEntry, getDownloads, deleteDownload, clearAllDownloads,
-  buildFilename, toProxyUrl, downloadToDevice, addDownload,
+  isLocalFileStillThere,
 } from "../../lib/downloads";
+import { useDownloads, ActiveDownload } from "../../lib/DownloadsContext";
 import { posterUrl } from "../../api/tmdb";
+
+function fmtBytes(n: number): string {
+  if (!n) return "";
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function ago(ts: number): string {
+  const sec = Math.round((Date.now() - ts) / 1000);
+  if (sec < 60) return "только что";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} мин назад`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} ч назад`;
+  const days = Math.round(hr / 24);
+  return `${days} дн назад`;
+}
 
 export function DownloadsScreen() {
   const nav = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const { active, start, dismiss } = useDownloads();
   const [items, setItems] = useState<DownloadEntry[]>([]);
   const [filter, setFilter] = useState<"all" | "movie" | "tv">("all");
-  const [redownloading, setRedownloading] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setItems(await getDownloads());
   }, []);
 
   useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
-  useEffect(() => { refresh(); }, [refresh]);
+  // Re-pull when an active download finishes so the persisted row picks up
+  // the localUri (lets us show "Смотреть" instead of "Скачать ещё раз").
+  React.useEffect(() => {
+    if (active.some(a => a.status === "done")) refresh();
+  }, [active, refresh]);
 
   const filtered = filter === "all" ? items : items.filter(i => i.type === filter);
 
@@ -41,56 +66,161 @@ export function DownloadsScreen() {
     return `${d.type}-${d.id}-s${d.season ?? 0}e${d.episode ?? 0}-${d.quality}-${d.downloadedAt}`;
   }
 
-  function ago(ts: number): string {
-    const sec = Math.round((Date.now() - ts) / 1000);
-    if (sec < 60) return "только что";
-    const min = Math.round(sec / 60);
-    if (min < 60) return `${min} мин назад`;
-    const hr = Math.round(min / 60);
-    if (hr < 24) return `${hr} ч назад`;
-    const days = Math.round(hr / 24);
-    return `${days} дн назад`;
-  }
-
-  async function handleRedownload(d: DownloadEntry) {
-    if (redownloading) return;
-    const filename = buildFilename(d);
-    setRedownloading(entryKey(d));
-    try {
-      await downloadToDevice(toProxyUrl(d.url, filename), filename);
-      await addDownload(d);
-      await refresh();
-    } catch (e: any) {
-      Alert.alert("Ошибка", String(e?.message || e));
-    } finally {
-      setRedownloading(null);
+  async function handleOpen(d: DownloadEntry) {
+    if (!d.localUri) {
+      Alert.alert("Файл не на устройстве", "Файл был удалён из Галереи. Скачать снова?", [
+        { text: "Нет", style: "cancel" },
+        { text: "Да", onPress: () => start(d) },
+      ]);
+      return;
     }
+    const stillThere = await isLocalFileStillThere(d);
+    if (!stillThere) {
+      Alert.alert("Файл удалён из Галереи", "Скачать снова?", [
+        { text: "Нет", style: "cancel" },
+        {
+          text: "Да",
+          onPress: async () => {
+            await deleteDownload(d, false);
+            await refresh();
+            start(d);
+          },
+        },
+      ]);
+      return;
+    }
+    // Offline mode: navigate to Player with the local URI; PlayerScreen
+    // checks this prop and skips the HDRezka fetch.
+    nav.navigate("Player", {
+      offlineUri: d.localUri,
+      tmdbId: d.id,
+      type: d.type,
+      title: d.title,
+      season: d.season,
+      episode: d.episode,
+      quality: d.quality,
+    });
   }
 
   async function handleDelete(d: DownloadEntry) {
-    Alert.alert("Удалить из истории?", "Запись удалится, файл — нет.", [
-      { text: "Отмена", style: "cancel" },
-      {
-        text: "Удалить",
-        style: "destructive",
-        onPress: async () => {
-          await deleteDownload(d.id, d.type, d.season, d.episode, d.quality);
-          await refresh();
+    Alert.alert(
+      "Удалить?",
+      "Удалит из истории и из Галереи телефона.",
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Только из истории",
+          onPress: async () => { await deleteDownload(d, false); await refresh(); },
         },
-      },
-    ]);
+        {
+          text: "И с телефона",
+          style: "destructive",
+          onPress: async () => { await deleteDownload(d, true); await refresh(); },
+        },
+      ],
+    );
   }
 
   async function handleClearAll() {
     if (items.length === 0) return;
-    Alert.alert("Очистить всю историю?", `${items.length} записей будет удалено.`, [
-      { text: "Отмена", style: "cancel" },
-      {
-        text: "Очистить",
-        style: "destructive",
-        onPress: async () => { await clearAllDownloads(); await refresh(); },
-      },
-    ]);
+    Alert.alert(
+      "Очистить всю историю?",
+      `${items.length} записей.`,
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Только историю",
+          onPress: async () => { await clearAllDownloads(false); await refresh(); },
+        },
+        {
+          text: "И с телефона",
+          style: "destructive",
+          onPress: async () => { await clearAllDownloads(true); await refresh(); },
+        },
+      ],
+    );
+  }
+
+  function renderActiveJob(a: ActiveDownload) {
+    return (
+      <View key={a.key} style={[styles.row, styles.activeRow]}>
+        {a.entry.poster_path ? (
+          <Image source={{ uri: posterUrl(a.entry.poster_path, "w154") || "" }} style={styles.poster} contentFit="cover" />
+        ) : (
+          <View style={[styles.poster, styles.posterPlaceholder]}>
+            <Ionicons name="film-outline" size={24} color={COLORS.textSecondary} />
+          </View>
+        )}
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.itemTitle} numberOfLines={1}>{a.entry.title}</Text>
+          <Text style={styles.itemMeta}>
+            {a.entry.type === "tv" ? `S${String(a.entry.season || 1).padStart(2, "0")}E${String(a.entry.episode || 1).padStart(2, "0")} · ` : ""}
+            {a.entry.quality}
+          </Text>
+          {a.status === "running" && (
+            <>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressBar, { width: `${Math.round(a.progress * 100)}%` }]} />
+              </View>
+              <Text style={styles.progressLabel}>
+                {Math.round(a.progress * 100)}% · {fmtBytes(a.bytesWritten)}{a.totalBytes ? ` из ${fmtBytes(a.totalBytes)}` : ""}
+              </Text>
+            </>
+          )}
+          {a.status === "done" && (
+            <Text style={[styles.progressLabel, { color: COLORS.primary }]}>✓ В Галерее (альбом sapkeflykino)</Text>
+          )}
+          {a.status === "error" && (
+            <Text style={[styles.progressLabel, { color: "#ef4444" }]} numberOfLines={3}>{a.error}</Text>
+          )}
+        </View>
+        {a.status !== "running" && (
+          <Pressable onPress={() => dismiss(a.key)} style={styles.actionBtn} hitSlop={8}>
+            <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+          </Pressable>
+        )}
+      </View>
+    );
+  }
+
+  function renderItem({ item: d }: { item: DownloadEntry }) {
+    const hasFile = !!d.localUri;
+    return (
+      <Pressable onPress={() => handleOpen(d)} style={styles.row}>
+        {d.poster_path ? (
+          <Image source={{ uri: posterUrl(d.poster_path, "w154") || "" }} style={styles.poster} contentFit="cover" />
+        ) : (
+          <View style={[styles.poster, styles.posterPlaceholder]}>
+            <Ionicons name="film-outline" size={24} color={COLORS.textSecondary} />
+          </View>
+        )}
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.itemTitle} numberOfLines={2}>{d.title}</Text>
+          <Text style={styles.itemMeta}>
+            {d.type === "tv" ? `S${String(d.season || 1).padStart(2, "0")}E${String(d.episode || 1).padStart(2, "0")} · ` : ""}
+            {d.quality}
+            {d.sizeBytes ? ` · ${fmtBytes(d.sizeBytes)}` : ""}
+          </Text>
+          <Text style={styles.itemAge}>
+            {ago(d.downloadedAt)}{hasFile ? " · Готов к офлайн-просмотру" : " · Файл удалён"}
+          </Text>
+        </View>
+        <View style={{ flexDirection: "row", gap: 4 }}>
+          {hasFile ? (
+            <View style={[styles.actionBtn, { backgroundColor: COLORS.primary + "40" }]}>
+              <Ionicons name="play" size={20} color={COLORS.primary} />
+            </View>
+          ) : (
+            <View style={[styles.actionBtn]}>
+              <Ionicons name="download-outline" size={20} color={COLORS.text} />
+            </View>
+          )}
+          <Pressable onPress={(e) => { e.stopPropagation?.(); handleDelete(d); }} style={styles.actionBtn} hitSlop={8}>
+            <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+          </Pressable>
+        </View>
+      </Pressable>
+    );
   }
 
   return (
@@ -115,7 +245,14 @@ export function DownloadsScreen() {
         ))}
       </View>
 
-      {filtered.length === 0 ? (
+      {/* Active downloads — pinned to the top so the user always sees progress */}
+      {active.length > 0 && (
+        <View style={{ padding: 12, paddingBottom: 0 }}>
+          {active.map(renderActiveJob)}
+        </View>
+      )}
+
+      {filtered.length === 0 && active.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="download-outline" size={48} color={COLORS.textSecondary} />
           <Text style={styles.emptyText}>
@@ -127,41 +264,7 @@ export function DownloadsScreen() {
           data={filtered}
           keyExtractor={entryKey}
           contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 32 }}
-          renderItem={({ item: d }) => {
-            const isRedown = redownloading === entryKey(d);
-            return (
-              <View style={styles.row}>
-                {d.poster_path ? (
-                  <Image source={{ uri: posterUrl(d.poster_path, "w154") || "" }} style={styles.poster} contentFit="cover" />
-                ) : (
-                  <View style={[styles.poster, { backgroundColor: "#222", alignItems: "center", justifyContent: "center" }]}>
-                    <Ionicons name="film-outline" size={24} color={COLORS.textSecondary} />
-                  </View>
-                )}
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.itemTitle} numberOfLines={2}>{d.title}</Text>
-                  <Text style={styles.itemMeta}>
-                    {d.type === "tv" ? `S${String(d.season || 1).padStart(2, "0")}E${String(d.episode || 1).padStart(2, "0")} · ` : ""}
-                    {d.quality}
-                    {d.translatorName ? ` · ${d.translatorName}` : ""}
-                  </Text>
-                  <Text style={styles.itemAge}>{ago(d.downloadedAt)}</Text>
-                </View>
-                <View style={{ flexDirection: "row", gap: 4 }}>
-                  <Pressable onPress={() => handleRedownload(d)} style={styles.actionBtn} disabled={!!redownloading}>
-                    {isRedown ? (
-                      <ActivityIndicator size="small" color={COLORS.primary} />
-                    ) : (
-                      <Ionicons name="download-outline" size={20} color={COLORS.text} />
-                    )}
-                  </Pressable>
-                  <Pressable onPress={() => handleDelete(d)} style={styles.actionBtn}>
-                    <Ionicons name="close" size={20} color={COLORS.textSecondary} />
-                  </Pressable>
-                </View>
-              </View>
-            );
-          }}
+          renderItem={renderItem}
         />
       )}
     </View>
@@ -189,10 +292,18 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", padding: 10,
     backgroundColor: "rgba(255,255,255,0.04)", borderRadius: 12, marginBottom: 8,
   },
+  activeRow: { backgroundColor: "rgba(163,230,53,0.08)", borderWidth: 1, borderColor: "rgba(163,230,53,0.2)" },
   poster: { width: 50, height: 75, borderRadius: 6 },
+  posterPlaceholder: { backgroundColor: "#222", alignItems: "center", justifyContent: "center" },
   itemTitle: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
   itemMeta: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   itemAge: { color: COLORS.textSecondary, fontSize: 11, marginTop: 4 },
+  progressTrack: {
+    height: 4, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 2,
+    marginTop: 6, overflow: "hidden",
+  },
+  progressBar: { height: 4, backgroundColor: COLORS.primary, borderRadius: 2 },
+  progressLabel: { color: COLORS.textSecondary, fontSize: 11, marginTop: 4 },
   actionBtn: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: "rgba(255,255,255,0.06)",

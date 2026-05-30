@@ -1,26 +1,20 @@
 /**
- * Download action button + modal picker.
- *
- * Mirrors the web app's movie-download-button.tsx in role: shows a "Скачать"
- * button on movie/TV detail, opens a sheet where the user picks
- * season/episode/translator/quality, then runs downloadToDevice() and
- * hands off to the system share sheet.
- *
- * The sheet UI is intentionally simple (Pressable grid) instead of a real
- * BottomSheet library — matches the existing in-app pickers (season,
- * episode) so there's no new dep and no inconsistency.
+ * Download picker — opens a sheet with season/episode/translator/quality
+ * choices, then kicks off the download in DownloadsContext and navigates
+ * to the Downloads screen so the user can watch progress there (instead of
+ * holding this modal open the whole time).
  */
 import React, { useEffect, useState } from "react";
 import {
   View, Text, Pressable, Modal, StyleSheet, ScrollView,
   ActivityIndicator, Alert,
 } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS } from "../constants/theme";
 import { getStream, StreamData } from "../api/tmdb";
-import {
-  addDownload, buildFilename, downloadToDevice, toProxyUrl, DownloadEntry,
-} from "../lib/downloads";
+import { DownloadEntry } from "../lib/downloads";
+import { useDownloads } from "../lib/DownloadsContext";
 
 interface BaseProps {
   id: number;
@@ -31,7 +25,6 @@ interface BaseProps {
 interface MovieProps extends BaseProps {
   type: "movie";
   release_date?: string;
-  runtime?: number;
 }
 
 interface TVProps extends BaseProps {
@@ -47,6 +40,8 @@ interface TVProps extends BaseProps {
 type Props = MovieProps | TVProps;
 
 export function DownloadButton(props: Props) {
+  const nav = useNavigation<any>();
+  const { start } = useDownloads();
   const [open, setOpen] = useState(false);
   const [season, setSeason] = useState((props as TVProps).initialSeason || 1);
   const [episode, setEpisode] = useState((props as TVProps).initialEpisode || 1);
@@ -54,8 +49,6 @@ export function DownloadButton(props: Props) {
   const [selectedTranslator, setSelectedTranslator] = useState<number | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
-  const [downloadingQuality, setDownloadingQuality] = useState<string | null>(null);
 
   const isTV = props.type === "tv";
   const year = (() => {
@@ -63,7 +56,6 @@ export function DownloadButton(props: Props) {
     return d ? String(new Date(d).getFullYear()) : "";
   })();
 
-  // Fetch streams when the sheet opens or when season/episode/translator changes
   useEffect(() => {
     if (!open) return;
     setLoading(true);
@@ -87,12 +79,8 @@ export function DownloadButton(props: Props) {
     ? ((props as TVProps).seasons.find(s => s.season_number === season)?.episode_count || 1)
     : 0;
 
-  async function handleQualityTap(quality: string, url: string) {
-    if (downloadingQuality) return;
-    setDownloadingQuality(quality);
-    setProgress(0);
-
-    const entryBase: Omit<DownloadEntry, "downloadedAt"> = {
+  function handleQualityTap(quality: string, url: string) {
+    const entry: Omit<DownloadEntry, "downloadedAt"> = {
       id: props.id,
       type: props.type,
       title: props.title,
@@ -108,24 +96,13 @@ export function DownloadButton(props: Props) {
       }),
       translatorName: stream?.translators.find(t => t.id === selectedTranslator)?.name,
     };
-    const filename = buildFilename(entryBase);
-    const proxyUrl = toProxyUrl(url, filename);
 
-    try {
-      await downloadToDevice(proxyUrl, filename, (frac) => setProgress(frac));
-      await addDownload(entryBase);
-      setProgress(1);
-      // Close after a brief success flash
-      setTimeout(() => { setOpen(false); resetDownloadState(); }, 400);
-    } catch (e: any) {
-      Alert.alert("Ошибка загрузки", String(e?.message || e));
-      resetDownloadState();
-    }
-  }
-
-  function resetDownloadState() {
-    setDownloadingQuality(null);
-    setProgress(null);
+    // Kick off in the background context — modal closes, user goes to
+    // Downloads to watch progress. Errors there (permission denied etc)
+    // surface as a red-state job in the list.
+    start(entry).catch((e: any) => Alert.alert("Ошибка", String(e?.message || e)));
+    setOpen(false);
+    nav.navigate("Downloads");
   }
 
   return (
@@ -139,9 +116,9 @@ export function DownloadButton(props: Props) {
         visible={open}
         animationType="slide"
         transparent
-        onRequestClose={() => { if (!downloadingQuality) setOpen(false); }}
+        onRequestClose={() => setOpen(false)}
       >
-        <Pressable style={styles.backdrop} onPress={() => { if (!downloadingQuality) setOpen(false); }} />
+        <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
 
@@ -149,17 +126,16 @@ export function DownloadButton(props: Props) {
             <Text style={styles.sheetTitle} numberOfLines={1}>
               Скачать: {props.title}
             </Text>
-            <Pressable onPress={() => { if (!downloadingQuality) setOpen(false); }} hitSlop={12}>
+            <Pressable onPress={() => setOpen(false)} hitSlop={12}>
               <Ionicons name="close" size={24} color={COLORS.textSecondary} />
             </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ paddingBottom: 24 }}>
-            {/* Season/Episode pickers — only for TV */}
+          <ScrollView style={{ maxHeight: 500 }} contentContainerStyle={{ paddingBottom: 24 }}>
             {isTV && (
               <>
                 <Text style={styles.label}>Сезон</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
                   {Array.from({ length: (props as TVProps).number_of_seasons || 1 }, (_, i) => i + 1).map(s => (
                     <Pressable
                       key={s}
@@ -172,7 +148,7 @@ export function DownloadButton(props: Props) {
                 </ScrollView>
 
                 <Text style={styles.label}>Серия</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
                   {Array.from({ length: epCount }, (_, i) => i + 1).map(e => (
                     <Pressable
                       key={e}
@@ -186,11 +162,10 @@ export function DownloadButton(props: Props) {
               </>
             )}
 
-            {/* Translator picker — only when there are multiple dubs */}
             {stream && stream.translators.length > 1 && (
               <>
                 <Text style={styles.label}>Озвучка</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
                   {Array.from(new Map(stream.translators.map(t => [t.id, t])).values()).map(t => (
                     <Pressable
                       key={t.id}
@@ -215,38 +190,29 @@ export function DownloadButton(props: Props) {
               <Text style={styles.error}>{error}</Text>
             )}
 
-            {/* Quality grid */}
+            {/* Quality buttons — 2x2 grid, fixed widths so they don't escape the modal. */}
             {stream && !loading && (
               <>
                 <Text style={styles.label}>Качество</Text>
                 <View style={styles.qualityGrid}>
                   {stream.qualities.map(q => {
                     const url = stream.streams[q];
-                    const isThis = downloadingQuality === q;
                     return (
                       <Pressable
                         key={q}
-                        disabled={!url || !!downloadingQuality}
+                        disabled={!url}
                         onPress={() => handleQualityTap(q, url)}
-                        style={[
-                          styles.qualityBtn,
-                          isThis && styles.qualityBtnActive,
-                          (!url || (downloadingQuality && !isThis)) && { opacity: 0.4 },
-                        ]}
+                        style={[styles.qualityBtn, !url && { opacity: 0.4 }]}
                       >
+                        <Ionicons name="download-outline" size={18} color={COLORS.text} />
                         <Text style={styles.qualityText}>{q}</Text>
-                        {isThis && progress !== null && (
-                          <Text style={styles.progressText}>{Math.round(progress * 100)}%</Text>
-                        )}
                       </Pressable>
                     );
                   })}
                 </View>
-                {downloadingQuality && (
-                  <Text style={styles.muted}>
-                    Скачиваем… не закрывай экран до открытия системного меню «Сохранить».
-                  </Text>
-                )}
+                <Text style={styles.muted}>
+                  Тапни качество — закроется и откроется экран Загрузки с прогрессом.
+                </Text>
               </>
             )}
           </ScrollView>
@@ -283,7 +249,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary, fontSize: 10, fontWeight: "700",
     textTransform: "uppercase", letterSpacing: 1, marginTop: 12, marginBottom: 6,
   },
-  chipRow: { paddingVertical: 4 },
+  chipRow: { paddingVertical: 4, paddingRight: 8, gap: 6 },
   chip: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
     backgroundColor: "rgba(255,255,255,0.06)", marginRight: 6,
@@ -291,15 +257,19 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: COLORS.primary },
   chipText: { color: COLORS.text, fontSize: 13, fontWeight: "600" },
   chipTextActive: { color: "#fff" },
-  qualityGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  qualityBtn: {
-    flex: 1, minWidth: "47%", paddingVertical: 14, borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.08)", alignItems: "center", justifyContent: "center",
+  qualityGrid: {
+    flexDirection: "row", flexWrap: "wrap",
+    justifyContent: "space-between", gap: 10,
   },
-  qualityBtnActive: { backgroundColor: COLORS.primary },
+  qualityBtn: {
+    width: "48%",
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    paddingVertical: 16, borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.06)",
+  },
   qualityText: { color: COLORS.text, fontSize: 16, fontWeight: "700" },
-  progressText: { color: "#fff", fontSize: 12, marginTop: 4 },
   center: { alignItems: "center", paddingVertical: 24, gap: 8 },
-  muted: { color: COLORS.textSecondary, fontSize: 13, textAlign: "center", marginTop: 8 },
+  muted: { color: COLORS.textSecondary, fontSize: 12, textAlign: "center", marginTop: 10, paddingHorizontal: 12 },
   error: { color: "#ef4444", fontSize: 13, textAlign: "center", padding: 12 },
 });

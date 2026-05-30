@@ -16,6 +16,7 @@ import { GenreMoviesScreen } from '../screens/Genres/GenreMoviesScreen';
 import { CollectionsScreen } from '../screens/Collections/CollectionsScreen';
 import { SwipeScreen } from '../screens/Swipe/SwipeScreen';
 import { DownloadsScreen } from '../screens/Downloads/DownloadsScreen';
+import { SupportScreen } from '../screens/Support/SupportScreen';
 import { WatchTogetherScreen } from '../screens/Watch/WatchTogetherScreen';
 import { AuthScreen } from '../screens/Auth/AuthScreen';
 import { ProfileScreen } from '../screens/Profile/ProfileScreen';
@@ -111,6 +112,7 @@ export function AppNavigator() {
           <Stack.Screen name="WatchTogether" component={WatchTogetherScreen} options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="Person" component={PersonScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Downloads" component={DownloadsScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Support" component={SupportScreen} options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>
