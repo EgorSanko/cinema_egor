@@ -90,6 +90,14 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     if (lastTr) setSelectedTranslator(lastTr.id);
   }, [movie.id]);
 
+  // Same stale-closure trap as tv-player. Quality/translator changes mid-play
+  // would otherwise keep writing the OLD label into history because the
+  // interval captured them at startSaving time.
+  const ctxRef = useRef({ quality: selectedQuality, translatorId: selectedTranslator, translators });
+  useEffect(() => {
+    ctxRef.current = { quality: selectedQuality, translatorId: selectedTranslator, translators };
+  }, [selectedQuality, selectedTranslator, translators]);
+
   const startSaving = useCallback(() => {
     if (saveInterval.current) clearInterval(saveInterval.current);
     saveInterval.current = setInterval(() => {
@@ -97,20 +105,21 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         const ct = videoRef.current.currentTime;
         const dur = videoRef.current.duration;
         if (ct > 0 && dur > 0) {
+          const ctx = ctxRef.current;
           savePosition(movie.id, "movie", ct, dur);
-          const trName = translators.find(t => t.id === selectedTranslator)?.name || "";
+          const trName = ctx.translators.find(t => t.id === ctx.translatorId)?.name || "";
           addToHistory({
             id: movie.id, type: "movie", title: movie.title,
             poster_path: movie.poster_path, vote_average: movie.vote_average,
             release_date: movie.release_date, watchedAt: Date.now(),
-            progress: ct, duration: dur, quality: selectedQuality,
-            translatorName: trName, translatorId: selectedTranslator || undefined,
+            progress: ct, duration: dur, quality: ctx.quality,
+            translatorName: trName, translatorId: ctx.translatorId || undefined,
             genre_ids: movie.genres?.map(g => g.id),
           });
         }
       }
     }, 5000);
-  }, [movie, selectedQuality, selectedTranslator, translators]);
+  }, [movie]);
 
   useEffect(() => {
     return () => { if (saveInterval.current) clearInterval(saveInterval.current); };

@@ -124,6 +124,30 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }
   }, [show.id, selectedSeason, selectedEpisode]);
 
+  // Live context for the save interval. Without these refs the interval
+  // (set once via onVideoReady → startSaving) keeps writing history with
+  // the FIRST episode's season/episode/quality/translator. Auto-next chain
+  // (E1 → E2 → E3) silently piles all progress onto the E1 row, so the
+  // user sees only E1 in history even though they watched 6 episodes.
+  const ctxRef = useRef({
+    season: selectedSeason,
+    episode: selectedEpisode,
+    quality: selectedQuality,
+    translatorId: selectedTranslator,
+    episodes,
+    translators,
+  });
+  useEffect(() => {
+    ctxRef.current = {
+      season: selectedSeason,
+      episode: selectedEpisode,
+      quality: selectedQuality,
+      translatorId: selectedTranslator,
+      episodes,
+      translators,
+    };
+  }, [selectedSeason, selectedEpisode, selectedQuality, selectedTranslator, episodes, translators]);
+
   const startSaving = useCallback(() => {
     if (saveInterval.current) clearInterval(saveInterval.current);
     saveInterval.current = setInterval(() => {
@@ -131,23 +155,24 @@ export function TVPlayer({ show }: TVPlayerProps) {
         const ct = videoRef.current.currentTime;
         const dur = videoRef.current.duration;
         if (ct > 0 && dur > 0) {
-          savePosition(show.id, "tv", ct, dur, selectedSeason, selectedEpisode);
-          saveLastEpisode(show.id, selectedSeason, selectedEpisode);
-          const epName = episodes.find(e => e.episode_number === selectedEpisode)?.name || "";
-          const trName = translators.find(t => t.id === selectedTranslator)?.name || "";
+          const ctx = ctxRef.current;
+          savePosition(show.id, "tv", ct, dur, ctx.season, ctx.episode);
+          saveLastEpisode(show.id, ctx.season, ctx.episode);
+          const epName = ctx.episodes.find(e => e.episode_number === ctx.episode)?.name || "";
+          const trName = ctx.translators.find(t => t.id === ctx.translatorId)?.name || "";
           addToHistory({
             id: show.id, type: "tv", title: show.name,
             poster_path: show.poster_path, vote_average: show.vote_average,
             first_air_date: show.first_air_date, watchedAt: Date.now(),
-            progress: ct, duration: dur, season: selectedSeason,
-            episode: selectedEpisode, episodeName: epName, quality: selectedQuality,
-            translatorName: trName, translatorId: selectedTranslator || undefined,
+            progress: ct, duration: dur, season: ctx.season,
+            episode: ctx.episode, episodeName: epName, quality: ctx.quality,
+            translatorName: trName, translatorId: ctx.translatorId || undefined,
             genre_ids: show.genres?.map(g => g.id),
           });
         }
       }
     }, 5000);
-  }, [show, selectedSeason, selectedEpisode, selectedQuality, episodes]);
+  }, [show]);
 
   useEffect(() => {
     return () => { if (saveInterval.current) clearInterval(saveInterval.current); };
@@ -383,6 +408,29 @@ export function TVPlayer({ show }: TVPlayerProps) {
         if (autoplayTriggeredRef.current) return;
         if (!hasNextEpisodeRef.current) return;
         autoplayTriggeredRef.current = true;
+        // Flush a final history entry for the just-ended episode BEFORE we
+        // switch — the 5-second save interval may not have fired since the
+        // final 5 seconds of playback. Without this, episodes auto-advanced
+        // mid-cycle land with stale progress (or no entry at all if it was
+        // a fresh start).
+        try {
+          const v = videoRef.current;
+          const ctx = ctxRef.current;
+          if (v && v.duration > 0) {
+            savePosition(show.id, "tv", v.duration, v.duration, ctx.season, ctx.episode);
+            const epName = ctx.episodes.find(e => e.episode_number === ctx.episode)?.name || "";
+            const trName = ctx.translators.find(t => t.id === ctx.translatorId)?.name || "";
+            addToHistory({
+              id: show.id, type: "tv", title: show.name,
+              poster_path: show.poster_path, vote_average: show.vote_average,
+              first_air_date: show.first_air_date, watchedAt: Date.now(),
+              progress: v.duration, duration: v.duration, season: ctx.season,
+              episode: ctx.episode, episodeName: epName, quality: ctx.quality,
+              translatorName: trName, translatorId: ctx.translatorId || undefined,
+              genre_ids: show.genres?.map(g => g.id),
+            });
+          }
+        } catch {}
         nextEpisode();
       };
       const onEnded = () => triggerNext();
