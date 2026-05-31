@@ -101,11 +101,11 @@ export function SkipOverlays({ videoRef, playerContainer, tmdbId, type, season, 
           setShowOutroCard(true);
           setAutoNextSecs(AUTO_NEXT_SECONDS);
         } else if (!inOutro && showOutroCard) {
-          // Hide again when we scrub back out of the outro window (or while
-          // seeking). Without this the card stayed stuck on screen — e.g.
-          // after the user manually jumped to the next episode, or scrubbed
-          // back — until they clicked it. The dismiss flag is NOT set here so
-          // it can re-appear if they return to the real outro by playback.
+          // Hide again when scrubbed back out of the outro window (or while
+          // seeking). Without this the card stayed stuck on screen after a
+          // manual next-episode or a scrub-back until clicked. We don't set
+          // the dismiss flag, so natural playback back into the outro can
+          // re-show it.
           setShowOutroCard(false);
         }
       }
