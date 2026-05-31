@@ -406,6 +406,38 @@ export function Navbar() {
                 {user ? (
                   <>
                     <Link
+                      href="/downloads"
+                      onClick={() => setIsOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 rounded-lg transition-colors"
+                    >
+                      <span className="text-base leading-none">⬇️</span> Загрузки
+                    </Link>
+                    <Link
+                      href="/support"
+                      onClick={() => setIsOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 rounded-lg transition-colors"
+                    >
+                      <span className="text-base leading-none">💬</span> Поддержка
+                    </Link>
+                    {(process.env.NEXT_PUBLIC_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).includes(user.email?.toLowerCase() || "") && (
+                      <>
+                        <Link
+                          href="/admin/tickets"
+                          onClick={() => setIsOpen(false)}
+                          className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 rounded-lg transition-colors"
+                        >
+                          <span className="text-base leading-none">📨</span> Заявки (админ)
+                        </Link>
+                        <Link
+                          href="/admin/logs"
+                          onClick={() => setIsOpen(false)}
+                          className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 rounded-lg transition-colors"
+                        >
+                          <span className="text-base leading-none">⚙️</span> Админ-логи
+                        </Link>
+                      </>
+                    )}
+                    <Link
                       href="/profile"
                       onClick={() => setIsOpen(false)}
                       className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 rounded-lg transition-colors"
