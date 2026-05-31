@@ -457,11 +457,17 @@ export function TVPlayer({ show }: TVPlayerProps) {
         } catch {}
         nextEpisode();
       };
-      const onEnded = () => triggerNext();
+      // Real end-of-video only — not a seek that landed past the end. When the
+      // user fast-scrubs to ~99%, the browser can fire `ended`; without the
+      // seeking guard that auto-advanced, and the loopback detector below then
+      // fired again on the next stream's stale position, chaining 2-3 episodes.
+      const onEnded = () => { if (!v.seeking) triggerNext(); };
       const onTime = () => {
-        // Detect fullscreen-loopback: was near end, now jumped back to 0 → end already happened
         const ct = v.currentTime, dur = v.duration || 0;
-        if (lastTime > dur - 1.5 && lastTime > 5 && ct < 1 && dur > 60) {
+        // Fullscreen-loopback: was near the end, now jumped back to ~0 → the
+        // episode really ended. Guard on !seeking so scrubbing back to the
+        // start (a normal user action) is NOT mistaken for an ended episode.
+        if (!v.seeking && lastTime > dur - 1.5 && lastTime > 5 && ct < 1 && dur > 60) {
           triggerNext();
         }
         lastTime = ct;
@@ -481,9 +487,27 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPlayer, selectedSeason, selectedEpisode, streamData]);
 
-  // Reset trigger when episode changes
+  // Block auto-advance across an episode switch, release once the new episode
+  // is genuinely playing from the start. During a source swap the old <video>
+  // (or the new one mid-load) can briefly report a near-end currentTime; with
+  // the guard left open that stale reading re-fired triggerNext and chained
+  // several episodes forward. We arm the guard here (blocking) and a watcher
+  // clears it when currentTime returns below 5s on the new stream.
   useEffect(() => {
-    autoplayTriggeredRef.current = false;
+    autoplayTriggeredRef.current = true;
+    const v = videoRef.current;
+    if (!v) { autoplayTriggeredRef.current = false; return; }
+    const release = () => {
+      if (v.currentTime < 5 && !v.seeking) {
+        autoplayTriggeredRef.current = false;
+        v.removeEventListener("timeupdate", release);
+      }
+    };
+    v.addEventListener("timeupdate", release);
+    // Safety net: never leave it permanently blocked if the new stream never
+    // reports a low time for some reason.
+    const t = setTimeout(() => { autoplayTriggeredRef.current = false; v.removeEventListener("timeupdate", release); }, 8000);
+    return () => { clearTimeout(t); v.removeEventListener("timeupdate", release); };
   }, [selectedSeason, selectedEpisode]);
 
   const toggleFullscreen = () => {
