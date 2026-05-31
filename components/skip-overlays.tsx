@@ -96,10 +96,17 @@ export function SkipOverlays({ videoRef, playerContainer, tmdbId, type, season, 
       // without credits, post-credits scenes, cold opens). Better to wait
       // for `ended` autoplay than to fire a wrong-time card.
       if (data.outro) {
-        const inOutro = ct >= data.outro.start;
+        const inOutro = ct >= data.outro.start && !v.seeking;
         if (inOutro && !showOutroCard && !advanceTriggeredRef.current) {
           setShowOutroCard(true);
           setAutoNextSecs(AUTO_NEXT_SECONDS);
+        } else if (!inOutro && showOutroCard) {
+          // Hide again when we scrub back out of the outro window (or while
+          // seeking). Without this the card stayed stuck on screen — e.g.
+          // after the user manually jumped to the next episode, or scrubbed
+          // back — until they clicked it. The dismiss flag is NOT set here so
+          // it can re-appear if they return to the real outro by playback.
+          setShowOutroCard(false);
         }
       }
     };
