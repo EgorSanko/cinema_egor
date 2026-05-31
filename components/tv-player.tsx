@@ -591,8 +591,31 @@ export function TVPlayer({ show }: TVPlayerProps) {
               </div>
             </div>
           ) : error ? (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4 px-8">
+            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4 px-8 overflow-y-auto py-8">
               <p className="text-red-400 text-center text-lg">{error}</p>
+              {/* When a dub was substituted (episode not voiced in the chosen
+                  one), the player isn't mounted — so its translator switcher
+                  is unreachable. Surface the available dubs right here so the
+                  user can pick another instead of being stuck on the notice. */}
+              {translators.length > 1 && (
+                <div className="w-full max-w-sm">
+                  <p className="text-[11px] uppercase tracking-wider text-white/45 font-semibold mb-2 text-center">Выберите озвучку</p>
+                  <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto">
+                    {Array.from(new Map(translators.map(t => [t.id, t])).values()).map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => { setError(""); fetchStream(selectedSeason, selectedEpisode, t.id); }}
+                        className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-[14px] text-left transition-colors ${
+                          t.id === selectedTranslator ? "bg-primary/20 text-white" : "bg-white/[0.06] text-white hover:bg-white/[0.12]"
+                        }`}
+                      >
+                        <span>{t.is_premium ? `🔒 ${t.name}` : t.name}</span>
+                        {t.id === selectedTranslator && <span className="text-primary text-xs">текущая</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <button onClick={() => fetchStream(selectedSeason, selectedEpisode)} className="px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-medium transition-colors">Попробовать снова</button>
             </div>
           ) : streamData ? (
