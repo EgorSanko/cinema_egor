@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 const APK_URL = "/download/sapkefly.apk";
 const APK_SIZE_MB = 93;
-const APP_VERSION = "2.0.25";
+const APP_VERSION = "2.0.26";
 
 const FEATURES: { Icon: any; title: string; sub: string }[] = [
   { Icon: TvIcon, title: "Фильмы и сериалы", sub: "Огромная база с переводом и оригиналом" },
@@ -128,7 +128,7 @@ export default function DownloadPage() {
             </div>
             <div className="flex items-center gap-3 p-4 rounded-xl bg-foreground/[0.03] ring-1 ring-white/[0.06]">
               <Zap size={20} className="text-primary flex-shrink-0" />
-              <p className="text-foreground/75 text-[13px]">Лёгкий APK · 88 МБ · быстрая установка</p>
+              <p className="text-foreground/75 text-[13px]">Лёгкий APK · 93 МБ · быстрая установка</p>
             </div>
             <div className="flex items-center gap-3 p-4 rounded-xl bg-foreground/[0.03] ring-1 ring-white/[0.06]">
               <SettingsIcon size={20} className="text-primary flex-shrink-0" />
