@@ -940,6 +940,17 @@ export function PlayerScreen() {
         }}
         onLoad={() => {
           if (mountedRef.current) setIsBuffering(false);
+          // Re-apply speed WITH pitch correction on every fresh source. The
+          // `rate` prop sets speed but NOT shouldCorrectPitch, so a new
+          // episode (the <Video> is remounted via `key`) played at >1x with a
+          // squeaky/chipmunk voice until the user reopened the speed menu.
+          // setRateAsync(speed, true) restores natural pitch. Guard !==1 to
+          // avoid a redundant call at normal speed.
+          if (speed !== 1) {
+            videoRef.current?.setRateAsync(speed, true).catch(() => {});
+            // expo-av sometimes swallows the call mid-load; retry next tick.
+            setTimeout(() => { videoRef.current?.setRateAsync(speed, true).catch(() => {}); }, 400);
+          }
         }}
       />
 
