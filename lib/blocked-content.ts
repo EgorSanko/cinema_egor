@@ -20,6 +20,8 @@
 export const BLOCKED_MOVIE_IDS = new Set<number>([
   // 2026-05-27 — RKN notice via hosting: "Бой со зверем" / Beast (2026)
   1292415,
+  // 2026-06-02 — RKN notice via Timeweb ticket #12048565: movie/1083381
+  1083381,
 ]);
 
 export const BLOCKED_TV_IDS = new Set<number>([]);
