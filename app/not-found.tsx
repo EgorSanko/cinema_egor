@@ -91,23 +91,16 @@ export default async function NotFound() {
                 </div>
               </div>
 
-              {/* Утка РКН с пузырём */}
-              <div className="mt-8 flex items-end gap-4">
-                <div className="relative w-44 h-44 sm:w-56 sm:h-56 flex-shrink-0">
+              {/* Утка РКН — пузырь с текстом уже вшит в саму картинку */}
+              <div className="mt-6 -ml-4">
+                <div className="relative w-[340px] h-[230px] sm:w-[440px] sm:h-[300px]">
                   <Image
                     src="/rkn-duck.png"
-                    alt="РКН"
+                    alt="РКН: ничего личного, просто работа"
                     fill
-                    className="object-contain object-bottom"
-                    sizes="224px"
+                    className="object-contain object-left-bottom"
+                    sizes="440px"
                   />
-                </div>
-                <div className="relative mb-8 px-5 py-3 rounded-2xl rounded-bl-sm bg-white/[0.08] ring-1 ring-white/[0.12] backdrop-blur-sm">
-                  <p className="text-foreground/90 text-sm sm:text-base leading-snug">
-                    Ничего личного,
-                    <br />
-                    просто работа <span className="text-primary">💚</span>
-                  </p>
                 </div>
               </div>
             </div>
