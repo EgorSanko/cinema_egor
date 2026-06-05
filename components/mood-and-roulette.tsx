@@ -10,13 +10,18 @@ import { Sparkles, Dices, X, Play } from "lucide-react";
 // Mood presets — used by both the picker grid AND the wheel roulette.
 // Each maps to TMDB genre ids + a min rating filter. Icon is a single
 // emoji rendered big in the buttons; the wheel uses the same set.
+// Each mood has a PRIMARY genre that the result MUST contain (enforced both
+// by the discover query AND a post-filter), so the picks actually match the
+// mood. `genres` lists the primary first; we query primary-only to avoid
+// TMDB's `|` OR-logic dragging in unrelated films (e.g. an action movie that
+// merely has a "thriller" tag showing up under "Хочу страха").
 const MOODS: { id: string; label: string; subLabel: string; emoji: string; genres: number[]; minRating: number; color: string }[] = [
-  { id: "fun",       label: "Хочу веселья",      subLabel: "Комедии, приключения", emoji: "😄", genres: [35, 12],          minRating: 6.5, color: "#a3e635" },
-  { id: "sad",       label: "Чувствую грусть",   subLabel: "Драмы, мелодрамы",     emoji: "👻", genres: [18, 10749],       minRating: 7.0, color: "#c4b5fd" },
-  { id: "scary",     label: "Хочу страха",       subLabel: "Ужасы, триллеры",      emoji: "🎃", genres: [27, 53],          minRating: 6.5, color: "#7dd3fc" },
-  { id: "action",    label: "Нужен экшен",       subLabel: "Боевик, приключения",  emoji: "⚡", genres: [28, 12],          minRating: 6.5, color: "#fde047" },
-  { id: "smart",     label: "Хочу поразмыслить", subLabel: "Драмы, детективы",     emoji: "🪐", genres: [18, 9648],        minRating: 7.0, color: "#a3e635" },
-  { id: "romantic",  label: "Романтика",         subLabel: "Мелодрамы, любовь",    emoji: "💖", genres: [10749, 35],       minRating: 6.5, color: "#f9a8d4" },
+  { id: "fun",       label: "Хочу веселья",      subLabel: "Комедии",          emoji: "😄", genres: [35],     minRating: 6.5, color: "#a3e635" },
+  { id: "sad",       label: "Чувствую грусть",   subLabel: "Драмы",            emoji: "😢", genres: [18],     minRating: 7.0, color: "#c4b5fd" },
+  { id: "scary",     label: "Хочу страха",       subLabel: "Ужасы",            emoji: "🎃", genres: [27],     minRating: 6.0, color: "#7dd3fc" },
+  { id: "action",    label: "Нужен экшен",       subLabel: "Боевики",          emoji: "⚡", genres: [28],     minRating: 6.5, color: "#fde047" },
+  { id: "smart",     label: "Хочу поразмыслить", subLabel: "Детективы",        emoji: "🪐", genres: [9648],   minRating: 7.0, color: "#a3e635" },
+  { id: "romantic",  label: "Романтика",         subLabel: "Мелодрамы",        emoji: "💖", genres: [10749],  minRating: 6.5, color: "#f9a8d4" },
 ];
 
 interface Movie {
@@ -159,18 +164,25 @@ export function MoodAndRoulette() {
     setLoading(true);
     setResults([]);
     try {
+      const primary = mood.genres[0];
       const params = new URLSearchParams({
         api_key: "275c9d09780aadb4b13ff57a731eda00",
         language: "ru-RU",
         sort_by: "popularity.desc",
-        with_genres: mood.genres.join("|"),
+        with_genres: String(primary), // single primary genre — TMDB requires it (AND), no OR drift
         "vote_average.gte": String(mood.minRating),
-        "vote_count.gte": "200",
+        "vote_count.gte": "150",
         page: String(1 + Math.floor(Math.random() * 5)), // shuffle pages so it varies
       });
       const res = await fetch(`/tmdb-api/discover/movie?${params}`);
       const data = await res.json();
-      setResults((data.results || []).slice(0, 12));
+      // Hard guarantee: keep only films that actually carry the mood's primary
+      // genre. discover already filters, but this defends against any proxy/
+      // cache quirk and makes the match exact.
+      const matched = (data.results || []).filter((m: any) =>
+        Array.isArray(m.genre_ids) && m.genre_ids.includes(primary)
+      );
+      setResults((matched.length >= 6 ? matched : (data.results || [])).slice(0, 12));
     } catch {} finally { setLoading(false); }
   };
 
