@@ -41,7 +41,7 @@ export default async function NotFound() {
             <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
           </div>
 
-          <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-12 py-16 sm:py-24 lg:py-28">
+          <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-12 pt-28 sm:pt-32 pb-16 sm:pb-24">
             <div className="max-w-2xl">
               <p className="text-foreground/45 text-sm font-semibold tracking-[0.2em] uppercase">
                 Ой-ой…
@@ -92,18 +92,18 @@ export default async function NotFound() {
               </div>
 
               {/* Утка РКН с пузырём */}
-              <div className="mt-8 flex items-end gap-3">
-                <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0">
+              <div className="mt-8 flex items-end gap-4">
+                <div className="relative w-44 h-44 sm:w-56 sm:h-56 flex-shrink-0">
                   <Image
                     src="/rkn-duck.png"
                     alt="РКН"
                     fill
                     className="object-contain object-bottom"
-                    sizes="112px"
+                    sizes="224px"
                   />
                 </div>
-                <div className="relative mb-4 px-4 py-2.5 rounded-2xl rounded-bl-sm bg-white/[0.08] ring-1 ring-white/[0.12] backdrop-blur-sm">
-                  <p className="text-foreground/90 text-[13px] sm:text-sm leading-snug">
+                <div className="relative mb-8 px-5 py-3 rounded-2xl rounded-bl-sm bg-white/[0.08] ring-1 ring-white/[0.12] backdrop-blur-sm">
+                  <p className="text-foreground/90 text-sm sm:text-base leading-snug">
                     Ничего личного,
                     <br />
                     просто работа <span className="text-primary">💚</span>
