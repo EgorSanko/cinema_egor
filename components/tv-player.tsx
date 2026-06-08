@@ -78,6 +78,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
   const autoplayTriggeredRef = useRef(false);
+  // Wall-clock of the last auto-advance. A real episode can't end within
+  // seconds of the previous one starting, so any "episode ended" signal that
+  // arrives inside this cooldown is a stale near-end reading from the HLS
+  // source swap — ignore it. This is the hard backstop against the
+  // skip-2-3-episodes-forward chain (currentTime<5 release was too racy).
+  const lastAdvanceAtRef = useRef(0);
+  const ADVANCE_COOLDOWN_MS = 15000;
   const subsFetchedKeyRef = useRef<string>("");
 
   const validSeasons = show.seasons?.filter(s => s.season_number > 0) || [];
@@ -398,7 +405,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
     return selectedSeason < validSeasons.length;
   })();
 
-  const nextEpisode = () => {
+  const nextEpisode = (opts?: { manual?: boolean }) => {
+    // Cooldown guards EVERY auto-advance path (ended listener, loopback
+    // detector, AND the SkipOverlays outro countdown). After a switch the new
+    // HLS source briefly reports the old episode's near-end position; without
+    // this any of those paths re-fired and chained 2-3 episodes forward.
+    // Manual clicks (user pressing "Следующая серия") bypass the cooldown.
+    if (!opts?.manual && Date.now() - lastAdvanceAtRef.current < ADVANCE_COOLDOWN_MS) return;
+    lastAdvanceAtRef.current = Date.now();
     const currentEpIndex = releasedEpisodes.findIndex(e => e.episode_number === selectedEpisode);
     if (currentEpIndex >= 0 && currentEpIndex < releasedEpisodes.length - 1) {
       selectEpisode(selectedSeason, releasedEpisodes[currentEpIndex + 1].episode_number);
@@ -431,6 +445,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
       const triggerNext = () => {
         if (autoplayTriggeredRef.current) return;
         if (!hasNextEpisodeRef.current) return;
+        // Cooldown lives inside nextEpisode() now (guards every path); bail
+        // early here too so we don't flip autoplayTriggeredRef on a stale signal.
+        if (Date.now() - lastAdvanceAtRef.current < ADVANCE_COOLDOWN_MS) return;
         autoplayTriggeredRef.current = true;
         // Flush a final history entry for the just-ended episode BEFORE we
         // switch — the 5-second save interval may not have fired since the
@@ -790,7 +807,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   <button
                     onClick={() => {
                       if (!requireAuth("Войдите, чтобы смотреть сериалы и сохранять прогресс")) return;
-                      if (showPlayer) nextEpisode(); else { const n = nextEpisode; n(); setShowPlayer(true); }
+                      if (showPlayer) nextEpisode({ manual: true }); else { nextEpisode({ manual: true }); setShowPlayer(true); }
                     }}
                     className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-foreground/[0.06] ring-1 ring-white/[0.08] text-foreground/85 hover:bg-foreground/[0.1] transition-colors text-[13px] font-medium"
                   >
