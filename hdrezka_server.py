@@ -21,7 +21,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 logged_in = False
 
-# Short-TTL cache for /api/search. The HDRezka resolve takes ~2s; caching the
+# Short-TTL cache for /api/search. The HDRezka resolve takes ~2-3s (it fetches
+# the post page to probe premium dubs, then resolves the stream); caching the
 # parsed result makes prefetch→click and repeat opens near-instant. TTL is kept
 # short because HDRezka stream URLs can carry expiring CDN tokens — long caching
 # would hand out dead links.
@@ -51,6 +52,7 @@ async def ensure_login():
             print(f"Login successful! HOST={Request.HOST}")
         except Exception as e:
             print(f"Login failed: {e}")
+
 @app.get("/api/search")
 async def search(q: str, year: str = None, type: str = None, season: str = None, episode: str = None, index: int = 0, translator_id: int = None):
     await ensure_login()
@@ -107,8 +109,21 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                 if best:
                     break
 
-        # Filter by year if no split-season match
+        # Year matching with title-normalized fallback. Allow a ±1 year
+        # slack because TMDB and HDRezka disagree on release year for late
+        # releases / festival-vs-theatrical premieres ("Нормал 2026" on TMDB
+        # is "Нормал 2025" on HDRezka), but only when the title actually
+        # matches — preventing cross-movie collisions like "Нормал" →
+        # "Нормальный 2009" that we used to silently fall into.
+        def _norm_title(s):
+            return _re.sub(r"[^a-z0-9а-я]", "", (s or "").lower())
         if not best and year:
+            try:
+                want_year = int(year)
+            except (TypeError, ValueError):
+                want_year = None
+            q_norm = _norm_title(q)
+            # Pass 1 — exact year match.
             for r in filtered:
                 info = getattr(r, 'info', None)
                 info_year = getattr(info, 'year', None) if info else None
@@ -118,7 +133,25 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                 elif year in str(info or '') or year in str(getattr(r, 'url', '')):
                     best = r
                     break
+            # Pass 2 — ±1 year AND title normalizes the same.
+            if not best and want_year is not None:
+                for r in filtered:
+                    name_norm = _norm_title(getattr(r, 'name', ''))
+                    if name_norm != q_norm:
+                        continue
+                    url_str = str(getattr(r, 'url', ''))
+                    info_str = str(getattr(r, 'info', '') or '')
+                    for cand in (want_year - 1, want_year + 1):
+                        if str(cand) in url_str or str(cand) in info_str:
+                            best = r
+                            break
+                    if best:
+                        break
 
+        # Year-mismatch guard: still no match → Not found rather than picking
+        # an arbitrary first result with a wrong year.
+        if not best and year and index == 0:
+            return {"error": "Not found", "results": []}
         if not best:
             if index < len(filtered):
                 best = filtered[index]
@@ -131,9 +164,48 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
         player = await post.player
 
         translators = []
+        premium_ids = set()
+        # Detect translators that require HDRezka premium — they are marked with
+        # the CSS class "b-prem_translator". Free users get a 60-second "buy
+        # premium" pre-roll instead of the actual stream when such a translator
+        # is selected, so we surface this flag to the frontend (lock icon).
         try:
+            page_html = (await hdrezka_http.get_response('GET', str(post.url))).text
+            import re as _r_prem
+            m_prem = _r_prem.search(
+                r"<ul[^>]*id=.translators-list.[^>]*>(.+?)</ul>",
+                page_html, _r_prem.S,
+            )
+            print(f"[prem-probe] url={post.url} len={len(page_html)} ul_found={bool(m_prem)}")
+            if m_prem:
+                li_re = _r_prem.compile(
+                    r"<li[^>]*?data-translator_id=[\"\'](\d+)[\"\'][^>]*>"
+                )
+                for li in li_re.finditer(m_prem.group(1)):
+                    full = li.group(0)
+                    is_p = "b-prem_translator" in full
+                    if is_p:
+                        premium_ids.add(int(li.group(1)))
+                    print(f"[prem-probe]   id={li.group(1)} prem={is_p}")
+            print(f"[prem-probe] result premium_ids={premium_ids}")
+        except Exception as ex_prem:
+            print(f"premium probe failed: {ex_prem}")
+
+        try:
+            raw_t = []
             for name, tid in player.post.translators.name_id.items():
-                translators.append({"id": tid, "name": name})
+                raw_t.append({"id": tid, "name": name, "is_premium": tid in premium_ids})
+            # Push (18+) AND premium variants down so the DEFAULT selection
+            # lands on a free, regular cut — premium dubs serve a 60-sec "buy
+            # subscription" pre-roll, so defaulting to one made the player load
+            # the stub as "main". Saved per-show preference still overrides this
+            # on the frontend, so users who explicitly pick 18+/premium keep it.
+            def _is_18(t):
+                n = (t.get("name") or "").lower()
+                return "(18+)" in n or "18+" in n
+            def _demote(t):
+                return _is_18(t) or bool(t.get("is_premium"))
+            translators = [t for t in raw_t if not _demote(t)] + [t for t in raw_t if _demote(t)]
         except Exception as ex:
             print(f"Translators error: {ex}")
 
@@ -148,7 +220,6 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
         e = int(episode or 1)
         # If matched a split-season entry [ТВ-N], reset season to 1 inside that entry
         post_name = str(getattr(post, 'name', ''))
-        import re as _re
         tv_match = _re.search(r'\[ТВ-(\d+)\]', post_name)
         if tv_match and int(tv_match.group(1)) > 1:
             s = 1
@@ -185,10 +256,10 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                     raw_fallback = _re.findall(r'\[(\d+p)\](https?://[^\[,\s]+)', streams_str)
                     if raw_fallback:
                         streams = {}
-                        for q, u in raw_fallback:
-                            qn = int(q.replace('p',''))
+                        for q2, u in raw_fallback:
+                            qn = int(q2.replace('p', ''))
                             if qn <= 1080:
-                                streams[q] = u.replace("http://", "https://").strip()
+                                streams[q2] = u.replace("http://", "https://").strip()
                         best_quality = list(streams.keys())[-1] if streams else ""
                         best_url = streams.get(best_quality, "")
                         print(f"OK (HTML fallback): {post.name}")
