@@ -18,13 +18,16 @@ export function Comments({ mediaId, mediaType }: CommentsProps) {
 
   useEffect(() => {
     setComments(getComments(mediaId, mediaType));
-    const saved = localStorage.getItem("kino_username");
-    if (saved) setAuthor(saved);
+    // localStorage can throw in private mode / restricted webviews — guard it.
+    try {
+      const saved = localStorage.getItem("kino_username");
+      if (saved) setAuthor(saved);
+    } catch {}
   }, [mediaId, mediaType]);
 
   const handleSubmit = () => {
     if (!text.trim() || !author.trim() || rating === 0) return;
-    localStorage.setItem("kino_username", author);
+    try { localStorage.setItem("kino_username", author); } catch {}
     const newComment = addComment({ mediaId, mediaType, author: author.trim(), text: text.trim(), rating });
     setComments([newComment, ...comments]);
     setText("");
