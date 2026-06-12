@@ -56,6 +56,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
   const subsFetchedRef = useRef(false);
+  // Warmed HDRezka resolve — populated on mount so clicking "Смотреть" plays
+  // instantly instead of waiting ~2s. fetchStream reuses this exact in-flight
+  // request when the URL matches (no duplicate call).
+  const prefetchRef = useRef<{ url: string; promise: Promise<any> } | null>(null);
 
   const fetchSubtitles = useCallback(async () => {
     if (subsFetchedRef.current) return;
@@ -89,6 +93,26 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     }
     const lastTr = getLastTranslator(movie.id, "movie");
     if (lastTr) setSelectedTranslator(lastTr.id);
+  }, [movie.id]);
+
+  // Prefetch the stream on mount so "Смотреть" is instant. Built to match the
+  // exact URL fetchStream uses for its primary search (same title/year/dub),
+  // so fetchStream consumes this in-flight request instead of firing a new one.
+  useEffect(() => {
+    if (isNotReleased) return;
+    try {
+      const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
+      const ruTitle = (movie.title || "").replace(/["«»""]/g, "").trim();
+      const origTitle = ((movie as any).original_title || "").replace(/["«»""]/g, "").trim();
+      const searchTitle = ruTitle || origTitle;
+      if (!searchTitle) return;
+      const tr = getLastTranslator(movie.id, "movie")?.id ?? null;
+      const q = encodeURIComponent(searchTitle);
+      const trParam = tr ? "&translator_id=" + tr : "";
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam;
+      prefetchRef.current = { url, promise: fetch(url).then((r) => r.json()).catch(() => null) };
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [movie.id]);
 
   // Same stale-closure trap as tv-player. Quality/translator changes mid-play
@@ -159,8 +183,17 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       const searchTitle = ruTitle || origTitle;
       const q = encodeURIComponent(searchTitle);
       const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
-      const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam);
-      const data = await res.json();
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam;
+      // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
+      let data: any = null;
+      if (prefetchRef.current && prefetchRef.current.url === url) {
+        data = await prefetchRef.current.promise;
+        prefetchRef.current = null;
+      }
+      if (!data) {
+        const res = await fetch(url);
+        data = await res.json();
+      }
       if (data.stream) {
         // What dub is ACTUALLY playing? Trust the backend's
         // active_translator_id, NOT effectiveTr — they diverge when HDRezka

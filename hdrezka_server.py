@@ -21,6 +21,21 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 logged_in = False
 
+# Short-TTL cache for /api/search. The HDRezka resolve takes ~2s; caching the
+# parsed result makes prefetch→click and repeat opens near-instant. TTL is kept
+# short because HDRezka stream URLs can carry expiring CDN tokens — long caching
+# would hand out dead links.
+import time as _time
+_search_cache: dict = {}
+_SEARCH_CACHE_TTL = 300  # seconds
+
+def _cache_store(key, resp):
+    # Only cache real hits — never errors / "not found", so a transient failure
+    # doesn't get pinned for 5 minutes.
+    if isinstance(resp, dict) and resp.get("stream"):
+        _search_cache[key] = (_time.monotonic(), resp)
+    return resp
+
 async def ensure_login():
     global logged_in
     if not logged_in:
@@ -33,6 +48,10 @@ async def ensure_login():
 @app.get("/api/search")
 async def search(q: str, year: str = None, type: str = None, season: str = None, episode: str = None, index: int = 0, translator_id: int = None):
     await ensure_login()
+    cache_key = (q, year, type, season, episode, index, translator_id)
+    _hit = _search_cache.get(cache_key)
+    if _hit and _time.monotonic() - _hit[0] < _SEARCH_CACHE_TTL:
+        return _hit[1]
     try:
         results = await Search(q).get_page(1)
         if not results:
@@ -153,12 +172,12 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
                         best_quality = list(streams.keys())[-1] if streams else ""
                         best_url = streams.get(best_quality, "")
                         print(f"OK (HTML fallback): {post.name}")
-                        return {
+                        return _cache_store(cache_key, {
                             "title": post.name, "stream": best_url, "quality": best_quality,
                             "streams": streams, "qualities": list(streams.keys()),
                             "translators": translators, "active_translator_id": translator_id,
                             "is_series": is_series, "url": str(post.url),
-                        }
+                        })
             except Exception as fb_err:
                 print(f"HTML fallback failed: {fb_err}")
             raise last_err or Exception("No working translator")
@@ -179,7 +198,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
 
         print(f"OK: {post.name} ({post.url})")
 
-        return {
+        return _cache_store(cache_key, {
             "title": post.name,
             "stream": best_url,
             "quality": best_quality,
@@ -189,7 +208,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
             "active_translator_id": active_translator_id,
             "is_series": is_series,
             "url": str(post.url),
-        }
+        })
     except Exception as e:
         return {"error": str(e), "results": []}
 

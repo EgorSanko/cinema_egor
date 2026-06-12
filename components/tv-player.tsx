@@ -86,6 +86,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const lastAdvanceAtRef = useRef(0);
   const ADVANCE_COOLDOWN_MS = 15000;
   const subsFetchedKeyRef = useRef<string>("");
+  // Warmed HDRezka resolve for the initial episode — makes "Смотреть" instant.
+  const prefetchRef = useRef<{ url: string; promise: Promise<any> } | null>(null);
 
   const validSeasons = show.seasons?.filter(s => s.season_number > 0) || [];
 
@@ -196,6 +198,26 @@ export function TVPlayer({ show }: TVPlayerProps) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [show.id, selectedSeason, selectedEpisode]);
 
+  // Prefetch the selected episode's stream before the user presses "Смотреть"
+  // so the first play is instant. Only warms while the player isn't open;
+  // fetchStream consumes this in-flight request when the URL matches.
+  useEffect(() => {
+    if (showPlayer) return;
+    try {
+      const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
+      const ruName = (show.name || "").replace(/["«»""]/g, "").trim();
+      const origName = ((show as any).original_name || "").replace(/["«»""]/g, "").trim();
+      const searchName = ruName || origName;
+      if (!searchName) return;
+      const tr = getLastTranslator(show.id, "tv")?.id ?? null;
+      const q = encodeURIComponent(searchName);
+      const trParam = tr ? "&translator_id=" + tr : "";
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + selectedSeason + "&episode=" + selectedEpisode + trParam;
+      prefetchRef.current = { url, promise: fetch(url).then((r) => r.json()).catch(() => null) };
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show.id, selectedSeason, selectedEpisode, showPlayer]);
+
   useEffect(() => {
     const loadEpisodes = async () => {
       setLoadingEpisodes(true);
@@ -229,8 +251,17 @@ export function TVPlayer({ show }: TVPlayerProps) {
       const searchName = ruName || origName;
       const q = encodeURIComponent(searchName);
       const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
-      const res = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam);
-      const data = await res.json();
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam;
+      // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
+      let data: any = null;
+      if (prefetchRef.current && prefetchRef.current.url === url) {
+        data = await prefetchRef.current.promise;
+        prefetchRef.current = null;
+      }
+      if (!data) {
+        const res = await fetch(url);
+        data = await res.json();
+      }
       if (data.stream) {
         // What translator is ACTUALLY playing? Trust the backend's
         // active_translator_id — NOT effectiveTr. They diverge when the

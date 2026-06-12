@@ -288,6 +288,28 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // until loadedmetadata so the seek sticks.
     art.on("ready", () => {
       onVideoReady?.(art.video);
+
+      // Autoplay so a single "Смотреть" click starts the video — no second
+      // Play press (and no "tap once for controls, tap again for play" on
+      // mobile). The original click is a user gesture but it's lost across the
+      // async stream fetch, so browsers may block UNMUTED autoplay. Fall back
+      // to muted autoplay (always allowed) — the video still starts instantly,
+      // and the user can unmute with one tap if the browser muted it.
+      const tryAutoplay = () => {
+        try {
+          const p = art.video.play();
+          if (p && typeof p.catch === "function") {
+            p.catch(() => {
+              try {
+                art.muted = true;
+                art.video.play().catch(() => {});
+              } catch {}
+            });
+          }
+        } catch {}
+      };
+      tryAutoplay();
+
       try {
         const playerEl = (art as any)?.template?.$player as HTMLElement | undefined;
         if (playerEl) onPlayerContainerReady?.(playerEl);
