@@ -35,6 +35,12 @@ _SEARCH_CACHE_TTL = 300  # seconds
 # button), and many users can open the same new title at once — without this
 # each would hit HDRezka separately (~2-3s, rate-limit risk).
 _inflight: dict = {}
+# Premium-status cache keyed by post URL. The premium probe fetches the full
+# title page (~130KB) — the single biggest chunk of cold-resolve latency
+# (~1-2s). Premium status of a title's dubs changes rarely, so memoize it for
+# hours. Huge win for series (same page, many episodes) and repeat opens.
+_prem_cache: dict = {}
+_PREM_TTL = 6 * 3600  # seconds
 
 def _cache_store(key, resp):
     # Only cache real hits — never errors / "not found", so a transient failure
@@ -169,27 +175,39 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
         # the CSS class "b-prem_translator". Free users get a 60-second "buy
         # premium" pre-roll instead of the actual stream when such a translator
         # is selected, so we surface this flag to the frontend (lock icon).
-        try:
-            page_html = (await hdrezka_http.get_response('GET', str(post.url))).text
-            import re as _r_prem
-            m_prem = _r_prem.search(
-                r"<ul[^>]*id=.translators-list.[^>]*>(.+?)</ul>",
-                page_html, _r_prem.S,
-            )
-            print(f"[prem-probe] url={post.url} len={len(page_html)} ul_found={bool(m_prem)}")
-            if m_prem:
-                li_re = _r_prem.compile(
-                    r"<li[^>]*?data-translator_id=[\"\'](\d+)[\"\'][^>]*>"
+        _post_url = str(post.url)
+        _pc = _prem_cache.get(_post_url)
+        if _pc and _time.monotonic() - _pc[0] < _PREM_TTL:
+            premium_ids = _pc[1]
+        else:
+            try:
+                page_html = (await hdrezka_http.get_response('GET', _post_url)).text
+                import re as _r_prem
+                m_prem = _r_prem.search(
+                    r"<ul[^>]*id=.translators-list.[^>]*>(.+?)</ul>",
+                    page_html, _r_prem.S,
                 )
-                for li in li_re.finditer(m_prem.group(1)):
-                    full = li.group(0)
-                    is_p = "b-prem_translator" in full
-                    if is_p:
-                        premium_ids.add(int(li.group(1)))
-                    print(f"[prem-probe]   id={li.group(1)} prem={is_p}")
-            print(f"[prem-probe] result premium_ids={premium_ids}")
-        except Exception as ex_prem:
-            print(f"premium probe failed: {ex_prem}")
+                print(f"[prem-probe] url={_post_url} len={len(page_html)} ul_found={bool(m_prem)}")
+                if m_prem:
+                    li_re = _r_prem.compile(
+                        r"<li[^>]*?data-translator_id=[\"\'](\d+)[\"\'][^>]*>"
+                    )
+                    for li in li_re.finditer(m_prem.group(1)):
+                        full = li.group(0)
+                        is_p = "b-prem_translator" in full
+                        if is_p:
+                            premium_ids.add(int(li.group(1)))
+                        print(f"[prem-probe]   id={li.group(1)} prem={is_p}")
+                print(f"[prem-probe] result premium_ids={premium_ids}")
+                # Memoize ONLY a non-empty result. An empty set can mean either
+                # "genuinely no premium" OR "mirror served bare HTML this time" —
+                # pinning that for 6h would hide locks. So we only lock in a
+                # positive detection; empty falls back to the 5-min result cache
+                # and re-probes, so a missed premium recovers within minutes.
+                if premium_ids:
+                    _prem_cache[_post_url] = (_time.monotonic(), premium_ids)
+            except Exception as ex_prem:
+                print(f"premium probe failed: {ex_prem}")
 
         try:
             raw_t = []
