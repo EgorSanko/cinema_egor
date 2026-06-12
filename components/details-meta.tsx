@@ -85,7 +85,7 @@ export async function DetailsMeta({ type, data }: { type: "movie" | "tv"; data: 
       {collection && (
         <div className="lg:col-span-2">
           <h2 className="text-2xl font-bold text-foreground tracking-tight mb-5">
-            Часть серии «{collection.name.replace(/\s*\(Collection\)$/i, "").replace(/\s*—\s*Коллекция$/i, "")}»
+            Часть серии «{collection.name.replace(/\s*\(Collection\)$/i, "").replace(/\s*\(Коллекци[яи]\)$/i, "").replace(/\s*—\s*Коллекция$/i, "")}»
           </h2>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4">
             {collection.parts.map((p) => (
