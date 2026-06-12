@@ -1,5 +1,6 @@
 import { Navbar } from "@/components/navbar";
 import { TVPlayer } from "@/components/tv-player";
+import { CastStrip } from "@/components/cast-strip";
 import { Comments } from "@/components/comments";
 import { getTVDetails, getTVRecommendations } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
@@ -89,6 +90,9 @@ export default async function TVPage({ params }: TVPageProps) {
               </span>
             )}
           </section>
+
+          {/* Cast — clickable actors → /person/[id] filmography */}
+          <CastStrip cast={(show as any).credits?.cast} />
 
           {/* Recommendations */}
           {recs.length > 0 && (

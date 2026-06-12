@@ -220,7 +220,7 @@ export async function getMovieDetails(movieId: number) {
 	if (isBlockedMovie(movieId)) return null;
 	try {
 		const response = await fetchWithRetry(
-			`${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=ru-RU`,
+			`${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=ru-RU&append_to_response=credits`,
 			{
 				next: { revalidate: 3600 },
 			}
@@ -295,7 +295,7 @@ export async function getTVDetails(tvId: number) {
   if (isBlockedTV(tvId)) return null;
   try {
     const response = await fetchWithRetry(
-      `${API_BASE_URL}/tv/${tvId}?api_key=${API_KEY}&language=ru-RU`,
+      `${API_BASE_URL}/tv/${tvId}?api_key=${API_KEY}&language=ru-RU&append_to_response=credits`,
       { next: { revalidate: 3600 } }
     );
     const data = await response.json();

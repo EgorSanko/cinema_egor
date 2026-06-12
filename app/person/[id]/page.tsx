@@ -27,7 +27,12 @@ export default async function PersonPage({ params }: PersonPageProps) {
 	if (!data || !data.details || !data.details.id) notFound();
 
 	const { details, credits } = data;
-	const cast = (credits.cast || []).filter((c: any) => c.poster_path).slice(0, 60);
+	// Most popular roles first, then cap — sorting before slicing keeps the
+	// actor's famous titles instead of an arbitrary 60 from TMDB's order.
+	const cast = (credits.cast || [])
+		.filter((c: any) => c.poster_path)
+		.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
+		.slice(0, 100);
 
 	const movies = cast.filter((c: any) => c.media_type === "movie").map((m: any) => ({
 		id: m.id, title: m.title, poster_path: m.poster_path,
