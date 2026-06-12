@@ -1,6 +1,7 @@
 import { Navbar } from "@/components/navbar";
 import { TVPlayer } from "@/components/tv-player";
 import { CastStrip } from "@/components/cast-strip";
+import { DetailsMeta } from "@/components/details-meta";
 import { Comments } from "@/components/comments";
 import { getTVDetails, getTVRecommendations } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
@@ -93,6 +94,9 @@ export default async function TVPage({ params }: TVPageProps) {
 
           {/* Cast — clickable actors → /person/[id] filmography */}
           <CastStrip cast={(show as any).credits?.cast} />
+
+          {/* О сериале — creators/country/age + full synopsis */}
+          <DetailsMeta type="tv" data={show} />
 
           {/* Recommendations */}
           {recs.length > 0 && (

@@ -51,6 +51,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const [translatorLoading, setTranslatorLoading] = useState(false);
   const [subtitles, setSubtitles] = useState<ArtSubtitle[]>([]);
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(null);
+  // Available quality + dub count, surfaced from the prefetch so the user sees
+  // "1080p · N озвучек" before pressing play (no extra request).
+  const [availInfo, setAvailInfo] = useState<{ quality?: string; dubs?: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInterval = useRef<any>(null);
@@ -100,6 +103,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // so fetchStream consumes this in-flight request instead of firing a new one.
   useEffect(() => {
     if (isNotReleased) return;
+    let alive = true;
     try {
       const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
       const ruTitle = (movie.title || "").replace(/["«»""]/g, "").trim();
@@ -110,8 +114,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       const q = encodeURIComponent(searchTitle);
       const trParam = tr ? "&translator_id=" + tr : "";
       const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam;
-      prefetchRef.current = { url, promise: fetch(url).then((r) => r.json()).catch(() => null) };
+      const p = fetch(url).then((r) => r.json()).catch(() => null);
+      prefetchRef.current = { url, promise: p };
+      p.then((d: any) => {
+        if (alive && d?.stream) setAvailInfo({ quality: d.quality, dubs: (d.translators || []).length });
+      });
     } catch {}
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [movie.id]);
 
@@ -587,6 +596,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   {movie.genres && movie.genres.slice(0, 2).map(g => (
                     <span key={g.id} className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">{g.name}</span>
                   ))}
+                  {availInfo?.quality && (
+                    <span className="px-2.5 py-1 rounded-md bg-primary/12 text-primary ring-1 ring-primary/25 font-semibold">{availInfo.quality}</span>
+                  )}
+                  {availInfo?.dubs ? (
+                    <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">{availInfo.dubs} {availInfo.dubs === 1 ? "озвучка" : availInfo.dubs < 5 ? "озвучки" : "озвучек"}</span>
+                  ) : null}
                 </div>
 
                 {movie.overview && (

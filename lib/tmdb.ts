@@ -220,7 +220,7 @@ export async function getMovieDetails(movieId: number) {
 	if (isBlockedMovie(movieId)) return null;
 	try {
 		const response = await fetchWithRetry(
-			`${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=ru-RU&append_to_response=credits`,
+			`${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=ru-RU&append_to_response=credits,release_dates`,
 			{
 				next: { revalidate: 3600 },
 			}
@@ -295,7 +295,7 @@ export async function getTVDetails(tvId: number) {
   if (isBlockedTV(tvId)) return null;
   try {
     const response = await fetchWithRetry(
-      `${API_BASE_URL}/tv/${tvId}?api_key=${API_KEY}&language=ru-RU&append_to_response=credits`,
+      `${API_BASE_URL}/tv/${tvId}?api_key=${API_KEY}&language=ru-RU&append_to_response=credits,content_ratings`,
       { next: { revalidate: 3600 } }
     );
     const data = await response.json();
@@ -521,4 +521,22 @@ export function profileUrl(path: string | null, size = "w185") {
 	if (!path) return null;
 	const envBase = process.env.NEXT_PUBLIC_TMDB_PROFILE_BASE_URL || `/tmdb-img/${size}`;
 	return `${envBase}${path}`;
+}
+
+// Franchise parts for the "Часть серии" block (belongs_to_collection on a movie).
+export async function getCollection(id: number): Promise<{ name: string; parts: Movie[] } | null> {
+	if (!id) return null;
+	try {
+		const r = await fetchWithRetry(
+			`${API_BASE_URL}/collection/${id}?api_key=${API_KEY}&language=ru-RU`,
+			{ next: { revalidate: 86400 } }
+		);
+		const data = await r.json();
+		const parts = filterBlocked((data.parts || []) as Movie[], "movie")
+			.sort((a: any, b: any) => (a.release_date || "").localeCompare(b.release_date || ""));
+		return { name: data.name, parts };
+	} catch (e) {
+		console.error("getCollection error:", e);
+		return null;
+	}
 }

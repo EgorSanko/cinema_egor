@@ -1,6 +1,7 @@
 ﻿import { MoviePlayer } from "@/components/movie-player";
 import { Navbar } from "@/components/navbar";
 import { CastStrip } from "@/components/cast-strip";
+import { DetailsMeta } from "@/components/details-meta";
 import { Comments } from "@/components/comments";
 import { getImageUrl, getMovieDetails, getMoviesByGenre } from "@/lib/tmdb";
 import { isBlockedMovie } from "@/lib/blocked-content";
@@ -87,6 +88,9 @@ export default async function MoviePage({ params }: MoviePageProps) {
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pb-12">
           {/* Cast — clickable actors → /person/[id] filmography */}
           <CastStrip cast={(movie as any).credits?.cast} />
+
+          {/* О фильме — director/country/age/tagline + full synopsis + franchise */}
+          <DetailsMeta type="movie" data={movie} />
 
           {/* Recommendations */}
           {relatedMovies.length > 0 && (
