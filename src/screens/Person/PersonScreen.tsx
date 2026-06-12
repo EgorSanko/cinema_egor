@@ -29,7 +29,14 @@ export function PersonScreen() {
     getPersonDetails(id).then(data => {
       if (cancelled || !data) return setLoading(false);
       setDetails(data.details);
-      setCredits((data.credits.cast || []).filter((c: any) => c.poster_path));
+      // Sort by popularity so the most relevant titles lead — combined_credits
+      // returns movies AND TV unsorted, so the old arbitrary slice(30) dropped
+      // famous roles. (raised cap below from 30 → 100 to actually show them all.)
+      setCredits(
+        (data.credits.cast || [])
+          .filter((c: any) => c.poster_path)
+          .sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
+      );
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -91,7 +98,7 @@ export function PersonScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>🎬 Фильмы ({movies.length})</Text>
                 <View style={styles.grid}>
-                  {movies.slice(0, 30).map((m: any) => (
+                  {movies.slice(0, 100).map((m: any) => (
                     <Pressable
                       key={`m-${m.id}-${m.credit_id}`}
                       onPress={() => nav.navigate('MovieDetail', { id: m.id, title: m.title })}
@@ -114,7 +121,7 @@ export function PersonScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>📺 Сериалы ({series.length})</Text>
                 <View style={styles.grid}>
-                  {series.slice(0, 30).map((s: any) => (
+                  {series.slice(0, 100).map((s: any) => (
                     <Pressable
                       key={`t-${s.id}-${s.credit_id}`}
                       onPress={() => nav.navigate('TVDetail', { id: s.id, title: s.name })}
