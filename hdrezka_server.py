@@ -26,8 +26,14 @@ logged_in = False
 # short because HDRezka stream URLs can carry expiring CDN tokens — long caching
 # would hand out dead links.
 import time as _time
+import asyncio as _asyncio
 _search_cache: dict = {}
 _SEARCH_CACHE_TTL = 300  # seconds
+# Single-flight: coalesce concurrent identical resolves into ONE upstream call.
+# The page fires two identical searches on load (player prefetch + download
+# button), and many users can open the same new title at once — without this
+# each would hit HDRezka separately (~2-3s, rate-limit risk).
+_inflight: dict = {}
 
 def _cache_store(key, resp):
     # Only cache real hits — never errors / "not found", so a transient failure
@@ -52,6 +58,20 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
     _hit = _search_cache.get(cache_key)
     if _hit and _time.monotonic() - _hit[0] < _SEARCH_CACHE_TTL:
         return _hit[1]
+    _flight = _inflight.get(cache_key)
+    if _flight is not None:
+        return await _flight
+    _flight = _asyncio.ensure_future(
+        _resolve_search(q, year, type, season, episode, index, translator_id, cache_key)
+    )
+    _inflight[cache_key] = _flight
+    try:
+        return await _flight
+    finally:
+        _inflight.pop(cache_key, None)
+
+
+async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key):
     try:
         results = await Search(q).get_page(1)
         if not results:
