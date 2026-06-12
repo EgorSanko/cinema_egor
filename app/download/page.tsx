@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 const APK_URL = "/download/sapkefly.apk";
 const APK_SIZE_MB = 93;
-const APP_VERSION = "2.0.26";
+const APP_VERSION = "2.0.27";
 
 const FEATURES: { Icon: any; title: string; sub: string }[] = [
   { Icon: TvIcon, title: "Фильмы и сериалы", sub: "Огромная база с переводом и оригиналом" },
