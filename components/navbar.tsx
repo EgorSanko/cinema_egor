@@ -140,7 +140,7 @@ export function Navbar() {
         className={`sticky top-0 z-50 transition-[background-color,border-color] duration-300 backdrop-blur-xl ${
           scrolled
             ? "bg-background/90 border-b border-white/[0.06]"
-            : "bg-background/60 border-b border-transparent"
+            : "bg-transparent border-b border-transparent"
         }`}
       >
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">

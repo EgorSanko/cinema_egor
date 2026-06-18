@@ -94,24 +94,26 @@ html:not(.dark) a[href^="/person/"]:hover {
 }
 
 .dark {
-	--background: #0f1419;
-	--foreground: #e4e6eb;
-	--card: #1a1f2e;
-	--card-foreground: #e4e6eb;
-	--popover: #1a1f2e;
-	--popover-foreground: #e4e6eb;
+	/* Neutral near-black base (Apple TV+ vibe) — posters provide the colour.
+	   Lime --primary kept as an ACCENT (used sparingly, not on big fills). */
+	--background: #0a0a0b;
+	--foreground: #e9eaec;
+	--card: #161618;
+	--card-foreground: #e9eaec;
+	--popover: #161618;
+	--popover-foreground: #e9eaec;
 	--primary: #a3e635;
-	--primary-foreground: #0f1419;
-	--secondary: #2d3748;
-	--secondary-foreground: #e4e6eb;
-	--muted: #4a5568;
-	--muted-foreground: #a0aec0;
+	--primary-foreground: #0a0a0b;
+	--secondary: #232326;
+	--secondary-foreground: #e9eaec;
+	--muted: #2a2a2e;
+	--muted-foreground: #9a9aa2;
 	--accent: #a78bfa;
 	--accent-foreground: #ffffff;
 	--destructive: #dc2626;
 	--destructive-foreground: #ffffff;
-	--border: #2d3748;
-	--input: #1a1f2e;
+	--border: #232326;
+	--input: #161618;
 	--ring: #a3e635;
 	--chart-1: #a3e635;
 	--chart-2: #a78bfa;
@@ -129,7 +131,9 @@ html:not(.dark) a[href^="/person/"]:hover {
 }
 
 @theme inline {
-	/* optional: --font-sans, --font-serif, --font-mono if they are applied in the layout.tsx */
+	/* Geist — clean geometric grotesk, closest free analogue to SF Pro.
+	   Wired via geist.variable (--font-geist) on <html> in layout.tsx. */
+	--font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
 	--color-card: var(--card);
@@ -174,6 +178,15 @@ html:not(.dark) a[href^="/person/"]:hover {
 	}
 	body {
 		@apply bg-background text-foreground;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+		text-rendering: optimizeLegibility;
+	}
+
+	/* Apple-style headings: tighter tracking, balanced wrapping. */
+	h1, h2, h3 {
+		letter-spacing: -0.02em;
+		text-wrap: balance;
 	}
 
 	button:not(:disabled) {
@@ -188,8 +201,23 @@ html:not(.dark) a[href^="/person/"]:hover {
 	.gradient-overlay {
 		background: linear-gradient(
 			180deg,
-			rgba(15, 20, 25, 0) 0%,
-			rgba(15, 20, 25, 0.9) 100%
+			rgba(10, 10, 11, 0) 0%,
+			rgba(10, 10, 11, 0.9) 100%
 		);
+	}
+
+	/* Liquid-glass surface — frosted translucent panel over content.
+	   Apply to modals, mini-player, detail-meta for the Apple TV+ layered feel. */
+	.glass {
+		background: rgba(22, 22, 24, 0.62);
+		-webkit-backdrop-filter: blur(20px) saturate(1.4);
+		backdrop-filter: blur(20px) saturate(1.4);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	/* Card hover: slower, softer Apple-style ease. */
+	a[href^="/movie/"] .group,
+	a[href^="/tv/"] .group {
+		transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 	}
 }

@@ -39,7 +39,7 @@ export default async function Home() {
       <TermsModal />
       <main className="bg-background pb-20 sm:pb-0">
         {heroSlice.length > 0 && <HeroSection movies={heroSlice} />}
-        <div className="space-y-12 px-4 sm:px-6 lg:px-8 py-12 max-w-[1600px] mx-auto">
+        <div className="space-y-16 px-4 sm:px-6 lg:px-8 py-14 max-w-[1600px] mx-auto">
           <ContinueWatching />
           <MoodAndRoulette />
           <Recommendations />

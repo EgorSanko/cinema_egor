@@ -68,7 +68,7 @@ export function HeroSection({ movies }: HeroSectionProps) {
   if (!movies || movies.length === 0) return null;
 
   return (
-    <Carousel setApi={setApi} className="w-full relative group" opts={{ loop: true }}>
+    <Carousel setApi={setApi} className="w-full relative group -mt-16" opts={{ loop: true }}>
       <CarouselContent>
         {movies.map((item) => {
           const isTv = (item as any).first_air_date !== undefined && (item as any).first_air_date !== null;
@@ -97,7 +97,7 @@ export function HeroSection({ movies }: HeroSectionProps) {
 
           return (
             <CarouselItem key={item.id}>
-              <div className="relative w-full h-[520px] sm:h-[600px] md:h-[680px] overflow-hidden">
+              <div className="relative w-full h-[78vh] min-h-[560px] md:h-[86vh] md:min-h-[700px] overflow-hidden">
                 <Image
                   src={getBackdropUrl(item.backdrop_path) || "/movie-backdrop.png"}
                   alt={title || ""}
@@ -110,7 +110,7 @@ export function HeroSection({ movies }: HeroSectionProps) {
                 <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
                 <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
 
-                <div className="absolute inset-0 flex items-center">
+                <div className="absolute inset-0 flex items-center pt-16">
                   <div className="max-w-[1600px] mx-auto w-full px-4 sm:px-6 lg:px-8">
                     <div className="max-w-xl space-y-4 sm:space-y-5">
                       {/* Type chip */}
@@ -165,7 +165,7 @@ export function HeroSection({ movies }: HeroSectionProps) {
                       <div className="flex items-center gap-2 sm:gap-2.5 pt-2">
                         <Link
                           href={detailHref}
-                          className="inline-flex items-center gap-2 h-11 px-5 sm:px-6 rounded-full bg-primary text-primary-foreground text-[13px] font-bold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
+                          className="inline-flex items-center gap-2 h-11 px-5 sm:px-6 rounded-full bg-white text-black text-[13px] font-bold hover:bg-white/90 transition-colors shadow-lg shadow-black/30"
                         >
                           <Play size={16} fill="currentColor" /> {"Смотреть"}
                         </Link>

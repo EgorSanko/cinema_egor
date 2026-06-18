@@ -9,7 +9,7 @@ import { MobileNav } from "@/components/mobile-nav";
 import { PWABackButton } from "@/components/pwa-back-button";
 import { ReloadOnStale } from "@/components/reload-on-stale";
 
-const _geist = Geist({ subsets: ["latin"] });
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 const righteous = Righteous({ subsets: ["latin"], weight: "400", variable: "--font-brand" });
 
@@ -44,7 +44,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   colorScheme: "dark",
-  themeColor: "#0f1419",
+  themeColor: "#0a0a0b",
   userScalable: true,
   width: "device-width",
   initialScale: 1,
@@ -56,7 +56,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" className={`dark ${righteous.variable}`}>
+    <html lang="ru" className={`dark ${geist.variable} ${righteous.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
         <AuthProvider>
           {children}
