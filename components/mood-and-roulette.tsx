@@ -656,11 +656,9 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
       <button
         onClick={handleSpin}
         disabled={spinning}
-        className="relative w-full inline-flex items-center justify-center gap-2 h-13 py-3.5 rounded-2xl bg-gradient-to-r from-primary via-yellow-300 to-primary text-primary-foreground font-black text-[15px] tracking-wider uppercase hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed overflow-hidden"
+        className="relative w-full inline-flex items-center justify-center gap-2 h-13 py-3.5 rounded-2xl bg-primary/15 text-primary ring-1 ring-primary/30 font-black text-[15px] tracking-wider uppercase hover:bg-primary/22 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed overflow-hidden"
         style={{
-          backgroundSize: "200% 100%",
-          animation: spinning ? "case-flow 1.2s linear infinite" : undefined,
-          boxShadow: "0 8px 28px -6px rgba(163,230,53,0.55), 0 0 24px rgba(163,230,53,0.25)",
+          boxShadow: "0 0 22px -6px rgba(163,230,53,0.30)",
         }}
       >
         <Dices size={18} className={spinning ? "animate-spin" : ""} />
