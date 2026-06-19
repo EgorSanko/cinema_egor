@@ -176,8 +176,16 @@ html:not(.dark) a[href^="/person/"]:hover {
 	* {
 		@apply border-border outline-ring/50;
 	}
+	/* Kill any stray horizontal overflow page-wide (e.g. edge-to-edge
+	   carousels with negative margins). `clip` zeroes sideways drift
+	   WITHOUT creating a scroll container, so position:sticky (navbar)
+	   and inner overflow-x:auto strips keep working. */
+	html {
+		overflow-x: clip;
+	}
 	body {
 		@apply bg-background text-foreground;
+		max-width: 100vw;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 		text-rendering: optimizeLegibility;
