@@ -92,6 +92,13 @@ export function Navbar() {
     return () => { window.removeEventListener("storage", readFavs); clearInterval(interval); };
   }, []);
 
+  // Hide the fixed bottom MobileNav while the hamburger menu is open —
+  // otherwise it overlaps the last menu items (profile/logout) on phones.
+  useEffect(() => {
+    document.body.classList.toggle("nav-menu-open", isOpen);
+    return () => document.body.classList.remove("nav-menu-open");
+  }, [isOpen]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {

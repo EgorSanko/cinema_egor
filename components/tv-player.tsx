@@ -15,6 +15,7 @@ import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { BingoCard } from "./bingo-card";
 import { StatusButtons } from "./status-buttons";
+import { ExpandableText } from "./expandable-text";
 import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
@@ -612,8 +613,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
               {backdropUrl && <img src={backdropUrl} alt={show.name} className={`absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-105 ${show.backdrop_path ? "object-cover" : "object-contain bg-black/90"}`} />}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/10 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-5">
-                  <div className="w-24 h-24 rounded-full bg-primary/90 flex items-center justify-center shadow-xl shadow-primary/40 transition-all duration-300 group-hover:scale-110 group-hover:bg-primary">
-                    <Play size={44} className="text-white ml-1.5" fill="white" />
+                  <div className="w-24 h-24 rounded-full bg-white/95 flex items-center justify-center shadow-xl shadow-black/40 transition-all duration-300 group-hover:scale-110 group-hover:bg-white">
+                    <Play size={44} className="text-black ml-1.5" fill="currentColor" />
                   </div>
                   <span className="text-white/80 text-sm font-semibold tracking-widest uppercase">
                     {resumeTime ? "Продолжить с " + formatTime(resumeTime) : "Смотреть онлайн"}
@@ -816,7 +817,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 </div>
 
                 {show.overview && (
-                  <p className="text-foreground/65 text-[13px] sm:text-[14px] leading-relaxed line-clamp-2 max-w-2xl">{show.overview}</p>
+                  <ExpandableText
+                    text={show.overview}
+                    className="text-foreground/65 text-[13px] sm:text-[14px] leading-relaxed"
+                  />
                 )}
 
                 {/* Action buttons */}

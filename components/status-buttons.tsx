@@ -57,7 +57,10 @@ export function StatusButtons({ id, type, title, poster_path, vote_average, size
             title={b.label}
           >
             {b.icon}
-            <span>{b.label}</span>
+            {/* Mobile: only the active pill keeps its label so the 3-button
+                capsule fits a narrow viewport (fixes /tv header overflow).
+                Desktop shows all labels. */}
+            <span className={active ? "inline" : "hidden sm:inline"}>{b.label}</span>
           </button>
         );
       })}

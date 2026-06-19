@@ -16,11 +16,11 @@ import { Sparkles, Dices, X, Play } from "lucide-react";
 // TMDB's `|` OR-logic dragging in unrelated films (e.g. an action movie that
 // merely has a "thriller" tag showing up under "Хочу страха").
 const MOODS: { id: string; label: string; subLabel: string; emoji: string; genres: number[]; minRating: number; color: string }[] = [
-  { id: "fun",       label: "Хочу веселья",      subLabel: "Комедии",          emoji: "😄", genres: [35],     minRating: 6.5, color: "#a3e635" },
+  { id: "fun",       label: "Хочу веселья",      subLabel: "Комедии",          emoji: "😄", genres: [35],     minRating: 6.5, color: "#fbbf24" },
   { id: "sad",       label: "Чувствую грусть",   subLabel: "Драмы",            emoji: "😢", genres: [18],     minRating: 7.0, color: "#c4b5fd" },
   { id: "scary",     label: "Хочу страха",       subLabel: "Ужасы",            emoji: "🎃", genres: [27],     minRating: 6.0, color: "#7dd3fc" },
   { id: "action",    label: "Нужен экшен",       subLabel: "Боевики",          emoji: "⚡", genres: [28],     minRating: 6.5, color: "#fde047" },
-  { id: "smart",     label: "Хочу поразмыслить", subLabel: "Детективы",        emoji: "🪐", genres: [9648],   minRating: 7.0, color: "#a3e635" },
+  { id: "smart",     label: "Хочу поразмыслить", subLabel: "Детективы",        emoji: "🪐", genres: [9648],   minRating: 7.0, color: "#38bdf8" },
   { id: "romantic",  label: "Романтика",         subLabel: "Мелодрамы",        emoji: "💖", genres: [10749],  minRating: 6.5, color: "#f9a8d4" },
 ];
 
@@ -386,7 +386,7 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
   return (
     <div className="relative rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-foreground/[0.06] via-foreground/[0.02] to-foreground/[0.01] ring-1 ring-white/[0.06] overflow-hidden flex flex-col">
       {/* Ambient glows */}
-      <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-primary/[0.10] blur-3xl pointer-events-none" />
+      <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-primary/[0.05] blur-3xl pointer-events-none" />
       <div className="absolute -bottom-20 -left-16 w-64 h-64 rounded-full bg-purple-500/[0.06] blur-3xl pointer-events-none" />
 
       {/* Header */}
@@ -485,14 +485,14 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
         )}
 
         {/* Center indicator — vertical line + triangles top/bottom */}
-        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-primary pointer-events-none z-20"
-          style={{ boxShadow: "0 0 14px rgba(163,230,53,0.9), 0 0 28px rgba(163,230,53,0.5)" }}
+        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-white/90 pointer-events-none z-20"
+          style={{ boxShadow: "0 0 12px rgba(255,255,255,0.6), 0 0 24px rgba(255,255,255,0.3)" }}
         />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20"
-          style={{ width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "10px solid #a3e635", filter: "drop-shadow(0 0 6px rgba(163,230,53,0.9))" }}
+          style={{ width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "10px solid #ffffff", filter: "drop-shadow(0 0 5px rgba(255,255,255,0.7))" }}
         />
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-20"
-          style={{ width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderBottom: "10px solid #a3e635", filter: "drop-shadow(0 0 6px rgba(163,230,53,0.9))" }}
+          style={{ width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderBottom: "10px solid #ffffff", filter: "drop-shadow(0 0 5px rgba(255,255,255,0.7))" }}
         />
 
         {/* Edge fades for cinema-feel */}
@@ -511,8 +511,8 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
             style={{
               transform: opened ? "translateX(-100%)" : "translateX(0)",
               background: "linear-gradient(135deg, rgba(20,24,30,0.96), rgba(8,10,14,0.98))",
-              borderRight: opened ? "none" : "2px solid rgba(163,230,53,0.7)",
-              boxShadow: opened ? "none" : "inset -16px 0 40px -8px rgba(163,230,53,0.30), 8px 0 32px -8px rgba(0,0,0,0.7)",
+              borderRight: opened ? "none" : "2px solid rgba(163,230,53,0.32)",
+              boxShadow: opened ? "none" : "inset -16px 0 40px -8px rgba(163,230,53,0.14), 8px 0 32px -8px rgba(0,0,0,0.7)",
             }}
           >
             {/* Real logo image (logo-512.png — green "SAPKEFLY KINO"
@@ -543,8 +543,8 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
             style={{
               transform: opened ? "translateX(100%)" : "translateX(0)",
               background: "linear-gradient(225deg, rgba(20,24,30,0.96), rgba(8,10,14,0.98))",
-              borderLeft: opened ? "none" : "2px solid rgba(163,230,53,0.7)",
-              boxShadow: opened ? "none" : "inset 16px 0 40px -8px rgba(163,230,53,0.30), -8px 0 32px -8px rgba(0,0,0,0.7)",
+              borderLeft: opened ? "none" : "2px solid rgba(163,230,53,0.32)",
+              boxShadow: opened ? "none" : "inset 16px 0 40px -8px rgba(163,230,53,0.14), -8px 0 32px -8px rgba(0,0,0,0.7)",
             }}
           >
             <div
@@ -569,8 +569,8 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
             <div
               className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[3px] pointer-events-none z-10"
               style={{
-                background: "linear-gradient(180deg, transparent, #a3e635, transparent)",
-                boxShadow: "0 0 20px rgba(163,230,53,0.8), 0 0 40px rgba(163,230,53,0.4)",
+                background: "linear-gradient(180deg, transparent, rgba(163,230,53,0.6), transparent)",
+                boxShadow: "0 0 14px rgba(163,230,53,0.4), 0 0 28px rgba(163,230,53,0.2)",
                 animation: "seam-pulse 2s ease-in-out infinite",
               }}
             />
@@ -582,8 +582,8 @@ function CaseRoulette({ spinning, spinPick, spinPool, onSpin }: {
           {!opened && (
             <div className="absolute inset-0 pointer-events-none z-10">
               {/* Top + bottom lime accent bars with glow */}
-              <div className="absolute top-3 left-8 right-8 h-[2px] rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgba(163,230,53,0.5), transparent)" }} />
-              <div className="absolute bottom-3 left-8 right-8 h-[2px] rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgba(163,230,53,0.5), transparent)" }} />
+              <div className="absolute top-3 left-8 right-8 h-[2px] rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgba(163,230,53,0.28), transparent)" }} />
+              <div className="absolute bottom-3 left-8 right-8 h-[2px] rounded-full" style={{ background: "linear-gradient(90deg, transparent, rgba(163,230,53,0.28), transparent)" }} />
 
               {/* Four corner brackets — L-shaped accents */}
               {[

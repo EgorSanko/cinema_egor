@@ -14,6 +14,7 @@ import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { BingoCard } from "./bingo-card";
 import { StatusButtons } from "./status-buttons";
+import { ExpandableText } from "./expandable-text";
 import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
@@ -400,8 +401,8 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                     </>
                   ) : (
                     <>
-                      <div className="w-24 h-24 rounded-full bg-primary/90 flex items-center justify-center shadow-xl shadow-primary/40 transition-all duration-300 group-hover:scale-110 group-hover:bg-primary">
-                        <Play size={44} className="text-white ml-1.5" fill="white" />
+                      <div className="w-24 h-24 rounded-full bg-white/95 flex items-center justify-center shadow-xl shadow-black/40 transition-all duration-300 group-hover:scale-110 group-hover:bg-white">
+                        <Play size={44} className="text-black ml-1.5" fill="currentColor" />
                       </div>
                       <span className="text-white/80 text-sm font-semibold tracking-widest uppercase">
                         {resumeTime ? "Продолжить с " + formatTime(resumeTime) : "Смотреть онлайн"}
@@ -605,7 +606,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                 </div>
 
                 {movie.overview && (
-                  <p className="text-foreground/65 text-[13px] sm:text-[14px] leading-relaxed line-clamp-2 max-w-2xl">{movie.overview}</p>
+                  <ExpandableText
+                    text={movie.overview}
+                    className="text-foreground/65 text-[13px] sm:text-[14px] leading-relaxed"
+                  />
                 )}
 
                 <div className="flex items-center gap-2 flex-wrap pt-1">

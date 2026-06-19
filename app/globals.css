@@ -220,4 +220,10 @@ html:not(.dark) a[href^="/person/"]:hover {
 	a[href^="/tv/"] .group {
 		transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 	}
+
+	/* When the hamburger menu is open, hide the fixed bottom nav so it
+	   doesn't overlap the menu's last items (profile/logout) on phones. */
+	body.nav-menu-open .mobile-bottom-nav {
+		display: none;
+	}
 }
