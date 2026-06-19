@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { spawn } from "child_process";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import crypto from "crypto";
+import { Readable } from "stream";
 
 // Streaming download proxy for HDRezka. Two modes:
 //
@@ -51,6 +56,30 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const REFERER = "https://hdrezka.ag/";
 
+// iOS Safari/QuickTime can't read the duration of a fragmented mp4 (empty_moov)
+// and plays only the first fragment (~2s). For iOS we instead remux to a real
+// temp file with the moov atom at the front (+faststart), then serve that.
+// Cost: the whole file lives on /tmp briefly — guarded by a free-space check
+// so an iOS download can never fill the disk and crash the site.
+const MIN_FREE_BYTES = 4 * 1024 * 1024 * 1024; // keep ≥4 GB headroom
+
+function isIOS(req: NextRequest): boolean {
+  return /iPhone|iPad|iPod/i.test(req.headers.get("user-agent") || "");
+}
+
+async function freeBytes(dir: string): Promise<number | null> {
+  try {
+    const s = await (fs.promises as any).statfs(dir);
+    return s.bavail * s.bsize;
+  } catch {
+    return null;
+  }
+}
+
+function safeUnlink(p: string) {
+  fs.promises.unlink(p).catch(() => {});
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const url = sp.get("url");
@@ -80,7 +109,7 @@ export async function GET(req: NextRequest) {
   const isHls = /:hls:manifest\.m3u8/i.test(url) || /\.m3u8(\?|$)/i.test(url);
 
   if (isHls) {
-    return streamHlsAsMp4(url, filename, req);
+    return remuxHls(url, filename, req);
   }
   return proxyDirect(target.toString(), filename, req);
 }
@@ -147,6 +176,82 @@ function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest)
   });
 }
 
+/** Picks the HLS→mp4 strategy: iOS gets a real faststart file (correct
+    duration); everyone else gets the cheap streamed fragmented mp4. Falls
+    back to streaming if the disk is low so a download can't fill it. */
+async function remuxHls(url: string, filename: string, req: NextRequest): Promise<Response> {
+  if (isIOS(req)) {
+    const free = await freeBytes(os.tmpdir());
+    if (free === null || free >= MIN_FREE_BYTES) {
+      return downloadHlsAsFile(url, filename, req);
+    }
+    console.warn("[dl] low disk, iOS falls back to streamed fmp4");
+  }
+  return streamHlsAsMp4(url, filename, req);
+}
+
+/** Mode 1-iOS — remux HLS to a real mp4 file with moov-at-front, then serve
+    it. This is the only way iOS reads the full duration (vs. the ~2s a
+    fragmented mp4 reports). The temp file is deleted as soon as it's sent. */
+async function downloadHlsAsFile(manifestUrl: string, filename: string, req: NextRequest): Promise<Response> {
+  const tmp = path.join(os.tmpdir(), `dl-${crypto.randomBytes(8).toString("hex")}.mp4`);
+
+  const args = [
+    "-nostdin",
+    "-loglevel", "error",
+    "-user_agent", UA,
+    "-headers", `Referer: ${REFERER}\r\n`,
+    "-i", manifestUrl,
+    "-c", "copy",
+    "-bsf:a", "aac_adtstoasc",
+    "-movflags", "+faststart", // moov at front → iOS gets the real duration
+    "-f", "mp4",
+    "-y", tmp,
+  ];
+
+  const ff = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+  let errTail = "";
+  ff.stderr.on("data", (d) => { errTail = (errTail + d.toString()).slice(-400); });
+
+  const onAbort = () => { try { ff.kill("SIGKILL"); } catch {} safeUnlink(tmp); };
+  req.signal.addEventListener("abort", onAbort);
+
+  const code: number = await new Promise((resolve) => {
+    ff.on("close", (c) => resolve(c ?? 1));
+    ff.on("error", () => resolve(1));
+  });
+  req.signal.removeEventListener("abort", onAbort);
+
+  let size = 0;
+  try { size = fs.statSync(tmp).size; } catch {}
+
+  if (req.signal.aborted) { safeUnlink(tmp); return new Response(null, { status: 499 }); }
+
+  if (code !== 0 || size === 0) {
+    safeUnlink(tmp);
+    if (errTail.trim()) console.error("[dl ffmpeg temp]", errTail.trim());
+    // Last resort: still hand the user the streamed version (broken duration
+    // beats no download).
+    return streamHlsAsMp4(manifestUrl, filename, req);
+  }
+
+  const node = fs.createReadStream(tmp);
+  const cleanup = () => safeUnlink(tmp);
+  node.on("close", cleanup);
+  node.on("error", cleanup);
+  req.signal.addEventListener("abort", () => { node.destroy(); cleanup(); });
+
+  return new Response(Readable.toWeb(node) as unknown as ReadableStream, {
+    status: 200,
+    headers: {
+      "Content-Type": "video/mp4",
+      "Content-Length": String(size),
+      "Content-Disposition": dispositionHeader(filename),
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 /** Mode 2 — plain byte proxy for a direct mp4, forwarding Range for resume. */
 async function proxyDirect(url: string, filename: string, req: NextRequest): Promise<Response> {
   const upstreamHeaders: Record<string, string> = {
@@ -175,7 +280,7 @@ async function proxyDirect(url: string, filename: string, req: NextRequest): Pro
   const ct = upstream.headers.get("content-type") || "";
   if (/mpegurl|m3u8/i.test(ct)) {
     try { (upstream.body as any)?.cancel?.(); } catch {}
-    return streamHlsAsMp4(url, filename, req);
+    return remuxHls(url, filename, req);
   }
 
   const headers = new Headers();
