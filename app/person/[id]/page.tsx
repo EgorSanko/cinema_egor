@@ -5,6 +5,7 @@ import { getPersonDetails, profileUrl } from "@/lib/tmdb";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { User, Calendar, MapPin } from "lucide-react";
+import { ExpandableText } from "@/components/expandable-text";
 import type { Metadata } from "next";
 
 interface PersonPageProps {
@@ -85,9 +86,11 @@ export default async function PersonPage({ params }: PersonPageProps) {
 							{details.biography && (
 								<div>
 									<h2 className="text-lg font-semibold text-foreground mb-2">Биография</h2>
-									<p className="text-muted-foreground text-sm leading-relaxed line-clamp-6">
-										{details.biography}
-									</p>
+									<ExpandableText
+										text={details.biography}
+										className="text-muted-foreground text-sm leading-relaxed"
+										clampClass="line-clamp-6"
+									/>
 								</div>
 							)}
 						</div>
