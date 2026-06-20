@@ -129,16 +129,25 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
             except (TypeError, ValueError):
                 want_year = None
             q_norm = _norm_title(q)
-            # Pass 1 — exact year match.
+            # Pass 1 — exact year match, then prefer the closest TITLE among
+            # same-year candidates. Without the title tiebreak "Мадагаскар"
+            # (2005) lost to "Пингвины из Мадагаскара в рождественских
+            # приключениях" (2005) just because the short was listed first.
+            year_cands = []
             for r in filtered:
                 info = getattr(r, 'info', None)
                 info_year = getattr(info, 'year', None) if info else None
-                if info_year and str(info_year) == year:
-                    best = r
-                    break
-                elif year in str(info or '') or year in str(getattr(r, 'url', '')):
-                    best = r
-                    break
+                if (info_year and str(info_year) == year) \
+                        or year in str(info or '') or year in str(getattr(r, 'url', '')):
+                    year_cands.append(r)
+            if year_cands:
+                def _title_score(r):
+                    nt = _norm_title(getattr(r, 'name', ''))
+                    if nt == q_norm: return 0       # exact title
+                    if nt.startswith(q_norm): return 1
+                    if q_norm in nt: return 2
+                    return 3
+                best = min(year_cands, key=_title_score)
             # Pass 2 — ±1 year AND title normalizes the same.
             if not best and want_year is not None:
                 for r in filtered:
