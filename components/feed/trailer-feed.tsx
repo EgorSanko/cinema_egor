@@ -475,6 +475,20 @@ export function TrailerFeed() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, items.length]);
 
+  // If the slide that just became active has a broken/unplayable trailer
+  // (e.g. age-restricted, embedding disabled — only detectable once the player
+  // errors), auto-skip to the next one so the user never gets stuck on a poster.
+  useEffect(() => {
+    if (!broken.has(active)) return;
+    const t = setTimeout(() => {
+      const next = slideRefs.current[active + 1];
+      if (next) next.scrollIntoView({ behavior: "smooth" });
+      else void fetchBatch();
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, broken]);
+
   // ---- IntersectionObserver: which slide is in view ----------------------
 
   useEffect(() => {

@@ -10,14 +10,39 @@ const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 // (Age-restricted / embedding-disabled still return 200 here — those are
 // caught client-side via the IFrame onError auto-skip.)
 async function isPlayable(key: string): Promise<boolean> {
+  // 1) Fast check: oEmbed returns non-200 for private / deleted / access-
+  //    restricted videos (the "Это видео с ограниченным доступом" case).
   try {
     const r = await fetch(
       `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${key}&format=json`,
       { next: { revalidate: 86400 } }
     );
-    return r.ok;
+    if (!r.ok) return false;
   } catch {
     return false;
+  }
+
+  // 2) Embeddability + age check via the watch page's playabilityStatus —
+  //    catches "embedding disabled" / age-restricted, which oEmbed reports 200
+  //    for. Tight timeout; on any failure we allow it (client onError skips).
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(`https://www.youtube.com/watch?v=${key}&hl=ru&bpctr=9999999999`, {
+      headers: { "Accept-Language": "ru-RU,ru;q=0.9" },
+      signal: ctrl.signal,
+      next: { revalidate: 86400 },
+    });
+    clearTimeout(timer);
+    if (!r.ok) return true;
+    const html = await r.text();
+    if (html.includes('"playableInEmbed":false')) return false;
+    if (html.includes('"status":"LOGIN_REQUIRED"')) return false;   // age gate
+    if (html.includes('"status":"AGE_CHECK_REQUIRED"')) return false;
+    if (html.includes('"status":"UNPLAYABLE"')) return false;       // region/other
+    return true;
+  } catch {
+    return true; // network hiccup / timeout — let the client safety net handle it
   }
 }
 
