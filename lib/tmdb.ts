@@ -320,6 +320,36 @@ export async function getTVRecommendations(tvId: number): Promise<TVShow[]> {
   }
 }
 
+export async function getMovieRecommendations(movieId: number): Promise<Movie[]> {
+  if (!movieId || isNaN(movieId)) return [];
+  try {
+    const response = await fetchWithRetry(
+      `${API_BASE_URL}/movie/${movieId}/recommendations?api_key=${API_KEY}&language=ru-RU&page=1`,
+      { next: { revalidate: 3600 } }
+    );
+    const data = await response.json();
+    const results = ((data.results as Movie[]) || []).slice();
+    // TMDB recommendations can be empty/short for niche titles — top up from
+    // /similar (genre+keyword based) so we never fall back to random-by-genre.
+    if (results.length < 6) {
+      try {
+        const sim = await fetchWithRetry(
+          `${API_BASE_URL}/movie/${movieId}/similar?api_key=${API_KEY}&language=ru-RU&page=1`,
+          { next: { revalidate: 3600 } }
+        );
+        const simData = await sim.json();
+        const seen = new Set(results.map((m) => m.id));
+        for (const m of ((simData.results as Movie[]) || [])) {
+          if (!seen.has(m.id)) { results.push(m); seen.add(m.id); }
+        }
+      } catch {}
+    }
+    return filterBlocked(results, "movie");
+  } catch {
+    return [];
+  }
+}
+
 export async function getTVSeasonEpisodes(tvId: number, seasonNumber: number) {
   try {
     const response = await fetchWithRetry(

@@ -3,7 +3,7 @@ import { Navbar } from "@/components/navbar";
 import { CastStrip } from "@/components/cast-strip";
 import { DetailsMeta } from "@/components/details-meta";
 import { Comments } from "@/components/comments";
-import { getImageUrl, getMovieDetails, getMoviesByGenre } from "@/lib/tmdb";
+import { getImageUrl, getMovieDetails, getMoviesByGenre, getMovieRecommendations } from "@/lib/tmdb";
 import { isBlockedMovie } from "@/lib/blocked-content";
 import { clean, movieSchema } from "@/lib/schema";
 import type { Metadata } from "next";
@@ -67,9 +67,12 @@ export default async function MoviePage({ params }: MoviePageProps) {
   const movie = await getMovieDetails(movieId);
   if (!movie) notFound();
 
-  const relatedMovies = movie.genres.length > 0
-    ? (await getMoviesByGenre(movie.genres[0].id)).filter(m => m.id !== movieId).slice(0, 6)
-    : [];
+  // Real TMDB recommendations (+ /similar top-up). Fall back to genre-popular
+  // only if TMDB returns nothing — so the row is relevant, not random-by-genre.
+  let relatedMovies = (await getMovieRecommendations(movieId)).filter(m => m.id !== movieId).slice(0, 6);
+  if (relatedMovies.length === 0 && movie.genres.length > 0) {
+    relatedMovies = (await getMoviesByGenre(movie.genres[0].id)).filter(m => m.id !== movieId).slice(0, 6);
+  }
 
   const schema = clean(movieSchema(movie));
 
