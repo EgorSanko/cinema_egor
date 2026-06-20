@@ -23,7 +23,6 @@ const SEEN_KEY = "movietok_seen";
 const SEEN_CAP = 400;
 const BATCH = 8;
 const PREFETCH_WITHIN = 3; // fetch next batch when this close to the end
-const PRELOAD_AHEAD = 2;    // keep this many upcoming iframes mounted
 
 // Poster path -> full /tmdb-img url (matches movie-player.tsx convention).
 function posterUrl(poster: string | null): string | null {
@@ -433,8 +432,10 @@ export function TrailerFeed() {
 
   // Create (or resume) the player for `idx`, destroy stale ones outside window.
   const syncPlayers = useCallback((idx: number) => {
-    const keep = new Set<number>();
-    for (let i = idx; i <= idx + PRELOAD_AHEAD && i < itemsRef.current.length; i++) keep.add(i);
+    // Only the ACTIVE slide gets a player. Each is created FRESH when it
+    // becomes active → a fresh muted autoplay (which mobile allows), instead of
+    // resuming a paused player (which Samsung blocks). Others show the poster.
+    const keep = new Set<number>([idx]);
 
     // Destroy players outside the keep window to free resources.
     for (const k of Object.keys(players.current)) {
@@ -705,7 +706,6 @@ export function TrailerFeed() {
           const liked = isFavorite(item.movieId, "movie");
           const tr = trackers.current[idx];
           const saved = tr?.saved ?? false;
-          const within = idx >= active - 1 && idx <= active + PRELOAD_AHEAD;
           return (
             <section
               key={`${item.movieId}-${idx}`}
@@ -715,21 +715,24 @@ export function TrailerFeed() {
             >
               {/* 16:9 trailer band, vertically centred (sits lower than the top). */}
               <div className="relative w-full shrink-0 aspect-video bg-black">
-                {within && item.ytKey && !broken.has(idx) ? (
+                {/* Poster always behind the video — shown for non-active slides
+                    and while the active player loads, so a swipe never reveals a
+                    black frame or the previous slide's YouTube overlay. */}
+                {posterUrl(item.poster) && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={posterUrl(item.poster) as string}
+                    alt={item.title}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                )}
+                {/* Trailer iframe — ONLY the active slide, created fresh. */}
+                {idx === active && item.ytKey && !broken.has(idx) && (
                   <div
                     ref={(el) => { playerHosts.current[idx] = el; }}
                     className="yt-frame"
                     aria-hidden
                   />
-                ) : (
-                  posterUrl(item.poster) && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={posterUrl(item.poster) as string}
-                      alt={item.title}
-                      className="absolute inset-0 h-full w-full object-cover"
-                    />
-                  )
                 )}
                 {broken.has(idx) && (
                   <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
