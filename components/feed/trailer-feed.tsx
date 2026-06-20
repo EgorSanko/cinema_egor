@@ -585,11 +585,12 @@ export function TrailerFeed() {
               key={`${item.movieId}-${idx}`}
               ref={(el) => { slideRefs.current[idx] = el; }}
               data-idx={idx}
-              className="relative flex snap-start snap-always h-[100dvh] w-full flex-col overflow-hidden bg-black"
+              className="relative flex snap-start snap-always h-[100dvh] w-full flex-col justify-center overflow-hidden bg-black pb-20"
             >
-              {/* 16:9 trailer band near the top — honest aspect, the info below
-                  is in normal flow so it can NEVER overlap the video. */}
-              <div className="relative mt-2 w-full shrink-0 aspect-video bg-black">
+              {/* 16:9 trailer band — honest aspect, the info below is in normal
+                  flow so it can NEVER overlap the video. The whole cluster is
+                  vertically centered to avoid a big empty "black hole". */}
+              <div className="relative w-full shrink-0 aspect-video bg-black">
                 {within && item.ytKey ? (
                   <div
                     ref={(el) => { playerHosts.current[idx] = el; }}
@@ -608,8 +609,8 @@ export function TrailerFeed() {
                 )}
               </div>
 
-              {/* Info fills the rest; actions pinned to the bottom. */}
-              <div className="flex flex-1 flex-col px-4 pb-24 pt-5">
+              {/* Info sits right under the video (centered cluster). */}
+              <div className="flex flex-col px-4 pt-5">
                 <div className="flex items-start gap-4">
                   {posterUrl(item.poster) && (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -637,8 +638,8 @@ export function TrailerFeed() {
                   </div>
                 </div>
 
-                {/* Action row pinned to the bottom of the slide */}
-                <div className="mt-auto flex items-center gap-2.5 pt-5">
+                {/* Action row right under the title */}
+                <div className="mt-6 flex items-center gap-2.5">
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
