@@ -106,7 +106,9 @@ interface YTNamespace {
     el: HTMLElement | string,
     opts: {
       videoId: string;
-      playerVars?: Record<string, number>;
+      width?: number;
+      height?: number;
+      playerVars?: Record<string, number | string>;
       events?: {
         onReady?: (e: { target: YTPlayer }) => void;
         onStateChange?: (e: { target: YTPlayer; data: YTPlayerState }) => void;
@@ -393,6 +395,11 @@ export function TrailerFeed() {
           host.appendChild(mount);
           players.current[i] = new YT.Player(mount, {
             videoId: item.ytKey,
+            // Big intrinsic size — YouTube picks quality from the player's
+            // pixel size, so a 1280×720 iframe gets HD even though CSS scales
+            // it to fill the screen. (Counters mobile muted-autoplay 144p.)
+            width: 1280,
+            height: 720,
             playerVars: {
               autoplay: 1,
               mute: 1,
@@ -403,6 +410,7 @@ export function TrailerFeed() {
               loop: 1,
               fs: 0,
               iv_load_policy: 3,
+              vq: "hd1080",
             },
             events: {
               onReady: (e) => {
