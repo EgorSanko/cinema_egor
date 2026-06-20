@@ -23,6 +23,7 @@ const SEEN_KEY = "movietok_seen";
 const SEEN_CAP = 400;
 const BATCH = 8;
 const PREFETCH_WITHIN = 3; // fetch next batch when this close to the end
+const PRELOAD_AHEAD = 2;    // keep this many upcoming iframes mounted
 
 // Poster path -> full /tmdb-img url (matches movie-player.tsx convention).
 function posterUrl(poster: string | null): string | null {
@@ -73,29 +74,6 @@ function saveSeen(seen: number[]): void {
   }
 }
 
-// movieIds the user positively engaged with (liked / tapped «Смотреть» / watched
-// a lot). Sent to the server so it can do "похожим зашло" collaborative ranking.
-const POSITIVES_KEY = "movietok_positives";
-const POSITIVES_CAP = 60;
-
-function loadPositives(): number[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const arr = JSON.parse(localStorage.getItem(POSITIVES_KEY) || "[]");
-    return Array.isArray(arr) ? arr.filter((x): x is number => typeof x === "number") : [];
-  } catch {
-    return [];
-  }
-}
-
-function savePositives(ids: number[]): void {
-  try {
-    localStorage.setItem(POSITIVES_KEY, JSON.stringify(ids.slice(0, POSITIVES_CAP)));
-  } catch {
-    /* ignore */
-  }
-}
-
 // ---- YouTube IFrame API loader -------------------------------------------
 
 interface YTPlayer {
@@ -105,7 +83,6 @@ interface YTPlayer {
   unMute: () => void;
   getCurrentTime: () => number;
   getDuration: () => number;
-  setPlaybackRate: (rate: number) => void;
   destroy: () => void;
 }
 
@@ -120,7 +97,6 @@ interface YTNamespace {
       events?: {
         onReady?: (e: { target: YTPlayer }) => void;
         onStateChange?: (e: { target: YTPlayer; data: YTPlayerState }) => void;
-        onError?: (e: { target: YTPlayer; data: number }) => void;
       };
     },
   ) => YTPlayer;
@@ -202,10 +178,6 @@ export function TrailerFeed() {
   const [items, setItems] = useState<FeedTrailer[]>([]);
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
-  // Slides whose YouTube trailer won't embed (age-restricted / removed / owner
-  // disabled embedding). We show the poster and auto-skip past them.
-  const [broken, setBroken] = useState<Set<number>>(() => new Set());
-  const brokenRef = useRef<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [exhausted, setExhausted] = useState(false);
@@ -219,9 +191,6 @@ export function TrailerFeed() {
   // Mutable mirrors so callbacks/observers read fresh values without re-binding.
   const tasteRef = useRef<TasteVector | null>(null);
   const seenRef = useRef<number[]>([]);
-  const positivesRef = useRef<number[]>([]);
-  // Short-term session intent (Phase 3): in-memory, fresh each visit, fast LR.
-  const sessionRef = useRef<TasteVector | null>(null);
   const itemsRef = useRef<FeedTrailer[]>([]);
   const activeRef = useRef(0);
   const mutedRef = useRef(true);
@@ -233,15 +202,6 @@ export function TrailerFeed() {
   useEffect(() => { mutedRef.current = muted; }, [muted]);
   useEffect(() => { exhaustedRef.current = exhausted; }, [exhausted]);
 
-  // Sound is OFF by default — the user turns it on with the speaker button
-  // (auto-unmute on mobile proved unreliable). The choice is remembered, and
-  // once ON it's re-applied to every slide as it starts playing.
-  useEffect(() => {
-    try {
-      setMuted(localStorage.getItem("movietok_sound") !== "on");
-    } catch { /* noop */ }
-  }, []);
-
   // ---- fetch a batch -----------------------------------------------------
 
   const fetchBatch = useCallback(async (): Promise<void> => {
@@ -252,9 +212,7 @@ export function TrailerFeed() {
     try {
       const body: FeedRequest = {
         taste: tasteRef.current,
-        session: sessionRef.current,
         seen: seenRef.current,
-        positives: positivesRef.current,
         n: BATCH,
       };
       const res = await fetch("/api/feed", {
@@ -298,7 +256,6 @@ export function TrailerFeed() {
   useEffect(() => {
     tasteRef.current = loadTaste();
     seenRef.current = loadSeen();
-    positivesRef.current = loadPositives();
     void fetchBatch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -342,26 +299,14 @@ export function TrailerFeed() {
       notInterested: tr.notInterested,
     };
 
-    // Positive engagement? Remember it for collaborative ("похожим зашло")
-    // ranking and tell the server which other titles this user likes.
-    const positive =
-      event.tapWatch || event.liked || event.saved ||
-      (event.completed && event.pctWatched > 0.7);
-    const recentPositives = positivesRef.current.filter((id) => id !== item.movieId);
-    if (positive) {
-      positivesRef.current = [item.movieId, ...recentPositives].slice(0, POSITIVES_CAP);
-      savePositives(positivesRef.current);
-    }
-
-    // (a) fold into long-term taste (persist) + short-term session intent (memory)
+    // (a) fold into taste + persist
     const next = updateTaste(tasteRef.current, event);
     tasteRef.current = next;
     saveTaste(next);
-    sessionRef.current = updateTaste(sessionRef.current, event, 0.45);
 
-    // (b) fire-and-forget to the events endpoint (drives global CF)
+    // (b) fire-and-forget to the (maybe-nonexistent) events endpoint
     try {
-      const payload = JSON.stringify({ ...event, recentPositives });
+      const payload = JSON.stringify(event);
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
         navigator.sendBeacon(
           "/api/feed/events",
@@ -380,32 +325,12 @@ export function TrailerFeed() {
     }
   }, [measurePct]);
 
-  // ---- broken-trailer handling ------------------------------------------
-
-  const goNext = useCallback(() => {
-    const el = slideRefs.current[activeRef.current + 1];
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-  }, []);
-
-  // A trailer failed to embed (age-restricted / removed / embedding disabled).
-  // Show its poster instead, and if it's the active slide, glide to the next.
-  const markBroken = useCallback((i: number) => {
-    if (brokenRef.current.has(i)) return;
-    const next = new Set(brokenRef.current);
-    next.add(i);
-    brokenRef.current = next;
-    setBroken(next);
-    if (i === activeRef.current) setTimeout(goNext, 600);
-  }, [goNext]);
-
   // ---- player lifecycle for the active slide -----------------------------
 
   // Create (or resume) the player for `idx`, destroy stale ones outside window.
   const syncPlayers = useCallback((idx: number) => {
-    // Only the ACTIVE slide gets a player. Each is created FRESH when it
-    // becomes active → a fresh muted autoplay (which mobile allows), instead of
-    // resuming a paused player (which Samsung blocks). Others show the poster.
-    const keep = new Set<number>([idx]);
+    const keep = new Set<number>();
+    for (let i = idx; i <= idx + PRELOAD_AHEAD && i < itemsRef.current.length; i++) keep.add(i);
 
     // Destroy players outside the keep window to free resources.
     for (const k of Object.keys(players.current)) {
@@ -444,16 +369,11 @@ export function TrailerFeed() {
             },
             events: {
               onReady: (e) => {
-                try { e.target.setPlaybackRate(1.5); } catch { /* noop */ }
                 if (i === activeRef.current) {
-                  // ALWAYS start muted — mobile blocks unmuted autoplay, which
-                  // left the video stuck/paused. We unmute later, once it's
-                  // actually PLAYING (onStateChange), which browsers allow.
-                  e.target.mute();
+                  if (!mutedRef.current) e.target.unMute();
+                  else e.target.mute();
                   e.target.playVideo();
                 } else {
-                  // Only the active slide plays — mobile allows just one video
-                  // at a time, so others must pause or the next won't start.
                   e.target.mute();
                   e.target.pauseVideo();
                 }
@@ -461,36 +381,25 @@ export function TrailerFeed() {
               onStateChange: (e) => {
                 const tr = trackers.current[i];
                 if (tr) tr.lastPct = measurePct(i);
-                // Once the active video is actually PLAYING, unmute it if the
-                // user wants sound (allowed now that it's playing).
-                if (window.YT && e.data === window.YT.PlayerState.PLAYING) {
-                  if (i === activeRef.current && !mutedRef.current) {
-                    try { e.target.unMute(); } catch { /* noop */ }
-                  }
-                }
                 if (window.YT && e.data === window.YT.PlayerState.ENDED) {
                   if (tr) tr.lastPct = 1;
                   try { e.target.playVideo(); } catch { /* loop restart */ }
                 }
               },
-              // 101/150 = embedding disabled (often age-restricted), 100 = gone.
-              onError: () => { markBroken(i); },
             },
           });
         } else if (i === activeRef.current) {
           const p = players.current[i];
           try {
-            p.setPlaybackRate(1.5);
-            p.mute();           // start muted; onStateChange unmutes once playing
+            if (mutedRef.current) p.mute(); else p.unMute();
             p.playVideo();
           } catch { /* noop */ }
         } else {
-          // pause non-active (one-video-at-a-time on mobile)
           try { players.current[i]?.pauseVideo(); } catch { /* noop */ }
         }
       });
     });
-  }, [measurePct, markBroken]);
+  }, [measurePct]);
 
   // React to the active slide changing.
   useEffect(() => {
@@ -506,17 +415,13 @@ export function TrailerFeed() {
 
     syncPlayers(active);
 
-    // Robustly (re)start the active video — the player may not be ready the
-    // instant the slide becomes active, so retry a few times. This is what
-    // fixes "the next trailer doesn't auto-play after a swipe".
-    const tryPlay = () => {
-      const p = players.current[activeRef.current];
-      if (p) { try { p.mute(); p.playVideo(); } catch { /* not ready */ } }
-    };
-    tryPlay();
-    const r1 = setTimeout(tryPlay, 250);
-    const r2 = setTimeout(tryPlay, 700);
-    const r3 = setTimeout(tryPlay, 1400);
+    // pause everything that isn't active
+    for (const k of Object.keys(players.current)) {
+      const ki = Number(k);
+      if (ki !== active) {
+        try { players.current[ki]?.pauseVideo(); } catch { /* noop */ }
+      }
+    }
 
     // sample watch progress while active
     const sampler = setInterval(() => {
@@ -524,10 +429,7 @@ export function TrailerFeed() {
       if (t) t.lastPct = Math.max(t.lastPct, measurePct(activeRef.current));
     }, 1000);
 
-    return () => {
-      clearInterval(sampler);
-      clearTimeout(r1); clearTimeout(r2); clearTimeout(r3);
-    };
+    return () => clearInterval(sampler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, items.length]);
 
@@ -591,7 +493,6 @@ export function TrailerFeed() {
       const next = !m;
       const p = players.current[activeRef.current];
       try { if (next) p?.mute(); else p?.unMute(); } catch { /* noop */ }
-      try { localStorage.setItem("movietok_sound", next ? "off" : "on"); } catch { /* noop */ }
       return next;
     });
   }, []);
@@ -664,93 +565,100 @@ export function TrailerFeed() {
           const liked = isFavorite(item.movieId, "movie");
           const tr = trackers.current[idx];
           const saved = tr?.saved ?? false;
+          const within = idx >= active - 1 && idx <= active + PRELOAD_AHEAD;
           return (
             <section
               key={`${item.movieId}-${idx}`}
               ref={(el) => { slideRefs.current[idx] = el; }}
               data-idx={idx}
-              className="relative flex h-[100dvh] w-full snap-start snap-always flex-col justify-center overflow-hidden bg-black"
+              className="relative snap-start h-[100dvh] w-full overflow-hidden bg-black"
             >
-              {/* 16:9 trailer band, vertically centred (sits lower than the top). */}
-              <div className="relative w-full shrink-0 aspect-video bg-black">
-                {/* Poster always behind the video — shown for non-active slides
-                    and while the active player loads, so a swipe never reveals a
-                    black frame or the previous slide's YouTube overlay. */}
-                {posterUrl(item.poster) && (
+              {/* Trailer iframe host (only mounted within the preload window) */}
+              {within && item.ytKey ? (
+                <div
+                  ref={(el) => { playerHosts.current[idx] = el; }}
+                  className="pointer-events-none absolute inset-0 [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
+                  aria-hidden
+                />
+              ) : (
+                // Poster fallback for far-away / video-less slides.
+                posterUrl(item.poster) && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={posterUrl(item.poster) as string}
                     alt={item.title}
-                    className="absolute inset-0 h-full w-full object-cover"
+                    className="absolute inset-0 h-full w-full object-cover opacity-70"
                   />
-                )}
-                {/* Trailer iframe — ONLY the active slide, created fresh. */}
-                {idx === active && item.ytKey && !broken.has(idx) && (
-                  <div
-                    ref={(el) => { playerHosts.current[idx] = el; }}
-                    className="yt-frame"
-                    aria-hidden
+                )
+              )}
+
+              {/* Scrims: bottom gradient for the overlay, soft top for the rail */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black via-black/70 to-transparent" />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent" />
+
+              {/* Right action rail */}
+              <div className="absolute right-3 bottom-32 z-20 flex flex-col items-center gap-5">
+                <ActionButton
+                  onClick={() => onLike(idx, item)}
+                  label={liked ? "В избранном" : "Нравится"}
+                  active={liked}
+                >
+                  <Heart
+                    size={26}
+                    className={liked ? "text-red-500" : "text-white"}
+                    fill={liked ? "currentColor" : "none"}
                   />
-                )}
-                {broken.has(idx) && (
-                  <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
-                    <span className="rounded-full bg-black/55 px-4 py-2 text-[12px] text-white/85 backdrop-blur-sm">
-                      Трейлер недоступен
-                    </span>
-                  </div>
-                )}
+                </ActionButton>
+
+                <ActionButton onClick={() => onSave(idx)} label="Сохранить" active={saved}>
+                  <Bookmark
+                    size={25}
+                    className={saved ? "text-primary" : "text-white"}
+                    fill={saved ? "currentColor" : "none"}
+                  />
+                </ActionButton>
+
+                <ActionButton onClick={() => onNotInterested(idx)} label="Не интересно">
+                  <X size={26} className="text-white" />
+                </ActionButton>
+
+                <ActionButton onClick={toggleMute} label={muted ? "Включить звук" : "Выключить звук"}>
+                  {muted ? <VolumeX size={24} className="text-white" /> : <Volume2 size={24} className="text-white" />}
+                </ActionButton>
               </div>
 
-              {/* Poster on the LEFT, title on the RIGHT, just under the video. */}
-              <div className="px-4 pt-6">
-                <div className="flex items-center gap-4">
-                  {posterUrl(item.poster) && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={`/tmdb-img/w342${item.poster}`}
-                      alt={item.title}
-                      className="w-24 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/50"
-                    />
+              {/* Bottom-left overlay */}
+              <div className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24 pr-20">
+                <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-[13px] mb-1.5">
+                  <span className="text-foreground/80">{item.year}</span>
+                  {item.voteAverage > 0 && (
+                    <>
+                      <span className="text-foreground/30">·</span>
+                      <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
+                        ★ {item.voteAverage.toFixed(1)}
+                      </span>
+                    </>
                   )}
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px]">
-                      <span className="text-foreground/80">{item.year}</span>
-                      {item.voteAverage > 0 && (
-                        <>
-                          <span className="text-foreground/30">·</span>
-                          <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
-                            ★ {item.voteAverage.toFixed(1)}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <h2 className="text-2xl font-black leading-tight tracking-tight text-foreground line-clamp-3">
-                      {item.title}
-                    </h2>
-                  </div>
                 </div>
 
-                {/* Actions */}
-                <div className="mt-6 flex w-full items-center gap-2.5">
+                <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-2">
+                  {item.title}
+                </h2>
+
+                {item.overview && (
+                  <p className="mt-2 text-foreground/70 text-[14px] leading-relaxed line-clamp-2 max-w-[88%]">
+                    {item.overview}
+                  </p>
+                )}
+
+                <div className="mt-3.5">
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
-                    className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-bold text-black shadow-lg shadow-black/40 transition-colors hover:bg-white/90"
+                    className="inline-flex items-center gap-2 h-11 px-6 rounded-full bg-white text-black text-[14px] font-bold hover:bg-white/90 transition-colors shadow-lg shadow-black/40"
                   >
-                    <Play size={19} fill="currentColor" /> Смотреть
+                    <Play size={17} fill="currentColor" /> Смотреть
                   </Link>
-                  <button onClick={() => onLike(idx, item)} aria-label="Нравится" className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                    <Heart size={23} className={liked ? "text-red-500" : "text-white"} fill={liked ? "currentColor" : "none"} />
-                  </button>
-                  <button onClick={() => onSave(idx)} aria-label="Сохранить" className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                    <Bookmark size={21} className={saved ? "text-primary" : "text-white"} fill={saved ? "currentColor" : "none"} />
-                  </button>
-                  <button onClick={() => onNotInterested(idx)} aria-label="Не интересно" className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                    <X size={23} className="text-white" />
-                  </button>
-                  <button onClick={toggleMute} aria-label={muted ? "Включить звук" : "Выключить звук"} className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                    {muted ? <VolumeX size={21} className="text-white" /> : <Volume2 size={21} className="text-white" />}
-                  </button>
                 </div>
               </div>
             </section>
@@ -769,21 +677,31 @@ export function TrailerFeed() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; }
-        /* 16:9 trailer, slightly overscanned + centered so YouTube's own title
-           bar (top) and control strip (bottom) are cropped off the band. */
-        .yt-frame { position: absolute; inset: 0; overflow: hidden; }
-        .yt-frame > iframe,
-        .yt-frame > div {
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          width: 138%;
-          height: 138%;
-          border: 0;
-          pointer-events: none;
-        }
       `}</style>
     </div>
+  );
+}
+
+// Small TikTok-style rail button with a label under the icon.
+function ActionButton({
+  onClick, label, active, children,
+}: {
+  onClick: () => void;
+  label: string;
+  active?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button onClick={onClick} className="group flex flex-col items-center gap-1" title={label}>
+      <span
+        className={
+          "flex h-12 w-12 items-center justify-center rounded-full ring-1 ring-white/[0.08] backdrop-blur-md transition-colors " +
+          (active ? "bg-white/15" : "bg-black/35 group-hover:bg-black/50")
+        }
+      >
+        {children}
+      </span>
+      <span className="text-[10px] font-medium text-white/80 drop-shadow">{label}</span>
+    </button>
   );
 }
