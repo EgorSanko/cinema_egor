@@ -201,6 +201,7 @@ export function TrailerFeed() {
   const [items, setItems] = useState<FeedTrailer[]>([]);
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
+  const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [exhausted, setExhausted] = useState(false);
@@ -437,13 +438,16 @@ export function TrailerFeed() {
             },
             events: {
               onReady: (e) => {
+                try { e.target.setPlaybackRate(1.5); } catch { /* noop */ }
                 if (i === activeRef.current) {
                   if (!mutedRef.current && gestureRef.current) e.target.unMute();
                   else e.target.mute();
                   e.target.playVideo();
                 } else {
+                  // Keep non-active slides PLAYING muted — pausing them makes
+                  // YouTube flash its native pause/play button during a swipe.
                   e.target.mute();
-                  e.target.pauseVideo();
+                  e.target.playVideo();
                 }
               },
               onStateChange: (e) => {
@@ -459,11 +463,18 @@ export function TrailerFeed() {
         } else if (i === activeRef.current) {
           const p = players.current[i];
           try {
+            p.setPlaybackRate(1.5);
             if (mutedRef.current || !gestureRef.current) p.mute(); else p.unMute();
             p.playVideo();
           } catch { /* noop */ }
         } else {
-          try { players.current[i]?.pauseVideo(); } catch { /* noop */ }
+          // keep playing muted (no pause → no YT button flash on scroll)
+          try {
+            const p = players.current[i];
+            p?.setPlaybackRate(1.5);
+            p?.mute();
+            p?.playVideo();
+          } catch { /* noop */ }
         }
       });
     });
@@ -481,15 +492,8 @@ export function TrailerFeed() {
       tr.flushed = false;
     }
 
+    setPaused(false);
     syncPlayers(active);
-
-    // pause everything that isn't active
-    for (const k of Object.keys(players.current)) {
-      const ki = Number(k);
-      if (ki !== active) {
-        try { players.current[ki]?.pauseVideo(); } catch { /* noop */ }
-      }
-    }
 
     // sample watch progress while active
     const sampler = setInterval(() => {
@@ -555,6 +559,15 @@ export function TrailerFeed() {
   }, [flushSignal]);
 
   // ---- actions -----------------------------------------------------------
+
+  const togglePlay = useCallback(() => {
+    const p = players.current[activeRef.current];
+    if (!p) return;
+    setPaused((wasPaused) => {
+      try { if (wasPaused) p.playVideo(); else p.pauseVideo(); } catch { /* noop */ }
+      return !wasPaused;
+    });
+  }, []);
 
   const toggleMute = useCallback(() => {
     gestureRef.current = true;
@@ -662,6 +675,23 @@ export function TrailerFeed() {
                 )
               )}
 
+              {/* Tap anywhere on the video to pause/play (active slide only).
+                  Below the rail (z-20) and the «Смотреть» button. */}
+              {idx === active && (
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  aria-label={paused ? "Играть" : "Пауза"}
+                  className="absolute inset-0 z-[5] flex items-center justify-center"
+                >
+                  {paused && (
+                    <span className="flex items-center justify-center w-20 h-20 rounded-full bg-black/45 backdrop-blur-sm">
+                      <Play size={38} fill="white" className="ml-1.5 text-white" />
+                    </span>
+                  )}
+                </button>
+              )}
+
               {/* Scrims: bottom gradient for the overlay, soft top for the rail */}
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black via-black/70 to-transparent" />
               <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent" />
@@ -697,8 +727,9 @@ export function TrailerFeed() {
                 </ActionButton>
               </div>
 
-              {/* Bottom-left overlay */}
-              <div className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24 pr-20">
+              {/* Bottom-left overlay (pointer-events-none so taps fall through
+                  to the pause layer; the «Смотреть» button re-enables itself). */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4 pb-24 pr-20">
                 <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-[13px] mb-1.5">
                   <span className="text-foreground/80">{item.year}</span>
                   {item.voteAverage > 0 && (
@@ -725,7 +756,7 @@ export function TrailerFeed() {
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
-                    className="inline-flex items-center gap-2 h-11 px-6 rounded-full bg-white text-black text-[14px] font-bold hover:bg-white/90 transition-colors shadow-lg shadow-black/40"
+                    className="pointer-events-auto inline-flex items-center gap-2 h-11 px-6 rounded-full bg-white text-black text-[14px] font-bold hover:bg-white/90 transition-colors shadow-lg shadow-black/40"
                   >
                     <Play size={17} fill="currentColor" /> Смотреть
                   </Link>
