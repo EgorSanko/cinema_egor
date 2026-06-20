@@ -77,6 +77,14 @@ function saveSeen(seen: number[]): void {
   }
 }
 
+// Nudge a player to high quality. setPlaybackQuality* are deprecated but still
+// bias YouTube's auto-selector away from the 144p it defaults to for muted
+// autoplay embeds on mobile.
+function forceHQ(p: { setPlaybackQualityRange?: (a: string, b: string) => void; setPlaybackQuality?: (q: string) => void }) {
+  try { p.setPlaybackQualityRange?.("hd720", "hd1080"); } catch { /* noop */ }
+  try { p.setPlaybackQuality?.("hd1080"); } catch { /* noop */ }
+}
+
 // ---- YouTube IFrame API loader -------------------------------------------
 
 interface YTPlayer {
@@ -86,6 +94,8 @@ interface YTPlayer {
   unMute: () => void;
   getCurrentTime: () => number;
   getDuration: () => number;
+  setPlaybackQuality?: (q: string) => void;
+  setPlaybackQualityRange?: (min: string, max: string) => void;
   destroy: () => void;
 }
 
@@ -396,6 +406,7 @@ export function TrailerFeed() {
             },
             events: {
               onReady: (e) => {
+                forceHQ(e.target);
                 if (i === activeRef.current) {
                   if (!mutedRef.current) e.target.unMute();
                   else e.target.mute();
@@ -408,6 +419,11 @@ export function TrailerFeed() {
               onStateChange: (e) => {
                 const tr = trackers.current[i];
                 if (tr) tr.lastPct = measurePct(i);
+                // Mobile YouTube starts muted autoplay at 144p to save data —
+                // nudge it back up to HD whenever it starts playing.
+                if (window.YT && e.data === window.YT.PlayerState.PLAYING) {
+                  forceHQ(e.target);
+                }
                 if (window.YT && e.data === window.YT.PlayerState.ENDED) {
                   if (tr) tr.lastPct = 1;
                   try { e.target.playVideo(); } catch { /* loop restart */ }
