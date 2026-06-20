@@ -100,7 +100,10 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                     if '/series/' in url or '/animation/' in url or 'сезон' in info.lower() or 'серия' in info.lower():
                         type_filtered.append(r)
                 elif type == 'movie':
-                    if '/films/' in url or ('/series/' not in url and '/animation/' not in url and 'сезон' not in info.lower()):
+                    # Anime FEATURE FILMS live under /animation/ too (e.g.
+                    # "Паприка" 2006), so only exclude clear SERIES — don't
+                    # drop /animation/ wholesale or anime movies vanish.
+                    if '/series/' not in url and 'сезон' not in info.lower() and 'серия' not in info.lower():
                         type_filtered.append(r)
             if type_filtered:
                 filtered = type_filtered
@@ -162,6 +165,15 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                             break
                     if best:
                         break
+
+            # Pass 3 — an EXACT normalized-title match is a strong enough signal
+            # on its own; accept it even when HDRezka's year is missing or
+            # disagrees (e.g. "Паприка" 2006 listed without a parseable year).
+            # Safe: an exact match can't collide ("Нормал" != "Нормальный").
+            if not best:
+                exact = [r for r in filtered if _norm_title(getattr(r, 'name', '')) == q_norm]
+                if exact:
+                    best = exact[0]
 
         # Year-mismatch guard: still no match → Not found rather than picking
         # an arbitrary first result with a wrong year.
