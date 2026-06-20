@@ -571,7 +571,7 @@ export function TrailerFeed() {
               key={`${item.movieId}-${idx}`}
               ref={(el) => { slideRefs.current[idx] = el; }}
               data-idx={idx}
-              className="relative snap-start h-[100dvh] w-full overflow-hidden bg-black"
+              className="relative snap-start snap-always h-[100dvh] w-full overflow-hidden bg-black"
             >
               {/* Trailer iframe host (only mounted within the preload window) */}
               {within && item.ytKey ? (
@@ -596,39 +596,8 @@ export function TrailerFeed() {
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black via-black/70 to-transparent" />
               <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent" />
 
-              {/* Right action rail */}
-              <div className="absolute right-3 bottom-32 z-20 flex flex-col items-center gap-5">
-                <ActionButton
-                  onClick={() => onLike(idx, item)}
-                  label={liked ? "В избранном" : "Нравится"}
-                  active={liked}
-                >
-                  <Heart
-                    size={26}
-                    className={liked ? "text-red-500" : "text-white"}
-                    fill={liked ? "currentColor" : "none"}
-                  />
-                </ActionButton>
-
-                <ActionButton onClick={() => onSave(idx)} label="Сохранить" active={saved}>
-                  <Bookmark
-                    size={25}
-                    className={saved ? "text-primary" : "text-white"}
-                    fill={saved ? "currentColor" : "none"}
-                  />
-                </ActionButton>
-
-                <ActionButton onClick={() => onNotInterested(idx)} label="Не интересно">
-                  <X size={26} className="text-white" />
-                </ActionButton>
-
-                <ActionButton onClick={toggleMute} label={muted ? "Включить звук" : "Выключить звук"}>
-                  {muted ? <VolumeX size={24} className="text-white" /> : <Volume2 size={24} className="text-white" />}
-                </ActionButton>
-              </div>
-
-              {/* Bottom-left overlay */}
-              <div className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24 pr-20">
+              {/* Bottom overlay: poster + title, then a bottom row of actions */}
+              <div className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24">
                 <div className="flex items-end gap-4">
                   {posterUrl(item.poster) && (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -656,14 +625,29 @@ export function TrailerFeed() {
                   </div>
                 </div>
 
-                <div className="mt-3.5">
+                {/* Action row at the bottom */}
+                <div className="mt-4 flex items-center gap-2.5">
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
-                    className="inline-flex items-center gap-2 h-11 px-6 rounded-full bg-white text-black text-[14px] font-bold hover:bg-white/90 transition-colors shadow-lg shadow-black/40"
+                    className="inline-flex items-center gap-2 h-12 px-6 rounded-full bg-white text-black text-[15px] font-bold hover:bg-white/90 transition-colors shadow-lg shadow-black/40"
                   >
-                    <Play size={17} fill="currentColor" /> Смотреть
+                    <Play size={18} fill="currentColor" /> Смотреть
                   </Link>
+                  <div className="ml-auto flex items-center gap-2.5">
+                    <button onClick={() => onLike(idx, item)} aria-label={liked ? "В избранном" : "Нравится"} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 backdrop-blur-md ring-1 ring-white/[0.08] active:bg-white/20">
+                      <Heart size={23} className={liked ? "text-red-500" : "text-white"} fill={liked ? "currentColor" : "none"} />
+                    </button>
+                    <button onClick={() => onSave(idx)} aria-label="Сохранить" className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 backdrop-blur-md ring-1 ring-white/[0.08] active:bg-white/20">
+                      <Bookmark size={22} className={saved ? "text-primary" : "text-white"} fill={saved ? "currentColor" : "none"} />
+                    </button>
+                    <button onClick={() => onNotInterested(idx)} aria-label="Не интересно" className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 backdrop-blur-md ring-1 ring-white/[0.08] active:bg-white/20">
+                      <X size={23} className="text-white" />
+                    </button>
+                    <button onClick={toggleMute} aria-label={muted ? "Включить звук" : "Выключить звук"} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 backdrop-blur-md ring-1 ring-white/[0.08] active:bg-white/20">
+                      {muted ? <VolumeX size={22} className="text-white" /> : <Volume2 size={22} className="text-white" />}
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -684,29 +668,5 @@ export function TrailerFeed() {
         .no-scrollbar { -ms-overflow-style: none; }
       `}</style>
     </div>
-  );
-}
-
-// Small TikTok-style rail button with a label under the icon.
-function ActionButton({
-  onClick, label, active, children,
-}: {
-  onClick: () => void;
-  label: string;
-  active?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button onClick={onClick} className="group flex flex-col items-center gap-1" title={label}>
-      <span
-        className={
-          "flex h-12 w-12 items-center justify-center rounded-full ring-1 ring-white/[0.08] backdrop-blur-md transition-colors " +
-          (active ? "bg-white/15" : "bg-black/35 group-hover:bg-black/50")
-        }
-      >
-        {children}
-      </span>
-      <span className="text-[10px] font-medium text-white/80 drop-shadow">{label}</span>
-    </button>
   );
 }
