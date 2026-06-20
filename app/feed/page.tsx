@@ -5,8 +5,8 @@ export const metadata = {
   description: "Вертикальная лента трейлеров в стиле TikTok: листайте и находите, что посмотреть.",
 };
 
-// Immersive: NO top navbar — the feed is the only scroll surface, so swipes
-// move the slides (one-at-a-time) instead of scrolling the whole page.
+// Immersive: no top navbar so the feed is the only scroll surface (swipes move
+// slides one at a time instead of scrolling the whole page).
 export default function FeedPage() {
   return <TrailerFeed />;
 }

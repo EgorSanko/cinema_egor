@@ -423,27 +423,13 @@ export function TrailerFeed() {
       }
     }
 
-    // Keep the active video playing — retry a few times since the player may
-    // not be ready the instant the slide becomes active (fixes the trailer
-    // sometimes sitting paused with YouTube's chrome showing).
-    const tryPlay = () => {
-      const p = players.current[activeRef.current];
-      if (p) { try { p.playVideo(); } catch { /* not ready */ } }
-    };
-    const r1 = setTimeout(tryPlay, 300);
-    const r2 = setTimeout(tryPlay, 900);
-    const r3 = setTimeout(tryPlay, 1700);
-
     // sample watch progress while active
     const sampler = setInterval(() => {
       const t = trackers.current[activeRef.current];
       if (t) t.lastPct = Math.max(t.lastPct, measurePct(activeRef.current));
     }, 1000);
 
-    return () => {
-      clearInterval(sampler);
-      clearTimeout(r1); clearTimeout(r2); clearTimeout(r3);
-    };
+    return () => clearInterval(sampler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, items.length]);
 
@@ -585,42 +571,43 @@ export function TrailerFeed() {
               key={`${item.movieId}-${idx}`}
               ref={(el) => { slideRefs.current[idx] = el; }}
               data-idx={idx}
-              className="relative flex snap-start snap-always h-[100dvh] w-full flex-col justify-center overflow-hidden bg-black pb-20"
+              className="relative snap-start snap-always h-[100dvh] w-full overflow-hidden bg-black"
             >
-              {/* 16:9 trailer band — honest aspect, the info below is in normal
-                  flow so it can NEVER overlap the video. The whole cluster is
-                  vertically centered to avoid a big empty "black hole". */}
-              <div className="relative w-full shrink-0 aspect-video bg-black">
-                {within && item.ytKey ? (
-                  <div
-                    ref={(el) => { playerHosts.current[idx] = el; }}
-                    className="pointer-events-none absolute inset-0 [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
-                    aria-hidden
+              {/* Trailer iframe host (only mounted within the preload window) */}
+              {within && item.ytKey ? (
+                <div
+                  ref={(el) => { playerHosts.current[idx] = el; }}
+                  className="pointer-events-none absolute inset-0 -translate-y-[7%] [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
+                  aria-hidden
+                />
+              ) : (
+                // Poster fallback for far-away / video-less slides.
+                posterUrl(item.poster) && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={posterUrl(item.poster) as string}
+                    alt={item.title}
+                    className="absolute inset-0 h-full w-full object-cover opacity-70"
                   />
-                ) : (
-                  posterUrl(item.poster) && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={posterUrl(item.poster) as string}
-                      alt={item.title}
-                      className="absolute inset-0 h-full w-full object-cover"
-                    />
-                  )
-                )}
-              </div>
+                )
+              )}
 
-              {/* Info sits right under the video (centered cluster). */}
-              <div className="flex flex-col px-4 pt-5">
-                <div className="flex items-start gap-4">
+              {/* Scrims: bottom gradient for the overlay, soft top for the rail */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black via-black/70 to-transparent" />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent" />
+
+              {/* Bottom overlay: poster + title, then a bottom row of actions */}
+              <div className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24">
+                <div className="flex items-end gap-4">
                   {posterUrl(item.poster) && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={`/tmdb-img/w342${item.poster}`}
                       alt={item.title}
-                      className="w-32 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/60"
+                      className="w-36 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/60"
                     />
                   )}
-                  <div className="min-w-0">
+                  <div className="min-w-0 pb-1">
                     <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-[14px] mb-2">
                       <span className="text-foreground/80">{item.year}</span>
                       {item.voteAverage > 0 && (
@@ -632,14 +619,14 @@ export function TrailerFeed() {
                         </>
                       )}
                     </div>
-                    <h2 className="text-3xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-4">
+                    <h2 className="text-3xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-3">
                       {item.title}
                     </h2>
                   </div>
                 </div>
 
-                {/* Action row right under the title */}
-                <div className="mt-6 flex items-center gap-2.5">
+                {/* Action row at the bottom */}
+                <div className="mt-4 flex items-center gap-2.5">
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
