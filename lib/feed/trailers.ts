@@ -7,25 +7,45 @@ const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 export async function resolveTrailerKey(movieId: number): Promise<string | null> {
   if (!API_BASE_URL || !API_KEY || !movieId) return null;
   try {
-    for (const lang of ["ru-RU", "en-US"]) {
-      const res = await fetch(
-        `${API_BASE_URL}/movie/${movieId}/videos?api_key=${API_KEY}&language=${lang}`,
-        { next: { revalidate: 86400 } }
-      );
-      if (!res.ok) continue;
-      const data = await res.json();
-      const vids = ((data.results as any[]) || []).filter(
-        (v) => v.site === "YouTube" && v.key
-      );
-      if (!vids.length) continue;
-      const pick =
-        vids.find((v) => v.type === "Trailer" && v.official) ||
-        vids.find((v) => v.type === "Trailer") ||
-        vids.find((v) => v.type === "Teaser") ||
-        vids[0];
-      if (pick?.key) return pick.key as string;
+    // Pull BOTH locales and merge — TMDB sometimes lists a Russian video only
+    // under the en-US query. Then strongly prefer ANY Russian-language video
+    // over the English one, so the feed is Russian whenever a RU trailer exists
+    // at all; English is used only when there's no Russian video.
+    const [ru, en] = await Promise.all(
+      ["ru-RU", "en-US"].map((lang) =>
+        fetch(`${API_BASE_URL}/movie/${movieId}/videos?api_key=${API_KEY}&language=${lang}`, {
+          next: { revalidate: 86400 },
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      )
+    );
+
+    const all: any[] = [];
+    const seen = new Set<string>();
+    for (const data of [ru, en]) {
+      for (const v of ((data?.results as any[]) || [])) {
+        if (v.site === "YouTube" && v.key && !seen.has(v.key)) {
+          seen.add(v.key);
+          all.push(v);
+        }
+      }
     }
-    return null;
+    if (!all.length) return null;
+
+    const isRu = (v: any) => v.iso_639_1 === "ru";
+    const trailer = (v: any) => v.type === "Trailer";
+    const teaser = (v: any) => v.type === "Teaser";
+    const pick =
+      all.find((v) => isRu(v) && trailer(v) && v.official) ||
+      all.find((v) => isRu(v) && trailer(v)) ||
+      all.find((v) => isRu(v) && teaser(v)) ||
+      all.find((v) => isRu(v)) ||
+      all.find((v) => trailer(v) && v.official) ||
+      all.find((v) => trailer(v)) ||
+      all.find((v) => teaser(v)) ||
+      all[0];
+    return (pick?.key as string) || null;
   } catch {
     return null;
   }
