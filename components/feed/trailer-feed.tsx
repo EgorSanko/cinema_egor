@@ -692,129 +692,105 @@ export function TrailerFeed() {
               key={`${item.movieId}-${idx}`}
               ref={(el) => { slideRefs.current[idx] = el; }}
               data-idx={idx}
-              className="relative snap-start h-[100dvh] w-full overflow-hidden bg-black"
+              className="relative flex h-[100dvh] w-full snap-start snap-always flex-col justify-center overflow-hidden bg-black"
             >
-              {/* Trailer iframe host (mounted within the preload window, unless
-                  the trailer can't embed — then we show the poster). */}
-              {within && item.ytKey && !broken.has(idx) ? (
-                <div
-                  ref={(el) => { playerHosts.current[idx] = el; }}
-                  className="yt-cover"
-                  aria-hidden
-                />
-              ) : (
-                posterUrl(item.poster) && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={posterUrl(item.poster) as string}
-                    alt={item.title}
-                    className="absolute inset-0 h-full w-full object-cover opacity-70"
+              {/* 16:9 trailer band — native aspect, centered; info+actions sit
+                  below it so nothing ever overlaps the video. */}
+              <div className="relative w-full aspect-video bg-black">
+                {within && item.ytKey && !broken.has(idx) ? (
+                  <div
+                    ref={(el) => { playerHosts.current[idx] = el; }}
+                    className="yt-frame"
+                    aria-hidden
                   />
-                )
-              )}
-              {broken.has(idx) && (
-                <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
-                  <span className="rounded-full bg-black/55 px-4 py-2 text-[12px] text-white/85 backdrop-blur-sm">
-                    Трейлер недоступен — листай дальше
-                  </span>
-                </div>
-              )}
-
-              {/* Tap to pause/play (active slide). A <div onClick> — fires only
-                  on a genuine tap; a swipe scrolls the feed (the click is
-                  cancelled by the browser), so this never blocks scrolling. */}
-              {idx === active && (
-                <div
-                  onClick={togglePlay}
-                  className="absolute inset-0 z-[5] flex items-center justify-center"
-                >
-                  {paused && (
-                    <span className="flex items-center justify-center w-20 h-20 rounded-full bg-black/45 backdrop-blur-sm">
-                      <Play size={38} fill="white" className="ml-1.5 text-white" />
+                ) : (
+                  posterUrl(item.poster) && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={posterUrl(item.poster) as string}
+                      alt={item.title}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                  )
+                )}
+                {broken.has(idx) && (
+                  <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
+                    <span className="rounded-full bg-black/55 px-4 py-2 text-[12px] text-white/85 backdrop-blur-sm">
+                      Трейлер недоступен
                     </span>
-                  )}
-                </div>
-              )}
-
-              {/* Scrims: bottom gradient for the overlay, soft top for the rail */}
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black via-black/70 to-transparent" />
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/50 to-transparent" />
-
-              {/* Right action rail */}
-              <div className="absolute right-3 bottom-32 z-20 flex flex-col items-center gap-5">
-                <ActionButton
-                  onClick={() => onLike(idx, item)}
-                  label={liked ? "В избранном" : "Нравится"}
-                  active={liked}
-                >
-                  <Heart
-                    size={26}
-                    className={liked ? "text-red-500" : "text-white"}
-                    fill={liked ? "currentColor" : "none"}
-                  />
-                </ActionButton>
-
-                <ActionButton onClick={() => onSave(idx)} label="Сохранить" active={saved}>
-                  <Bookmark
-                    size={25}
-                    className={saved ? "text-primary" : "text-white"}
-                    fill={saved ? "currentColor" : "none"}
-                  />
-                </ActionButton>
-
-                <ActionButton onClick={() => onNotInterested(idx)} label="Не интересно">
-                  <X size={26} className="text-white" />
-                </ActionButton>
-
-                <ActionButton onClick={toggleMute} label={muted ? "Включить звук" : "Выключить звук"}>
-                  {muted ? <VolumeX size={24} className="text-white" /> : <Volume2 size={24} className="text-white" />}
-                </ActionButton>
+                  </div>
+                )}
+                {/* Tap the video to pause/play (<div onClick>; swipes scroll). */}
+                {idx === active && (
+                  <div
+                    onClick={togglePlay}
+                    className="absolute inset-0 z-[5] flex items-center justify-center"
+                  >
+                    {paused && (
+                      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 backdrop-blur-sm">
+                        <Play size={30} fill="white" className="ml-1 text-white" />
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* Bottom-left overlay (pointer-events-none so taps fall through
-                  to the pause layer; the «Смотреть» button re-enables itself). */}
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4 pb-24 pr-20">
-                <div className="flex items-end gap-3">
+              {/* Info + actions BELOW the video — in the black area, no overlap. */}
+              <div className="px-4 pt-4">
+                <div className="flex items-start gap-3">
                   {posterUrl(item.poster) && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={`/tmdb-img/w185${item.poster}`}
                       alt={item.title}
-                      className="w-16 sm:w-20 aspect-[2/3] flex-shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-lg shadow-black/50"
+                      className="w-14 aspect-[2/3] flex-shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-lg shadow-black/50"
                     />
                   )}
-                  <div className="min-w-0">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
                       <span className="text-foreground/80">{item.year}</span>
                       {item.voteAverage > 0 && (
                         <>
                           <span className="text-foreground/30">·</span>
-                          <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
+                          <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
                             ★ {item.voteAverage.toFixed(1)}
                           </span>
                         </>
                       )}
                     </div>
-                    <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-2">
+                    <h2 className="text-xl font-black leading-tight tracking-tight text-foreground line-clamp-2">
                       {item.title}
                     </h2>
+                    {item.overview && (
+                      <p className="mt-1.5 text-[13px] leading-relaxed text-foreground/65 line-clamp-2">
+                        {item.overview}
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {item.overview && (
-                  <p className="mt-2 text-foreground/70 text-[14px] leading-relaxed line-clamp-2 max-w-[88%]">
-                    {item.overview}
-                  </p>
-                )}
-
-                <div className="mt-3.5">
+                <div className="mt-4 flex items-center gap-2.5">
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
-                    className="pointer-events-auto inline-flex items-center gap-2 h-11 px-6 rounded-full bg-white text-black text-[14px] font-bold hover:bg-white/90 transition-colors shadow-lg shadow-black/40"
+                    className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-6 text-[14px] font-bold text-black shadow-lg shadow-black/40 transition-colors hover:bg-white/90"
                   >
                     <Play size={17} fill="currentColor" /> Смотреть
                   </Link>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button onClick={() => onLike(idx, item)} aria-label="Нравится" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                      <Heart size={20} className={liked ? "text-red-500" : "text-white"} fill={liked ? "currentColor" : "none"} />
+                    </button>
+                    <button onClick={() => onSave(idx)} aria-label="Сохранить" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                      <Bookmark size={19} className={saved ? "text-primary" : "text-white"} fill={saved ? "currentColor" : "none"} />
+                    </button>
+                    <button onClick={() => onNotInterested(idx)} aria-label="Не интересно" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                      <X size={20} className="text-white" />
+                    </button>
+                    <button onClick={toggleMute} aria-label={muted ? "Включить звук" : "Выключить звук"} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                      {muted ? <VolumeX size={19} className="text-white" /> : <Volume2 size={19} className="text-white" />}
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -833,57 +809,19 @@ export function TrailerFeed() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; }
-        /* Make the 16:9 YouTube trailer COVER the 9:16 slide (fill the screen,
-           crop the sides) instead of letterboxing into a thin black band. */
-        .yt-cover {
+        /* The video host fills its 16:9 container exactly (the container is
+           already 16:9, so the trailer shows in native aspect, no letterbox). */
+        .yt-frame { position: absolute; inset: 0; }
+        .yt-frame > iframe,
+        .yt-frame > div {
           position: absolute;
           inset: 0;
-          overflow: hidden;
-          background: #000;
-          pointer-events: none;
-        }
-        .yt-cover > iframe,
-        .yt-cover > div {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          /* Bulletproof full-screen "background video" cover (vw/vh only).
-             The 16:9 iframe is scaled to cover the 9:16 slide and centered, so
-             YouTube's title bar / controls (at the iframe's top & bottom edges)
-             are cropped off-screen instead of overlaying the trailer. */
-          width: 100vw;
-          height: 56.25vw;       /* 9/16 of width */
-          min-height: 100vh;
-          min-width: 177.78vh;   /* 16/9 of height */
+          width: 100%;
+          height: 100%;
           border: 0;
           pointer-events: none;
         }
       `}</style>
     </div>
-  );
-}
-
-// Small TikTok-style rail button with a label under the icon.
-function ActionButton({
-  onClick, label, active, children,
-}: {
-  onClick: () => void;
-  label: string;
-  active?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button onClick={onClick} className="group flex flex-col items-center gap-1" title={label}>
-      <span
-        className={
-          "flex h-12 w-12 items-center justify-center rounded-full ring-1 ring-white/[0.08] backdrop-blur-md transition-colors " +
-          (active ? "bg-white/15" : "bg-black/35 group-hover:bg-black/50")
-        }
-      >
-        {children}
-      </span>
-      <span className="text-[10px] font-medium text-white/80 drop-shadow">{label}</span>
-    </button>
   );
 }
