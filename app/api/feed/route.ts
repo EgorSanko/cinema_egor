@@ -27,7 +27,9 @@ function topGenres(taste: TasteVector | null, k: number): number[] {
     .map(([g]) => Number(g));
 }
 
-const rndPage = () => 1 + Math.floor(Math.random() * 5);
+const rndPage = (max = 15) => 1 + Math.floor(Math.random() * max);
+const WILD_GENRES = [28, 35, 18, 878, 12, 16, 27, 10749, 53, 80, 14, 9648, 36, 10752];
+const pick = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
 
 export async function POST(req: NextRequest) {
   let body: FeedRequest;
@@ -50,11 +52,15 @@ export async function POST(req: NextRequest) {
   // refresh/next-batch doesn't repeat the same titles.
   const sources: Promise<Movie[]>[] = [
     getTrendingMovies("week"),
-    getPopularMovies(),
+    // Deep random pages so each batch reaches fresh titles — keeps the feed
+    // effectively infinite instead of drying up after a few dozen trailers.
+    getPopularMovies(rndPage(25)),
+    getPopularMovies(rndPage(25)),
   ];
-  for (const g of topGenres(taste, 2)) sources.push(getMoviesByGenre(g, rndPage()));
-  // A wildcard genre keeps exploration alive even once taste is strong.
-  sources.push(getMoviesByGenre([28, 35, 18, 878, 12, 16][Math.floor(Math.random() * 6)], rndPage()));
+  for (const g of topGenres(taste, 3)) sources.push(getMoviesByGenre(g, rndPage(15)));
+  // Wildcard genres keep exploration alive even once taste is strong.
+  sources.push(getMoviesByGenre(pick(WILD_GENRES), rndPage(15)));
+  sources.push(getMoviesByGenre(pick(WILD_GENRES), rndPage(15)));
 
   const pools = await Promise.all(sources.map((p) => p.catch(() => [] as Movie[])));
 

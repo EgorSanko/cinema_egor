@@ -20,7 +20,10 @@ import { toggleFavorite, isFavorite, type FavoriteItem } from "@/lib/storage";
 
 const TASTE_KEY = "movietok_taste";
 const SEEN_KEY = "movietok_seen";
+const POSITIVES_KEY = "movietok_positives";
 const SEEN_CAP = 400;
+const POSITIVES_CAP = 60;
+const SESSION_LR = 0.45; // short-term session intent learns faster (Phase 3)
 const BATCH = 8;
 const PREFETCH_WITHIN = 3; // fetch next batch when this close to the end
 const PRELOAD_AHEAD = 2;    // keep this many upcoming iframes mounted
@@ -190,6 +193,8 @@ export function TrailerFeed() {
 
   // Mutable mirrors so callbacks/observers read fresh values without re-binding.
   const tasteRef = useRef<TasteVector | null>(null);
+  const sessionRef = useRef<TasteVector | null>(null); // Phase 3: session intent
+  const positivesRef = useRef<number[]>([]);           // Phase 2: liked movie ids
   const seenRef = useRef<number[]>([]);
   const itemsRef = useRef<FeedTrailer[]>([]);
   const activeRef = useRef(0);
@@ -210,39 +215,41 @@ export function TrailerFeed() {
     setLoading(true);
     setError(false);
     try {
-      const body: FeedRequest = {
-        taste: tasteRef.current,
-        seen: seenRef.current,
-        n: BATCH,
-      };
-      const res = await fetch("/api/feed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`feed ${res.status}`);
-      const data = (await res.json()) as FeedResponse;
-      const incoming = Array.isArray(data?.items) ? data.items : [];
+      // Deep random pages vary per call, so an empty/all-seen batch is just bad
+      // luck — retry a few times before declaring the feed exhausted.
+      const MAX_TRIES = 4;
+      for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+        const body: FeedRequest = {
+          taste: tasteRef.current,
+          session: sessionRef.current,   // Phase 3: session intent
+          positives: positivesRef.current, // Phase 2: collaborative filtering
+          seen: seenRef.current,
+          n: BATCH,
+        };
+        const res = await fetch("/api/feed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`feed ${res.status}`);
+        const data = (await res.json()) as FeedResponse;
+        const incoming = Array.isArray(data?.items) ? data.items : [];
 
-      if (incoming.length === 0) {
-        setExhausted(true);
+        // De-dupe against everything already in the feed.
+        const have = new Set(itemsRef.current.map((i) => i.movieId));
+        const fresh = incoming.filter((i) => i && !have.has(i.movieId));
+        if (fresh.length === 0) continue; // try another (different) batch
+
+        const nextSeen = seenRef.current.slice();
+        for (const it of fresh) nextSeen.push(it.movieId);
+        seenRef.current = nextSeen.slice(-SEEN_CAP);
+        saveSeen(seenRef.current);
+
+        setItems((prev) => [...prev, ...fresh]);
         return;
       }
-
-      // De-dupe against everything already in the feed.
-      const have = new Set(itemsRef.current.map((i) => i.movieId));
-      const fresh = incoming.filter((i) => i && !have.has(i.movieId));
-      if (fresh.length === 0) {
-        setExhausted(true);
-        return;
-      }
-
-      const nextSeen = seenRef.current.slice();
-      for (const it of fresh) nextSeen.push(it.movieId);
-      seenRef.current = nextSeen.slice(-SEEN_CAP);
-      saveSeen(seenRef.current);
-
-      setItems((prev) => [...prev, ...fresh]);
+      // Genuinely nothing new after several tries.
+      setExhausted(true);
     } catch {
       setError(true);
     } finally {
@@ -256,6 +263,11 @@ export function TrailerFeed() {
   useEffect(() => {
     tasteRef.current = loadTaste();
     seenRef.current = loadSeen();
+    try {
+      const raw = localStorage.getItem(POSITIVES_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      positivesRef.current = Array.isArray(arr) ? arr.filter((x): x is number => typeof x === "number") : [];
+    } catch { /* ignore */ }
     void fetchBatch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -299,14 +311,26 @@ export function TrailerFeed() {
       notInterested: tr.notInterested,
     };
 
-    // (a) fold into taste + persist
+    // (a) fold into long-term taste + the faster short-term session intent
     const next = updateTaste(tasteRef.current, event);
     tasteRef.current = next;
     saveTaste(next);
+    sessionRef.current = updateTaste(sessionRef.current, event, SESSION_LR);
 
-    // (b) fire-and-forget to the (maybe-nonexistent) events endpoint
+    // (b) Phase 2: on a positive engagement, remember this movie so the server
+    // can build "похожим зашло" co-occurrence and boost similar titles.
+    const isPositive =
+      event.tapWatch || event.liked || event.saved || (event.completed && pct > 0.7);
+    if (isPositive) {
+      const list = positivesRef.current.filter((id) => id !== item.movieId);
+      list.push(item.movieId);
+      positivesRef.current = list.slice(-POSITIVES_CAP);
+      try { localStorage.setItem(POSITIVES_KEY, JSON.stringify(positivesRef.current)); } catch { /* ignore */ }
+    }
+
+    // (c) fire-and-forget to the events endpoint (records co-occurrence)
     try {
-      const payload = JSON.stringify(event);
+      const payload = JSON.stringify({ ...event, recentPositives: positivesRef.current });
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
         navigator.sendBeacon(
           "/api/feed/events",
@@ -321,7 +345,7 @@ export function TrailerFeed() {
         }).catch(() => {});
       }
     } catch {
-      /* ignore — endpoint may not exist yet */
+      /* ignore */
     }
   }, [measurePct]);
 
@@ -577,7 +601,7 @@ export function TrailerFeed() {
               {within && item.ytKey ? (
                 <div
                   ref={(el) => { playerHosts.current[idx] = el; }}
-                  className="pointer-events-none absolute inset-0 -translate-y-[7%] [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
+                  className="pointer-events-none absolute inset-0 -translate-y-[14%] [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
                   aria-hidden
                 />
               ) : (
