@@ -536,13 +536,28 @@ export function TrailerFeed() {
     setPaused(false);
     syncPlayers(active);
 
+    // Robustly (re)start the active video — the player may not be ready the
+    // instant the slide becomes active, so retry a few times. This is what
+    // fixes "the next trailer doesn't auto-play after a swipe".
+    const tryPlay = () => {
+      const p = players.current[activeRef.current];
+      if (p) { try { p.mute(); p.playVideo(); } catch { /* not ready */ } }
+    };
+    tryPlay();
+    const r1 = setTimeout(tryPlay, 250);
+    const r2 = setTimeout(tryPlay, 700);
+    const r3 = setTimeout(tryPlay, 1400);
+
     // sample watch progress while active
     const sampler = setInterval(() => {
       const t = trackers.current[activeRef.current];
       if (t) t.lastPct = Math.max(t.lastPct, measurePct(activeRef.current));
     }, 1000);
 
-    return () => clearInterval(sampler);
+    return () => {
+      clearInterval(sampler);
+      clearTimeout(r1); clearTimeout(r2); clearTimeout(r3);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, items.length]);
 
@@ -696,10 +711,10 @@ export function TrailerFeed() {
               key={`${item.movieId}-${idx}`}
               ref={(el) => { slideRefs.current[idx] = el; }}
               data-idx={idx}
-              className="relative flex h-[100dvh] w-full snap-start snap-always flex-col overflow-hidden bg-black"
+              className="relative flex h-[100dvh] w-full snap-start snap-always flex-col justify-center overflow-hidden bg-black"
             >
-              {/* 16:9 trailer band at the top — native aspect, nothing overlaps. */}
-              <div className="relative mt-3 w-full shrink-0 aspect-video bg-black">
+              {/* 16:9 trailer band, vertically centred (sits lower than the top). */}
+              <div className="relative w-full shrink-0 aspect-video bg-black">
                 {within && item.ytKey && !broken.has(idx) ? (
                   <div
                     ref={(el) => { playerHosts.current[idx] = el; }}
@@ -738,34 +753,37 @@ export function TrailerFeed() {
                 )}
               </div>
 
-              {/* Poster + title fill the space below the video — clean, no
-                  description, just a nice big poster and the film's name. */}
-              <div className="flex flex-1 flex-col items-center px-5 pb-24 pt-6 text-center">
-                {posterUrl(item.poster) && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={`/tmdb-img/w342${item.poster}`}
-                    alt={item.title}
-                    className="w-32 aspect-[2/3] rounded-2xl object-cover ring-1 ring-white/15 shadow-2xl shadow-black/60"
-                  />
-                )}
-                <div className="mt-4 flex items-center gap-2 text-[14px]">
-                  <span className="text-foreground/80">{item.year}</span>
-                  {item.voteAverage > 0 && (
-                    <>
-                      <span className="text-foreground/30">·</span>
-                      <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
-                        ★ {item.voteAverage.toFixed(1)}
-                      </span>
-                    </>
+              {/* Poster on the LEFT, title on the RIGHT, just under the video. */}
+              <div className="px-4 pt-6">
+                <div className="flex items-center gap-4">
+                  {posterUrl(item.poster) && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`/tmdb-img/w342${item.poster}`}
+                      alt={item.title}
+                      className="w-24 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/50"
+                    />
                   )}
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px]">
+                      <span className="text-foreground/80">{item.year}</span>
+                      {item.voteAverage > 0 && (
+                        <>
+                          <span className="text-foreground/30">·</span>
+                          <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
+                            ★ {item.voteAverage.toFixed(1)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <h2 className="text-2xl font-black leading-tight tracking-tight text-foreground line-clamp-3">
+                      {item.title}
+                    </h2>
+                  </div>
                 </div>
-                <h2 className="mt-1 text-2xl font-black leading-tight tracking-tight text-foreground line-clamp-2">
-                  {item.title}
-                </h2>
 
-                {/* Actions pinned to the bottom of the slide. */}
-                <div className="mt-auto flex w-full items-center gap-2.5">
+                {/* Actions */}
+                <div className="mt-6 flex w-full items-center gap-2.5">
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
@@ -812,8 +830,8 @@ export function TrailerFeed() {
           left: 50%;
           top: 50%;
           transform: translate(-50%, -50%);
-          width: 124%;
-          height: 124%;
+          width: 138%;
+          height: 138%;
           border: 0;
           pointer-events: none;
         }
