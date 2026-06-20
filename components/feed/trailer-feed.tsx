@@ -195,6 +195,7 @@ export function TrailerFeed() {
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
   const [paused, setPaused] = useState(false);
+  const [activePlaying, setActivePlaying] = useState(false); // active video actually playing
   const [broken, setBroken] = useState<Set<number>>(new Set()); // unplayable trailers
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -431,6 +432,7 @@ export function TrailerFeed() {
                 // nudge it back up to HD whenever it starts playing.
                 if (window.YT && e.data === window.YT.PlayerState.PLAYING) {
                   forceHQ(e.target);
+                  if (i === activeRef.current) setActivePlaying(true);
                 }
                 if (window.YT && e.data === window.YT.PlayerState.ENDED) {
                   if (tr) tr.lastPct = 1;
@@ -479,6 +481,7 @@ export function TrailerFeed() {
     }
 
     setPaused(false); // a freshly-active slide always plays
+    setActivePlaying(false); // cover with poster until it actually plays
     syncPlayers(active);
 
     // pause everything that isn't active
@@ -682,6 +685,19 @@ export function TrailerFeed() {
                     className="absolute inset-0 h-full w-full object-cover opacity-70"
                   />
                 )
+              )}
+
+              {/* Poster cover over the active video until it actually starts
+                  playing — hides YouTube's pause/loading chrome (the big ⏸ and
+                  logo) that briefly flashes right after a swipe. */}
+              {idx === active && !activePlaying && !paused && posterUrl(item.poster) && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={posterUrl(item.poster) as string}
+                  alt=""
+                  className="pointer-events-none absolute inset-0 z-[4] h-full w-full object-cover"
+                  aria-hidden
+                />
               )}
 
               {/* Tap-to-pause layer over the video. <div onClick> so vertical
