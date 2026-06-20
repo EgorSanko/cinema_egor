@@ -475,13 +475,14 @@ export function TrailerFeed() {
               onReady: (e) => {
                 try { e.target.setPlaybackRate(1.5); } catch { /* noop */ }
                 if (i === activeRef.current) {
-                  if (!mutedRef.current && gestureRef.current) e.target.unMute();
-                  else e.target.mute();
+                  // ALWAYS start muted — mobile blocks unmuted autoplay, which
+                  // left the video stuck/paused. We unmute later, once it's
+                  // actually PLAYING (onStateChange), which browsers allow.
+                  e.target.mute();
                   e.target.playVideo();
                 } else {
-                  // Only the active slide plays — mobile browsers allow just one
-                  // video at a time, so keeping others playing blocked the next
-                  // slide from auto-starting on swipe.
+                  // Only the active slide plays — mobile allows just one video
+                  // at a time, so others must pause or the next won't start.
                   e.target.mute();
                   e.target.pauseVideo();
                 }
@@ -489,6 +490,13 @@ export function TrailerFeed() {
               onStateChange: (e) => {
                 const tr = trackers.current[i];
                 if (tr) tr.lastPct = measurePct(i);
+                // Once the active video is actually PLAYING, unmute it if the
+                // user wants sound (allowed now that it's playing).
+                if (window.YT && e.data === window.YT.PlayerState.PLAYING) {
+                  if (i === activeRef.current && !mutedRef.current && gestureRef.current) {
+                    try { e.target.unMute(); } catch { /* noop */ }
+                  }
+                }
                 if (window.YT && e.data === window.YT.PlayerState.ENDED) {
                   if (tr) tr.lastPct = 1;
                   try { e.target.playVideo(); } catch { /* loop restart */ }
@@ -502,7 +510,7 @@ export function TrailerFeed() {
           const p = players.current[i];
           try {
             p.setPlaybackRate(1.5);
-            if (mutedRef.current || !gestureRef.current) p.mute(); else p.unMute();
+            p.mute();           // start muted; onStateChange unmutes once playing
             p.playVideo();
           } catch { /* noop */ }
         } else {
@@ -730,64 +738,53 @@ export function TrailerFeed() {
                 )}
               </div>
 
-              {/* Info + actions fill the space below the video (no black holes). */}
-              <div className="flex flex-1 flex-col px-4 pb-24 pt-5">
-                <div className="flex items-start gap-4">
-                  {posterUrl(item.poster) && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={`/tmdb-img/w342${item.poster}`}
-                      alt={item.title}
-                      className="w-24 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/50"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px]">
-                      <span className="text-foreground/80">{item.year}</span>
-                      {item.voteAverage > 0 && (
-                        <>
-                          <span className="text-foreground/30">·</span>
-                          <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
-                            ★ {item.voteAverage.toFixed(1)}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <h2 className="text-2xl font-black leading-tight tracking-tight text-foreground line-clamp-3">
-                      {item.title}
-                    </h2>
-                  </div>
-                </div>
-
-                {item.overview && (
-                  <p className="mt-4 text-[15px] leading-relaxed text-foreground/70 line-clamp-5">
-                    {item.overview}
-                  </p>
+              {/* Poster + title fill the space below the video — clean, no
+                  description, just a nice big poster and the film's name. */}
+              <div className="flex flex-1 flex-col items-center px-5 pb-24 pt-6 text-center">
+                {posterUrl(item.poster) && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`/tmdb-img/w342${item.poster}`}
+                    alt={item.title}
+                    className="w-32 aspect-[2/3] rounded-2xl object-cover ring-1 ring-white/15 shadow-2xl shadow-black/60"
+                  />
                 )}
+                <div className="mt-4 flex items-center gap-2 text-[14px]">
+                  <span className="text-foreground/80">{item.year}</span>
+                  {item.voteAverage > 0 && (
+                    <>
+                      <span className="text-foreground/30">·</span>
+                      <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
+                        ★ {item.voteAverage.toFixed(1)}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <h2 className="mt-1 text-2xl font-black leading-tight tracking-tight text-foreground line-clamp-2">
+                  {item.title}
+                </h2>
 
-                {/* Pushed to the bottom of the slide — fills the space. */}
-                <div className="mt-auto flex items-center gap-3 pt-5">
+                {/* Actions pinned to the bottom of the slide. */}
+                <div className="mt-auto flex w-full items-center gap-2.5">
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
-                    className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-7 text-[15px] font-bold text-black shadow-lg shadow-black/40 transition-colors hover:bg-white/90"
+                    className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-white text-[15px] font-bold text-black shadow-lg shadow-black/40 transition-colors hover:bg-white/90"
                   >
                     <Play size={19} fill="currentColor" /> Смотреть
                   </Link>
-                  <div className="ml-auto flex items-center gap-2.5">
-                    <button onClick={() => onLike(idx, item)} aria-label="Нравится" className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                      <Heart size={24} className={liked ? "text-red-500" : "text-white"} fill={liked ? "currentColor" : "none"} />
-                    </button>
-                    <button onClick={() => onSave(idx)} aria-label="Сохранить" className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                      <Bookmark size={22} className={saved ? "text-primary" : "text-white"} fill={saved ? "currentColor" : "none"} />
-                    </button>
-                    <button onClick={() => onNotInterested(idx)} aria-label="Не интересно" className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                      <X size={24} className="text-white" />
-                    </button>
-                    <button onClick={toggleMute} aria-label={muted ? "Включить звук" : "Выключить звук"} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                      {muted ? <VolumeX size={22} className="text-white" /> : <Volume2 size={22} className="text-white" />}
-                    </button>
-                  </div>
+                  <button onClick={() => onLike(idx, item)} aria-label="Нравится" className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                    <Heart size={23} className={liked ? "text-red-500" : "text-white"} fill={liked ? "currentColor" : "none"} />
+                  </button>
+                  <button onClick={() => onSave(idx)} aria-label="Сохранить" className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                    <Bookmark size={21} className={saved ? "text-primary" : "text-white"} fill={saved ? "currentColor" : "none"} />
+                  </button>
+                  <button onClick={() => onNotInterested(idx)} aria-label="Не интересно" className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                    <X size={23} className="text-white" />
+                  </button>
+                  <button onClick={toggleMute} aria-label={muted ? "Включить звук" : "Выключить звук"} className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                    {muted ? <VolumeX size={21} className="text-white" /> : <Volume2 size={21} className="text-white" />}
+                  </button>
                 </div>
               </div>
             </section>
@@ -806,15 +803,17 @@ export function TrailerFeed() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; }
-        /* The video host fills its 16:9 container exactly (the container is
-           already 16:9, so the trailer shows in native aspect, no letterbox). */
-        .yt-frame { position: absolute; inset: 0; }
+        /* 16:9 trailer, slightly overscanned + centered so YouTube's own title
+           bar (top) and control strip (bottom) are cropped off the band. */
+        .yt-frame { position: absolute; inset: 0; overflow: hidden; }
         .yt-frame > iframe,
         .yt-frame > div {
           position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: 124%;
+          height: 124%;
           border: 0;
           pointer-events: none;
         }
