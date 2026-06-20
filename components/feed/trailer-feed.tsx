@@ -687,10 +687,12 @@ export function TrailerFeed() {
                 )
               )}
 
-              {/* Poster cover over the active video until it actually starts
-                  playing — hides YouTube's pause/loading chrome (the big ⏸ and
-                  logo) that briefly flashes right after a swipe. */}
-              {idx === active && !activePlaying && !paused && posterUrl(item.poster) && (
+              {/* Poster cover over EVERY mounted trailer except the one that's
+                  actually playing right now. The outgoing slide (just paused on
+                  swipe) and the incoming one (still loading) both get YouTube's
+                  ⏸/logo chrome — covering them with the poster hides it, so the
+                  pause icon never flashes while scrolling. */}
+              {within && item.ytKey && !broken.has(idx) && !(idx === active && activePlaying) && posterUrl(item.poster) && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={posterUrl(item.poster) as string}
