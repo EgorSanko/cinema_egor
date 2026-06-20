@@ -181,6 +181,7 @@ export function TrailerFeed() {
   const [items, setItems] = useState<FeedTrailer[]>([]);
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
+  const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [exhausted, setExhausted] = useState(false);
@@ -437,6 +438,7 @@ export function TrailerFeed() {
       tr.flushed = false;
     }
 
+    setPaused(false); // a freshly-active slide always plays
     syncPlayers(active);
 
     // pause everything that isn't active
@@ -511,6 +513,18 @@ export function TrailerFeed() {
   }, [flushSignal]);
 
   // ---- actions -----------------------------------------------------------
+
+  // Tap the video to pause/play. When paused we cover the iframe with a fully
+  // opaque layer (see the slide JSX) so YouTube's own paused chrome — title,
+  // share, logo, big pause button — is never visible.
+  const togglePlay = useCallback(() => {
+    const p = players.current[activeRef.current];
+    if (!p) return;
+    setPaused((wasPaused) => {
+      try { if (wasPaused) p.playVideo(); else p.pauseVideo(); } catch { /* noop */ }
+      return !wasPaused;
+    });
+  }, []);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {
@@ -614,6 +628,24 @@ export function TrailerFeed() {
                     className="absolute inset-0 h-full w-full object-cover opacity-70"
                   />
                 )
+              )}
+
+              {/* Tap-to-pause layer over the video. <div onClick> so vertical
+                  swipes still scroll (click fires only on a tap). Sits at z-5,
+                  below the bottom overlay (z-10), so the buttons stay tappable.
+                  When PAUSED it becomes a fully-opaque black cover with our own
+                  ▶ icon — hiding YouTube's paused chrome completely. */}
+              {idx === active && (
+                <div
+                  onClick={togglePlay}
+                  className={`absolute inset-0 z-[5] flex items-center justify-center transition-colors ${paused ? "bg-black" : ""}`}
+                >
+                  {paused && (
+                    <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white/10">
+                      <Play size={36} fill="white" className="ml-1 text-white" />
+                    </span>
+                  )}
+                </div>
               )}
 
               {/* Scrims: bottom gradient for the overlay, soft top for the rail */}
