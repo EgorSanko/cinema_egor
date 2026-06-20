@@ -234,42 +234,13 @@ export function TrailerFeed() {
   useEffect(() => { mutedRef.current = muted; }, [muted]);
   useEffect(() => { exhaustedRef.current = exhausted; }, [exhausted]);
 
-  // Sound preference (default ON). Browsers block unmuted autoplay until the
-  // first user gesture, so the first trailer still starts muted; we flip the
-  // active player's audio the moment the user touches/swipes/scrolls.
-  const gestureRef = useRef(false);
-  const tapArmedRef = useRef(false); // tap-to-pause armed only after 1st gesture
+  // Sound is OFF by default — the user turns it on with the speaker button
+  // (auto-unmute on mobile proved unreliable). The choice is remembered, and
+  // once ON it's re-applied to every slide as it starts playing.
   useEffect(() => {
     try {
-      const pref = localStorage.getItem("movietok_sound");
-      setMuted(pref === "off"); // null/default → sound ON
+      setMuted(localStorage.getItem("movietok_sound") !== "on");
     } catch { /* noop */ }
-  }, []);
-  useEffect(() => {
-    const onGesture = () => {
-      if (gestureRef.current) return;
-      gestureRef.current = true;
-      // First interaction also kicks off playback (mobile browsers block
-      // autoplay until a gesture) and unmutes if sound is on.
-      try {
-        const p = players.current[activeRef.current];
-        if (!mutedRef.current) p?.unMute();
-        p?.playVideo();
-      } catch { /* noop */ }
-      // Don't let this same first tap also pause — arm tapping shortly after.
-      setTimeout(() => { tapArmedRef.current = true; }, 500);
-    };
-    const opts: AddEventListenerOptions = { passive: true };
-    window.addEventListener("pointerdown", onGesture, opts);
-    window.addEventListener("touchstart", onGesture, opts);
-    window.addEventListener("keydown", onGesture, opts);
-    window.addEventListener("wheel", onGesture, opts);
-    return () => {
-      window.removeEventListener("pointerdown", onGesture);
-      window.removeEventListener("touchstart", onGesture);
-      window.removeEventListener("keydown", onGesture);
-      window.removeEventListener("wheel", onGesture);
-    };
   }, []);
 
   // ---- fetch a batch -----------------------------------------------------
@@ -494,7 +465,7 @@ export function TrailerFeed() {
                 // Once the active video is actually PLAYING, unmute it if the
                 // user wants sound (allowed now that it's playing).
                 if (window.YT && e.data === window.YT.PlayerState.PLAYING) {
-                  if (i === activeRef.current && !mutedRef.current && gestureRef.current) {
+                  if (i === activeRef.current && !mutedRef.current) {
                     try { e.target.unMute(); } catch { /* noop */ }
                   }
                 }
@@ -618,7 +589,6 @@ export function TrailerFeed() {
   // ---- actions -----------------------------------------------------------
 
   const togglePlay = useCallback(() => {
-    if (!tapArmedRef.current) return; // first tap just starts playback/sound
     const p = players.current[activeRef.current];
     if (!p) return;
     setPaused((wasPaused) => {
@@ -628,7 +598,6 @@ export function TrailerFeed() {
   }, []);
 
   const toggleMute = useCallback(() => {
-    gestureRef.current = true;
     setMuted((m) => {
       const next = !m;
       const p = players.current[activeRef.current];
@@ -741,14 +710,17 @@ export function TrailerFeed() {
                     </span>
                   </div>
                 )}
-                {/* Tap the video to pause/play (<div onClick>; swipes scroll). */}
+                {/* Tap to pause/play. When PAUSED, an opaque scrim covers the
+                    YouTube paused overlay (title/share/logo) — so YouTube's UI is
+                    never visible: overscan hides it while playing, this hides it
+                    while paused. (<div onClick>; swipes still scroll.) */}
                 {idx === active && (
                   <div
                     onClick={togglePlay}
-                    className="absolute inset-0 z-[5] flex items-center justify-center"
+                    className={`absolute inset-0 z-[5] flex items-center justify-center transition-colors ${paused ? "bg-black/90" : ""}`}
                   >
                     {paused && (
-                      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/45 backdrop-blur-sm">
+                      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm">
                         <Play size={30} fill="white" className="ml-1 text-white" />
                       </span>
                     )}
