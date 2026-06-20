@@ -479,10 +479,11 @@ export function TrailerFeed() {
                   else e.target.mute();
                   e.target.playVideo();
                 } else {
-                  // Keep non-active slides PLAYING muted — pausing them makes
-                  // YouTube flash its native pause/play button during a swipe.
+                  // Only the active slide plays — mobile browsers allow just one
+                  // video at a time, so keeping others playing blocked the next
+                  // slide from auto-starting on swipe.
                   e.target.mute();
-                  e.target.playVideo();
+                  e.target.pauseVideo();
                 }
               },
               onStateChange: (e) => {
@@ -505,13 +506,8 @@ export function TrailerFeed() {
             p.playVideo();
           } catch { /* noop */ }
         } else {
-          // keep playing muted (no pause → no YT button flash on scroll)
-          try {
-            const p = players.current[i];
-            p?.setPlaybackRate(1.5);
-            p?.mute();
-            p?.playVideo();
-          } catch { /* noop */ }
+          // pause non-active (one-video-at-a-time on mobile)
+          try { players.current[i]?.pauseVideo(); } catch { /* noop */ }
         }
       });
     });
@@ -692,11 +688,10 @@ export function TrailerFeed() {
               key={`${item.movieId}-${idx}`}
               ref={(el) => { slideRefs.current[idx] = el; }}
               data-idx={idx}
-              className="relative flex h-[100dvh] w-full snap-start snap-always flex-col justify-center overflow-hidden bg-black"
+              className="relative flex h-[100dvh] w-full snap-start snap-always flex-col overflow-hidden bg-black"
             >
-              {/* 16:9 trailer band — native aspect, centered; info+actions sit
-                  below it so nothing ever overlaps the video. */}
-              <div className="relative w-full aspect-video bg-black">
+              {/* 16:9 trailer band at the top — native aspect, nothing overlaps. */}
+              <div className="relative mt-3 w-full shrink-0 aspect-video bg-black">
                 {within && item.ytKey && !broken.has(idx) ? (
                   <div
                     ref={(el) => { playerHosts.current[idx] = el; }}
@@ -735,19 +730,19 @@ export function TrailerFeed() {
                 )}
               </div>
 
-              {/* Info + actions BELOW the video — in the black area, no overlap. */}
-              <div className="px-4 pt-4">
-                <div className="flex items-start gap-3">
+              {/* Info + actions fill the space below the video (no black holes). */}
+              <div className="flex flex-1 flex-col px-4 pb-24 pt-5">
+                <div className="flex items-start gap-4">
                   {posterUrl(item.poster) && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={`/tmdb-img/w185${item.poster}`}
+                      src={`/tmdb-img/w342${item.poster}`}
                       alt={item.title}
-                      className="w-14 aspect-[2/3] flex-shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-lg shadow-black/50"
+                      className="w-24 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/50"
                     />
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px]">
                       <span className="text-foreground/80">{item.year}</span>
                       {item.voteAverage > 0 && (
                         <>
@@ -758,37 +753,39 @@ export function TrailerFeed() {
                         </>
                       )}
                     </div>
-                    <h2 className="text-xl font-black leading-tight tracking-tight text-foreground line-clamp-2">
+                    <h2 className="text-2xl font-black leading-tight tracking-tight text-foreground line-clamp-3">
                       {item.title}
                     </h2>
-                    {item.overview && (
-                      <p className="mt-1.5 text-[13px] leading-relaxed text-foreground/65 line-clamp-2">
-                        {item.overview}
-                      </p>
-                    )}
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-center gap-2.5">
+                {item.overview && (
+                  <p className="mt-4 text-[15px] leading-relaxed text-foreground/70 line-clamp-5">
+                    {item.overview}
+                  </p>
+                )}
+
+                {/* Pushed to the bottom of the slide — fills the space. */}
+                <div className="mt-auto flex items-center gap-3 pt-5">
                   <Link
                     href={`/movie/${item.movieId}`}
                     onClick={() => onTapWatch(idx)}
-                    className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-6 text-[14px] font-bold text-black shadow-lg shadow-black/40 transition-colors hover:bg-white/90"
+                    className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-7 text-[15px] font-bold text-black shadow-lg shadow-black/40 transition-colors hover:bg-white/90"
                   >
-                    <Play size={17} fill="currentColor" /> Смотреть
+                    <Play size={19} fill="currentColor" /> Смотреть
                   </Link>
-                  <div className="ml-auto flex items-center gap-2">
-                    <button onClick={() => onLike(idx, item)} aria-label="Нравится" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                      <Heart size={20} className={liked ? "text-red-500" : "text-white"} fill={liked ? "currentColor" : "none"} />
+                  <div className="ml-auto flex items-center gap-2.5">
+                    <button onClick={() => onLike(idx, item)} aria-label="Нравится" className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                      <Heart size={24} className={liked ? "text-red-500" : "text-white"} fill={liked ? "currentColor" : "none"} />
                     </button>
-                    <button onClick={() => onSave(idx)} aria-label="Сохранить" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                      <Bookmark size={19} className={saved ? "text-primary" : "text-white"} fill={saved ? "currentColor" : "none"} />
+                    <button onClick={() => onSave(idx)} aria-label="Сохранить" className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                      <Bookmark size={22} className={saved ? "text-primary" : "text-white"} fill={saved ? "currentColor" : "none"} />
                     </button>
-                    <button onClick={() => onNotInterested(idx)} aria-label="Не интересно" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                      <X size={20} className="text-white" />
+                    <button onClick={() => onNotInterested(idx)} aria-label="Не интересно" className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                      <X size={24} className="text-white" />
                     </button>
-                    <button onClick={toggleMute} aria-label={muted ? "Включить звук" : "Выключить звук"} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
-                      {muted ? <VolumeX size={19} className="text-white" /> : <Volume2 size={19} className="text-white" />}
+                    <button onClick={toggleMute} aria-label={muted ? "Включить звук" : "Выключить звук"} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 active:bg-white/20">
+                      {muted ? <VolumeX size={22} className="text-white" /> : <Volume2 size={22} className="text-white" />}
                     </button>
                   </div>
                 </div>
