@@ -74,6 +74,29 @@ function saveSeen(seen: number[]): void {
   }
 }
 
+// movieIds the user positively engaged with (liked / tapped «Смотреть» / watched
+// a lot). Sent to the server so it can do "похожим зашло" collaborative ranking.
+const POSITIVES_KEY = "movietok_positives";
+const POSITIVES_CAP = 60;
+
+function loadPositives(): number[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const arr = JSON.parse(localStorage.getItem(POSITIVES_KEY) || "[]");
+    return Array.isArray(arr) ? arr.filter((x): x is number => typeof x === "number") : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePositives(ids: number[]): void {
+  try {
+    localStorage.setItem(POSITIVES_KEY, JSON.stringify(ids.slice(0, POSITIVES_CAP)));
+  } catch {
+    /* ignore */
+  }
+}
+
 // ---- YouTube IFrame API loader -------------------------------------------
 
 interface YTPlayer {
@@ -191,6 +214,7 @@ export function TrailerFeed() {
   // Mutable mirrors so callbacks/observers read fresh values without re-binding.
   const tasteRef = useRef<TasteVector | null>(null);
   const seenRef = useRef<number[]>([]);
+  const positivesRef = useRef<number[]>([]);
   const itemsRef = useRef<FeedTrailer[]>([]);
   const activeRef = useRef(0);
   const mutedRef = useRef(true);
@@ -244,6 +268,7 @@ export function TrailerFeed() {
       const body: FeedRequest = {
         taste: tasteRef.current,
         seen: seenRef.current,
+        positives: positivesRef.current,
         n: BATCH,
       };
       const res = await fetch("/api/feed", {
@@ -287,6 +312,7 @@ export function TrailerFeed() {
   useEffect(() => {
     tasteRef.current = loadTaste();
     seenRef.current = loadSeen();
+    positivesRef.current = loadPositives();
     void fetchBatch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -330,14 +356,25 @@ export function TrailerFeed() {
       notInterested: tr.notInterested,
     };
 
+    // Positive engagement? Remember it for collaborative ("похожим зашло")
+    // ranking and tell the server which other titles this user likes.
+    const positive =
+      event.tapWatch || event.liked || event.saved ||
+      (event.completed && event.pctWatched > 0.7);
+    const recentPositives = positivesRef.current.filter((id) => id !== item.movieId);
+    if (positive) {
+      positivesRef.current = [item.movieId, ...recentPositives].slice(0, POSITIVES_CAP);
+      savePositives(positivesRef.current);
+    }
+
     // (a) fold into taste + persist
     const next = updateTaste(tasteRef.current, event);
     tasteRef.current = next;
     saveTaste(next);
 
-    // (b) fire-and-forget to the (maybe-nonexistent) events endpoint
+    // (b) fire-and-forget to the events endpoint (drives global CF)
     try {
-      const payload = JSON.stringify(event);
+      const payload = JSON.stringify({ ...event, recentPositives });
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
         navigator.sendBeacon(
           "/api/feed/events",

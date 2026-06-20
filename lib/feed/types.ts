@@ -60,6 +60,7 @@ export const TASTE_LR = 0.18;
 export interface FeedRequest {
   taste: TasteVector | null;  // null on first ever visit (cold start)
   seen: number[];             // movieIds already shown (dedupe)
+  positives?: number[];       // movieIds the user liked/tapped (Phase 2 CF)
   n?: number;                 // batch size (default 8)
 }
 export interface FeedResponse {

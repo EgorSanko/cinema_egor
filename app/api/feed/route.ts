@@ -4,7 +4,10 @@ import {
 } from "@/lib/tmdb";
 import { resolveTrailers } from "@/lib/feed/trailers";
 import { scoreItem, diversify } from "@/lib/feed/features";
+import { cfBoost } from "@/lib/feed/cooc";
 import type { FeedRequest, FeedTrailer, TasteVector } from "@/lib/feed/types";
+
+const CF_WEIGHT = 0.6; // how much "похожим зашло" nudges the content ranking
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +38,9 @@ export async function POST(req: NextRequest) {
   }
   const taste = body.taste ?? null;
   const seen = new Set<number>(body.seen || []);
+  const positives = (body.positives || []).map(Number).filter(Boolean);
   const n = Math.min(Math.max(body.n || 8, 1), 12);
+  const rank = (it: FeedTrailer) => scoreItem(taste, it) + CF_WEIGHT * cfBoost(it.movieId, positives);
 
   // Candidate pool: trending + popular for breadth, plus the user's favourite
   // genres so the feed leans into learned taste. Random pages add variety so a
@@ -71,7 +76,7 @@ export async function POST(req: NextRequest) {
     decade: decadeOf(m.release_date),
     ytKey: "",
   }));
-  prelim.sort((a, b) => scoreItem(taste, b) - scoreItem(taste, a));
+  prelim.sort((a, b) => rank(b) - rank(a));
   const shortlist = prelim.slice(0, 24);
 
   // Resolve real trailer keys (parallel); keep only movies that have one.
@@ -80,8 +85,8 @@ export async function POST(req: NextRequest) {
   );
   let items: FeedTrailer[] = withTrailers.map(({ it, ytKey }) => ({ ...it, ytKey }));
 
-  // Final taste ranking + diversity interspersing, then take the batch.
-  items.sort((a, b) => scoreItem(taste, b) - scoreItem(taste, a));
+  // Final taste + collaborative ranking, then diversity interspersing.
+  items.sort((a, b) => rank(b) - rank(a));
   items = diversify(items).slice(0, n);
 
   return NextResponse.json({ items } as { items: FeedTrailer[] });
