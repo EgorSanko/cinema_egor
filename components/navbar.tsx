@@ -7,7 +7,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
   Home, Tv, Layers, Flame, Users, LayoutGrid,
-  Bookmark, ChevronDown, Heart, Clock, Smartphone,
+  Bookmark, ChevronDown, Heart, Clock, Smartphone, Clapperboard,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -19,6 +19,7 @@ import { AuthModal } from "./auth-modal";
 type IconType = React.ComponentType<{ size?: number; className?: string }>;
 const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
   { label: "Главная", href: "/", Icon: Home },
+  { label: "Лента", href: "/feed", Icon: Clapperboard },
   { label: "Сериалы", href: "/tv", Icon: Tv },
   { label: "Подборки", href: "/collections", Icon: Layers },
   { label: "Свайп", href: "/swipe", Icon: Flame },
