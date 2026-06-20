@@ -86,7 +86,9 @@ export async function POST(req: NextRequest) {
     ytKey: "",
   }));
   prelim.sort((a, b) => rank(b) - rank(a));
-  const shortlist = prelim.slice(0, 24);
+  // Russian-only + playable filtering downstream drops a lot, so vet a wider
+  // shortlist to still fill the batch.
+  const shortlist = prelim.slice(0, 40);
 
   // Resolve real trailer keys (parallel); keep only movies that have one.
   const withTrailers = await resolveTrailers(

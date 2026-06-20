@@ -100,6 +100,7 @@ interface YTNamespace {
       events?: {
         onReady?: (e: { target: YTPlayer }) => void;
         onStateChange?: (e: { target: YTPlayer; data: YTPlayerState }) => void;
+        onError?: (e: { target: YTPlayer; data: number }) => void;
       };
     },
   ) => YTPlayer;
@@ -182,6 +183,7 @@ export function TrailerFeed() {
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
   const [paused, setPaused] = useState(false);
+  const [broken, setBroken] = useState<Set<number>>(new Set()); // unplayable trailers
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [exhausted, setExhausted] = useState(false);
@@ -411,6 +413,20 @@ export function TrailerFeed() {
                   try { e.target.playVideo(); } catch { /* loop restart */ }
                 }
               },
+              // 2/5/100/101/150 = embedding disabled / age-restricted / removed.
+              // Mark the trailer broken (shows poster) and skip past it if active.
+              onError: () => {
+                setBroken((prev) => {
+                  const nx = new Set(prev);
+                  nx.add(i);
+                  return nx;
+                });
+                if (i === activeRef.current) {
+                  setTimeout(() => {
+                    slideRefs.current[i + 1]?.scrollIntoView({ behavior: "smooth" });
+                  }, 400);
+                }
+              },
             },
           });
         } else if (i === activeRef.current) {
@@ -612,7 +628,7 @@ export function TrailerFeed() {
               className="relative snap-start snap-always h-[100dvh] w-full overflow-hidden bg-black"
             >
               {/* Trailer iframe host (only mounted within the preload window) */}
-              {within && item.ytKey ? (
+              {within && item.ytKey && !broken.has(idx) ? (
                 <div
                   ref={(el) => { playerHosts.current[idx] = el; }}
                   className="pointer-events-none absolute inset-0 -translate-y-[14%] [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"

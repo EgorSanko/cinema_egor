@@ -4,13 +4,28 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_TMDB_BASE_URL;
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
+// Is a YouTube video actually playable (not private / deleted / access-
+// restricted)? oEmbed returns non-200 for those, so it filters out the
+// "Это видео с ограниченным доступом" trailers before they reach the feed.
+// (Age-restricted / embedding-disabled still return 200 here — those are
+// caught client-side via the IFrame onError auto-skip.)
+async function isPlayable(key: string): Promise<boolean> {
+  try {
+    const r = await fetch(
+      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${key}&format=json`,
+      { next: { revalidate: 86400 } }
+    );
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveTrailerKey(movieId: number): Promise<string | null> {
   if (!API_BASE_URL || !API_KEY || !movieId) return null;
   try {
     // Pull BOTH locales and merge — TMDB sometimes lists a Russian video only
-    // under the en-US query. Then strongly prefer ANY Russian-language video
-    // over the English one, so the feed is Russian whenever a RU trailer exists
-    // at all; English is used only when there's no Russian video.
+    // under the en-US query.
     const [ru, en] = await Promise.all(
       ["ru-RU", "en-US"].map((lang) =>
         fetch(`${API_BASE_URL}/movie/${movieId}/videos?api_key=${API_KEY}&language=${lang}`, {
@@ -31,21 +46,25 @@ export async function resolveTrailerKey(movieId: number): Promise<string | null>
         }
       }
     }
-    if (!all.length) return null;
 
+    // RUSSIAN ONLY — drop the movie entirely if it has no Russian-language
+    // YouTube video (iso_639_1 === "ru").
     const isRu = (v: any) => v.iso_639_1 === "ru";
     const trailer = (v: any) => v.type === "Trailer";
     const teaser = (v: any) => v.type === "Teaser";
-    const pick =
-      all.find((v) => isRu(v) && trailer(v) && v.official) ||
-      all.find((v) => isRu(v) && trailer(v)) ||
-      all.find((v) => isRu(v) && teaser(v)) ||
-      all.find((v) => isRu(v)) ||
-      all.find((v) => trailer(v) && v.official) ||
-      all.find((v) => trailer(v)) ||
-      all.find((v) => teaser(v)) ||
-      all[0];
-    return (pick?.key as string) || null;
+    const ruCandidates = [
+      ...all.filter((v) => isRu(v) && trailer(v) && v.official),
+      ...all.filter((v) => isRu(v) && trailer(v) && !v.official),
+      ...all.filter((v) => isRu(v) && teaser(v)),
+      ...all.filter((v) => isRu(v) && !trailer(v) && !teaser(v)),
+    ];
+    if (!ruCandidates.length) return null;
+
+    // Return the first Russian trailer that is actually playable.
+    for (const v of ruCandidates) {
+      if (await isPlayable(v.key)) return v.key as string;
+    }
+    return null;
   } catch {
     return null;
   }
