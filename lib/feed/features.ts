@@ -19,21 +19,46 @@ export function computeReward(e: SignalEvent): number {
   return Math.tanh(r / 3); // squash to [-1, 1]
 }
 
-/** Fold one impression into the taste vector via reward-weighted EMA.
-    Liked genres/decades drift up, fast-skipped ones drift down — instantly. */
-export function updateTaste(taste: TasteVector | null, e: SignalEvent): TasteVector {
+/** Fold one impression into a taste vector via reward-weighted EMA. `lr`
+    controls adaptation speed — long-term taste uses the slow default; the
+    short-term SESSION vector (Phase 3 sequential intent) uses a higher lr so
+    it tracks "what you're into right now in this session". */
+export function updateTaste(
+  taste: TasteVector | null, e: SignalEvent, lr: number = TASTE_LR
+): TasteVector {
   const t: TasteVector = taste
     ? { genres: { ...taste.genres }, decades: { ...taste.decades }, n: taste.n }
     : emptyTaste();
   const r = computeReward(e);
   for (const g of e.genreIds || []) {
-    t.genres[g] = (t.genres[g] || 0) * (1 - TASTE_LR) + r * TASTE_LR;
+    t.genres[g] = (t.genres[g] || 0) * (1 - lr) + r * lr;
   }
   if (e.decade) {
-    t.decades[e.decade] = (t.decades[e.decade] || 0) * (1 - TASTE_LR) + r * TASTE_LR;
+    t.decades[e.decade] = (t.decades[e.decade] || 0) * (1 - lr) + r * lr;
   }
   t.n += 1;
   return t;
+}
+
+/** Blend long-term taste with the short-term session vector (Phase 3). The
+    session leans the feed toward in-the-moment intent without erasing who you
+    are. Returns the long-term vector unchanged when there's no session yet. */
+export function blendTaste(
+  longT: TasteVector | null, sessionT: TasteVector | null, w = 0.6
+): TasteVector | null {
+  if (!sessionT || sessionT.n === 0) return longT;
+  if (!longT || longT.n === 0) return sessionT;
+  const genres: Record<number, number> = { ...longT.genres };
+  for (const [g, v] of Object.entries(sessionT.genres)) {
+    const gi = Number(g);
+    genres[gi] = (genres[gi] || 0) * (1 - w) + v * w;
+  }
+  const decades: Record<number, number> = { ...longT.decades };
+  for (const [d, v] of Object.entries(sessionT.decades)) {
+    const di = Number(d);
+    decades[di] = (decades[di] || 0) * (1 - w) + v * w;
+  }
+  return { genres, decades, n: Math.max(longT.n, sessionT.n) };
 }
 
 /** Affinity of an item to the taste vector. Cold start (n small) leans on the

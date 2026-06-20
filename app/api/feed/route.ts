@@ -3,7 +3,7 @@ import {
   getTrendingMovies, getPopularMovies, getMoviesByGenre, type Movie,
 } from "@/lib/tmdb";
 import { resolveTrailers } from "@/lib/feed/trailers";
-import { scoreItem, diversify } from "@/lib/feed/features";
+import { scoreItem, diversify, blendTaste } from "@/lib/feed/features";
 import { cfBoost } from "@/lib/feed/cooc";
 import type { FeedRequest, FeedTrailer, TasteVector } from "@/lib/feed/types";
 
@@ -36,7 +36,10 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ items: [] } as { items: FeedTrailer[] });
   }
-  const taste = body.taste ?? null;
+  // Effective taste = long-term blended with the short-term session intent
+  // (Phase 3): the feed leans into what you're into right now without losing
+  // your overall taste.
+  const taste = blendTaste(body.taste ?? null, body.session ?? null);
   const seen = new Set<number>(body.seen || []);
   const positives = (body.positives || []).map(Number).filter(Boolean);
   const n = Math.min(Math.max(body.n || 8, 1), 12);

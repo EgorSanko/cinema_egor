@@ -59,6 +59,7 @@ export const TASTE_LR = 0.18;
 // API: POST /api/feed
 export interface FeedRequest {
   taste: TasteVector | null;  // null on first ever visit (cold start)
+  session?: TasteVector | null; // short-term in-session intent (Phase 3)
   seen: number[];             // movieIds already shown (dedupe)
   positives?: number[];       // movieIds the user liked/tapped (Phase 2 CF)
   n?: number;                 // batch size (default 8)

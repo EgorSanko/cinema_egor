@@ -216,6 +216,8 @@ export function TrailerFeed() {
   const tasteRef = useRef<TasteVector | null>(null);
   const seenRef = useRef<number[]>([]);
   const positivesRef = useRef<number[]>([]);
+  // Short-term session intent (Phase 3): in-memory, fresh each visit, fast LR.
+  const sessionRef = useRef<TasteVector | null>(null);
   const itemsRef = useRef<FeedTrailer[]>([]);
   const activeRef = useRef(0);
   const mutedRef = useRef(true);
@@ -268,6 +270,7 @@ export function TrailerFeed() {
     try {
       const body: FeedRequest = {
         taste: tasteRef.current,
+        session: sessionRef.current,
         seen: seenRef.current,
         positives: positivesRef.current,
         n: BATCH,
@@ -368,10 +371,11 @@ export function TrailerFeed() {
       savePositives(positivesRef.current);
     }
 
-    // (a) fold into taste + persist
+    // (a) fold into long-term taste (persist) + short-term session intent (memory)
     const next = updateTaste(tasteRef.current, event);
     tasteRef.current = next;
     saveTaste(next);
+    sessionRef.current = updateTaste(sessionRef.current, event, 0.45);
 
     // (b) fire-and-forget to the events endpoint (drives global CF)
     try {
