@@ -577,7 +577,7 @@ export function TrailerFeed() {
               {within && item.ytKey ? (
                 <div
                   ref={(el) => { playerHosts.current[idx] = el; }}
-                  className="pointer-events-none absolute inset-0 [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
+                  className="pointer-events-none absolute inset-0 -translate-y-[7%] [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
                   aria-hidden
                 />
               ) : (
@@ -629,27 +629,32 @@ export function TrailerFeed() {
 
               {/* Bottom-left overlay */}
               <div className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24 pr-20">
-                <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-[13px] mb-1.5">
-                  <span className="text-foreground/80">{item.year}</span>
-                  {item.voteAverage > 0 && (
-                    <>
-                      <span className="text-foreground/30">·</span>
-                      <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
-                        ★ {item.voteAverage.toFixed(1)}
-                      </span>
-                    </>
+                <div className="flex items-end gap-3">
+                  {posterUrl(item.poster) && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`/tmdb-img/w185${item.poster}`}
+                      alt={item.title}
+                      className="w-20 aspect-[2/3] flex-shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-lg shadow-black/50"
+                    />
                   )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-[13px] mb-1.5">
+                      <span className="text-foreground/80">{item.year}</span>
+                      {item.voteAverage > 0 && (
+                        <>
+                          <span className="text-foreground/30">·</span>
+                          <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
+                            ★ {item.voteAverage.toFixed(1)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-2">
+                      {item.title}
+                    </h2>
+                  </div>
                 </div>
-
-                <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-2">
-                  {item.title}
-                </h2>
-
-                {item.overview && (
-                  <p className="mt-2 text-foreground/70 text-[14px] leading-relaxed line-clamp-2 max-w-[88%]">
-                    {item.overview}
-                  </p>
-                )}
 
                 <div className="mt-3.5">
                   <Link
