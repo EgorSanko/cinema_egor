@@ -202,7 +202,6 @@ export function TrailerFeed() {
   const [items, setItems] = useState<FeedTrailer[]>([]);
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
-  const [paused, setPaused] = useState(false);
   // Slides whose YouTube trailer won't embed (age-restricted / removed / owner
   // disabled embedding). We show the poster and auto-skip past them.
   const [broken, setBroken] = useState<Set<number>>(() => new Set());
@@ -505,7 +504,6 @@ export function TrailerFeed() {
       tr.flushed = false;
     }
 
-    setPaused(false);
     syncPlayers(active);
 
     // Robustly (re)start the active video — the player may not be ready the
@@ -587,15 +585,6 @@ export function TrailerFeed() {
   }, [flushSignal]);
 
   // ---- actions -----------------------------------------------------------
-
-  const togglePlay = useCallback(() => {
-    const p = players.current[activeRef.current];
-    if (!p) return;
-    setPaused((wasPaused) => {
-      try { if (wasPaused) p.playVideo(); else p.pauseVideo(); } catch { /* noop */ }
-      return !wasPaused;
-    });
-  }, []);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {
@@ -708,22 +697,6 @@ export function TrailerFeed() {
                     <span className="rounded-full bg-black/55 px-4 py-2 text-[12px] text-white/85 backdrop-blur-sm">
                       Трейлер недоступен
                     </span>
-                  </div>
-                )}
-                {/* Tap to pause/play. When PAUSED, an opaque scrim covers the
-                    YouTube paused overlay (title/share/logo) — so YouTube's UI is
-                    never visible: overscan hides it while playing, this hides it
-                    while paused. (<div onClick>; swipes still scroll.) */}
-                {idx === active && (
-                  <div
-                    onClick={togglePlay}
-                    className={`absolute inset-0 z-[5] flex items-center justify-center transition-colors ${paused ? "bg-black/90" : ""}`}
-                  >
-                    {paused && (
-                      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm">
-                        <Play size={30} fill="white" className="ml-1 text-white" />
-                      </span>
-                    )}
                   </div>
                 )}
               </div>
