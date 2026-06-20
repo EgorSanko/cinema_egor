@@ -629,17 +629,17 @@ export function TrailerFeed() {
 
               {/* Bottom-left overlay */}
               <div className="absolute inset-x-0 bottom-0 z-10 p-4 pb-24 pr-20">
-                <div className="flex items-end gap-3">
+                <div className="flex items-end gap-4">
                   {posterUrl(item.poster) && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={`/tmdb-img/w185${item.poster}`}
+                      src={`/tmdb-img/w342${item.poster}`}
                       alt={item.title}
-                      className="w-20 aspect-[2/3] flex-shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-lg shadow-black/50"
+                      className="w-36 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/60"
                     />
                   )}
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-[13px] mb-1.5">
+                  <div className="min-w-0 pb-1">
+                    <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-[14px] mb-2">
                       <span className="text-foreground/80">{item.year}</span>
                       {item.voteAverage > 0 && (
                         <>
@@ -650,7 +650,7 @@ export function TrailerFeed() {
                         </>
                       )}
                     </div>
-                    <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-2">
+                    <h2 className="text-3xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-3">
                       {item.title}
                     </h2>
                   </div>
