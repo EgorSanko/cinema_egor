@@ -106,6 +106,7 @@ interface YTPlayer {
   unMute: () => void;
   getCurrentTime: () => number;
   getDuration: () => number;
+  setPlaybackRate: (rate: number) => void;
   destroy: () => void;
 }
 
@@ -120,6 +121,7 @@ interface YTNamespace {
       events?: {
         onReady?: (e: { target: YTPlayer }) => void;
         onStateChange?: (e: { target: YTPlayer; data: YTPlayerState }) => void;
+        onError?: (e: { target: YTPlayer; data: number }) => void;
       };
     },
   ) => YTPlayer;
@@ -202,6 +204,10 @@ export function TrailerFeed() {
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
   const [paused, setPaused] = useState(false);
+  // Slides whose YouTube trailer won't embed (age-restricted / removed / owner
+  // disabled embedding). We show the poster and auto-skip past them.
+  const [broken, setBroken] = useState<Set<number>>(() => new Set());
+  const brokenRef = useRef<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [exhausted, setExhausted] = useState(false);
@@ -398,6 +404,24 @@ export function TrailerFeed() {
     }
   }, [measurePct]);
 
+  // ---- broken-trailer handling ------------------------------------------
+
+  const goNext = useCallback(() => {
+    const el = slideRefs.current[activeRef.current + 1];
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  // A trailer failed to embed (age-restricted / removed / embedding disabled).
+  // Show its poster instead, and if it's the active slide, glide to the next.
+  const markBroken = useCallback((i: number) => {
+    if (brokenRef.current.has(i)) return;
+    const next = new Set(brokenRef.current);
+    next.add(i);
+    brokenRef.current = next;
+    setBroken(next);
+    if (i === activeRef.current) setTimeout(goNext, 600);
+  }, [goNext]);
+
   // ---- player lifecycle for the active slide -----------------------------
 
   // Create (or resume) the player for `idx`, destroy stale ones outside window.
@@ -462,6 +486,8 @@ export function TrailerFeed() {
                   try { e.target.playVideo(); } catch { /* loop restart */ }
                 }
               },
+              // 101/150 = embedding disabled (often age-restricted), 100 = gone.
+              onError: () => { markBroken(i); },
             },
           });
         } else if (i === activeRef.current) {
@@ -482,7 +508,7 @@ export function TrailerFeed() {
         }
       });
     });
-  }, [measurePct]);
+  }, [measurePct, markBroken]);
 
   // React to the active slide changing.
   useEffect(() => {
@@ -660,15 +686,15 @@ export function TrailerFeed() {
               data-idx={idx}
               className="relative snap-start h-[100dvh] w-full overflow-hidden bg-black"
             >
-              {/* Trailer iframe host (only mounted within the preload window) */}
-              {within && item.ytKey ? (
+              {/* Trailer iframe host (mounted within the preload window, unless
+                  the trailer can't embed — then we show the poster). */}
+              {within && item.ytKey && !broken.has(idx) ? (
                 <div
                   ref={(el) => { playerHosts.current[idx] = el; }}
                   className="pointer-events-none absolute inset-0 [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
                   aria-hidden
                 />
               ) : (
-                // Poster fallback for far-away / video-less slides.
                 posterUrl(item.poster) && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -677,6 +703,13 @@ export function TrailerFeed() {
                     className="absolute inset-0 h-full w-full object-cover opacity-70"
                   />
                 )
+              )}
+              {broken.has(idx) && (
+                <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
+                  <span className="rounded-full bg-black/55 px-4 py-2 text-[12px] text-white/85 backdrop-blur-sm">
+                    Трейлер недоступен — листай дальше
+                  </span>
+                </div>
               )}
 
               {/* Tap anywhere on the video to pause/play (active slide only).
@@ -734,21 +767,32 @@ export function TrailerFeed() {
               {/* Bottom-left overlay (pointer-events-none so taps fall through
                   to the pause layer; the «Смотреть» button re-enables itself). */}
               <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4 pb-24 pr-20">
-                <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-[13px] mb-1.5">
-                  <span className="text-foreground/80">{item.year}</span>
-                  {item.voteAverage > 0 && (
-                    <>
-                      <span className="text-foreground/30">·</span>
-                      <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
-                        ★ {item.voteAverage.toFixed(1)}
-                      </span>
-                    </>
+                <div className="flex items-end gap-3">
+                  {posterUrl(item.poster) && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`/tmdb-img/w185${item.poster}`}
+                      alt={item.title}
+                      className="w-16 sm:w-20 aspect-[2/3] flex-shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-lg shadow-black/50"
+                    />
                   )}
+                  <div className="min-w-0">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+                      <span className="text-foreground/80">{item.year}</span>
+                      {item.voteAverage > 0 && (
+                        <>
+                          <span className="text-foreground/30">·</span>
+                          <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
+                            ★ {item.voteAverage.toFixed(1)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-2">
+                      {item.title}
+                    </h2>
+                  </div>
                 </div>
-
-                <h2 className="text-2xl font-black text-foreground leading-tight tracking-tight drop-shadow line-clamp-2">
-                  {item.title}
-                </h2>
 
                 {item.overview && (
                   <p className="mt-2 text-foreground/70 text-[14px] leading-relaxed line-clamp-2 max-w-[88%]">
