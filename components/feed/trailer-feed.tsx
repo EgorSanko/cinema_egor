@@ -239,6 +239,7 @@ export function TrailerFeed() {
   // first user gesture, so the first trailer still starts muted; we flip the
   // active player's audio the moment the user touches/swipes/scrolls.
   const gestureRef = useRef(false);
+  const tapArmedRef = useRef(false); // tap-to-pause armed only after 1st gesture
   useEffect(() => {
     try {
       const pref = localStorage.getItem("movietok_sound");
@@ -249,9 +250,15 @@ export function TrailerFeed() {
     const onGesture = () => {
       if (gestureRef.current) return;
       gestureRef.current = true;
-      if (!mutedRef.current) {
-        try { players.current[activeRef.current]?.unMute(); } catch { /* noop */ }
-      }
+      // First interaction also kicks off playback (mobile browsers block
+      // autoplay until a gesture) and unmutes if sound is on.
+      try {
+        const p = players.current[activeRef.current];
+        if (!mutedRef.current) p?.unMute();
+        p?.playVideo();
+      } catch { /* noop */ }
+      // Don't let this same first tap also pause — arm tapping shortly after.
+      setTimeout(() => { tapArmedRef.current = true; }, 500);
     };
     const opts: AddEventListenerOptions = { passive: true };
     window.addEventListener("pointerdown", onGesture, opts);
@@ -591,6 +598,7 @@ export function TrailerFeed() {
   // ---- actions -----------------------------------------------------------
 
   const togglePlay = useCallback(() => {
+    if (!tapArmedRef.current) return; // first tap just starts playback/sound
     const p = players.current[activeRef.current];
     if (!p) return;
     setPaused((wasPaused) => {
@@ -691,7 +699,7 @@ export function TrailerFeed() {
               {within && item.ytKey && !broken.has(idx) ? (
                 <div
                   ref={(el) => { playerHosts.current[idx] = el; }}
-                  className="pointer-events-none absolute inset-0 [&>iframe]:h-full [&>iframe]:w-full [&>div]:h-full [&>div]:w-full"
+                  className="yt-cover"
                   aria-hidden
                 />
               ) : (
@@ -712,13 +720,12 @@ export function TrailerFeed() {
                 </div>
               )}
 
-              {/* Tap anywhere on the video to pause/play (active slide only).
-                  Below the rail (z-20) and the «Смотреть» button. */}
+              {/* Tap to pause/play (active slide). A <div onClick> — fires only
+                  on a genuine tap; a swipe scrolls the feed (the click is
+                  cancelled by the browser), so this never blocks scrolling. */}
               {idx === active && (
-                <button
-                  type="button"
+                <div
                   onClick={togglePlay}
-                  aria-label={paused ? "Играть" : "Пауза"}
                   className="absolute inset-0 z-[5] flex items-center justify-center"
                 >
                   {paused && (
@@ -726,7 +733,7 @@ export function TrailerFeed() {
                       <Play size={38} fill="white" className="ml-1.5 text-white" />
                     </span>
                   )}
-                </button>
+                </div>
               )}
 
               {/* Scrims: bottom gradient for the overlay, soft top for the rail */}
@@ -826,6 +833,27 @@ export function TrailerFeed() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; }
+        /* Make the 16:9 YouTube trailer COVER the 9:16 slide (fill the screen,
+           crop the sides) instead of letterboxing into a thin black band. */
+        .yt-cover {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          background: #000;
+          pointer-events: none;
+        }
+        .yt-cover > iframe,
+        .yt-cover > div {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          height: 100%;
+          width: calc(100dvh * 16 / 9);
+          min-width: 100%;
+          min-height: calc(100vw * 9 / 16);
+          pointer-events: none;
+        }
       `}</style>
     </div>
   );
