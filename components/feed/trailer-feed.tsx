@@ -848,10 +848,15 @@ export function TrailerFeed() {
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
-          height: 100%;
-          width: calc(100dvh * 16 / 9);
-          min-width: 100%;
-          min-height: calc(100vw * 9 / 16);
+          /* Bulletproof full-screen "background video" cover (vw/vh only).
+             The 16:9 iframe is scaled to cover the 9:16 slide and centered, so
+             YouTube's title bar / controls (at the iframe's top & bottom edges)
+             are cropped off-screen instead of overlaying the trailer. */
+          width: 100vw;
+          height: 56.25vw;       /* 9/16 of width */
+          min-height: 100vh;
+          min-width: 177.78vh;   /* 16/9 of height */
+          border: 0;
           pointer-events: none;
         }
       `}</style>
