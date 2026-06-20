@@ -19,7 +19,7 @@ import { AuthModal } from "./auth-modal";
 type IconType = React.ComponentType<{ size?: number; className?: string }>;
 const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
   { label: "Главная", href: "/", Icon: Home },
-  { label: "Лента", href: "/feed", Icon: Clapperboard },
+  { label: "TikTak", href: "/feed", Icon: Clapperboard },
   { label: "Сериалы", href: "/tv", Icon: Tv },
   { label: "Подборки", href: "/collections", Icon: Layers },
   { label: "Свайп", href: "/swipe", Icon: Flame },

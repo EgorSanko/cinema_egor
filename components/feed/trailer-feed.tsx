@@ -202,6 +202,37 @@ export function TrailerFeed() {
   useEffect(() => { mutedRef.current = muted; }, [muted]);
   useEffect(() => { exhaustedRef.current = exhausted; }, [exhausted]);
 
+  // Sound preference (default ON). Browsers block unmuted autoplay until the
+  // first user gesture, so the first trailer still starts muted; we flip the
+  // active player's audio the moment the user touches/swipes/scrolls.
+  const gestureRef = useRef(false);
+  useEffect(() => {
+    try {
+      const pref = localStorage.getItem("movietok_sound");
+      setMuted(pref === "off"); // null/default → sound ON
+    } catch { /* noop */ }
+  }, []);
+  useEffect(() => {
+    const onGesture = () => {
+      if (gestureRef.current) return;
+      gestureRef.current = true;
+      if (!mutedRef.current) {
+        try { players.current[activeRef.current]?.unMute(); } catch { /* noop */ }
+      }
+    };
+    const opts: AddEventListenerOptions = { passive: true };
+    window.addEventListener("pointerdown", onGesture, opts);
+    window.addEventListener("touchstart", onGesture, opts);
+    window.addEventListener("keydown", onGesture, opts);
+    window.addEventListener("wheel", onGesture, opts);
+    return () => {
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("touchstart", onGesture);
+      window.removeEventListener("keydown", onGesture);
+      window.removeEventListener("wheel", onGesture);
+    };
+  }, []);
+
   // ---- fetch a batch -----------------------------------------------------
 
   const fetchBatch = useCallback(async (): Promise<void> => {
@@ -370,7 +401,7 @@ export function TrailerFeed() {
             events: {
               onReady: (e) => {
                 if (i === activeRef.current) {
-                  if (!mutedRef.current) e.target.unMute();
+                  if (!mutedRef.current && gestureRef.current) e.target.unMute();
                   else e.target.mute();
                   e.target.playVideo();
                 } else {
@@ -391,7 +422,7 @@ export function TrailerFeed() {
         } else if (i === activeRef.current) {
           const p = players.current[i];
           try {
-            if (mutedRef.current) p.mute(); else p.unMute();
+            if (mutedRef.current || !gestureRef.current) p.mute(); else p.unMute();
             p.playVideo();
           } catch { /* noop */ }
         } else {
@@ -489,10 +520,12 @@ export function TrailerFeed() {
   // ---- actions -----------------------------------------------------------
 
   const toggleMute = useCallback(() => {
+    gestureRef.current = true;
     setMuted((m) => {
       const next = !m;
       const p = players.current[activeRef.current];
       try { if (next) p?.mute(); else p?.unMute(); } catch { /* noop */ }
+      try { localStorage.setItem("movietok_sound", next ? "off" : "on"); } catch { /* noop */ }
       return next;
     });
   }, []);
