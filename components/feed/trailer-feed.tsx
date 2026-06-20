@@ -706,7 +706,7 @@ export function TrailerFeed() {
                     <img
                       src={`/tmdb-img/w342${item.poster}`}
                       alt={item.title}
-                      className="w-36 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/60"
+                      className="w-28 aspect-[2/3] flex-shrink-0 rounded-xl object-cover ring-1 ring-white/15 shadow-xl shadow-black/60"
                     />
                   )}
                   <div className="min-w-0 pb-1">
