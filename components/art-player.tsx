@@ -31,6 +31,13 @@ interface ArtPlayerProps {
   selectedTranslator?: number | null;
   onTranslatorChange?: (id: number) => void;
 
+  /** Collaps source: nice dub labels (id = HLS audioTrack index). When present,
+   *  the player builds the "Озвучка" menu from the HLS manifest's audio tracks
+   *  and switches them in-place via hls.js (no stream refetch). */
+  audioLabels?: { id: number; name: string }[];
+  /** Default in-manifest audio track index to select on load (collaps order[0]). */
+  defaultAudioTrack?: number;
+
   subtitles?: ArtSubtitle[];
   selectedSubtitleId?: string | null;
   onSubtitleChange?: (id: string | null) => void;
@@ -212,11 +219,22 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     onVideoReady,
     onVideoUnmount,
     onPlayerContainerReady,
+    audioLabels,
+    defaultAudioTrack,
   } = props;
 
   const containerRef = React.useRef<HTMLDivElement>(null);
   const artRef = React.useRef<Artplayer | null>(null);
   const hlsRef = React.useRef<Hls | null>(null);
+  // Latest collaps dub labels + default track, read inside the (mount-only)
+  // HLS event handlers — props change per episode so we mirror them in refs.
+  const audioLabelsRef = React.useRef(audioLabels);
+  const defaultAudioTrackRef = React.useRef(defaultAudioTrack);
+  React.useEffect(() => { audioLabelsRef.current = audioLabels; }, [audioLabels]);
+  React.useEffect(() => { defaultAudioTrackRef.current = defaultAudioTrack; }, [defaultAudioTrack]);
+  // Remember the user's explicit dub pick by NAME so it survives episode
+  // switches (track indices can differ per episode, names are stable).
+  const preferredDubNameRef = React.useRef<string | null>(null);
   const subsLoadedRef = React.useRef(false);
   const resumeOnceRef = React.useRef(false);
   // Mirror resumeTime in a ref so the mount-only effect always reads the
@@ -227,6 +245,87 @@ export function ArtPlayerView(props: ArtPlayerProps) {
   // Mount ArtPlayer once; switch URL via switchUrl on changes
   React.useEffect(() => {
     if (!containerRef.current || !streamUrl) return;
+
+    // Build native Quality (levels) + Dub (audioTracks) menus from the HLS
+    // manifest. Called on MANIFEST_PARSED / AUDIO_TRACKS_UPDATED. Idempotent —
+    // removes its own items first so episode switches rebuild cleanly.
+    const applyHlsMenus = (hls: Hls) => {
+      const art = artRef.current;
+      if (!art) return;
+
+      // ---- Quality (HLS levels) ----
+      try { art.setting.remove("kino-quality-hls"); } catch {}
+      const levels = hls.levels || [];
+      if (levels.length > 1) {
+        const seen = new Set<string>();
+        const lvItems = [{ html: "Авто", value: -1, default: true } as any];
+        levels.forEach((lv, i) => {
+          const label = lv.height ? lv.height + "p" : Math.round(lv.bitrate / 1000) + "k";
+          if (seen.has(label)) return;
+          seen.add(label);
+          lvItems.push({ html: label, value: i, default: false });
+        });
+        art.setting.add({
+          name: "kino-quality-hls",
+          html: "Качество",
+          tooltip: "Авто",
+          icon: ICON_QUALITY,
+          width: 180,
+          selector: lvItems,
+          onSelect: function (item: any) {
+            hls.currentLevel = item.value;
+            return item.html;
+          },
+        });
+      }
+
+      // ---- Dub (HLS audio tracks) ----
+      try { art.setting.remove("kino-translator"); } catch {}
+      try { art.setting.remove("kino-audio-hls"); } catch {}
+      const tracks = hls.audioTracks || [];
+      if (tracks.length > 1) {
+        const labels = audioLabelsRef.current;
+        const nameOf = (i: number) =>
+          labels?.find((a) => a.id === i)?.name || tracks[i]?.name || "Дорожка " + (i + 1);
+        // Display order: collaps' preferred order if given, else manifest order.
+        const order =
+          labels && labels.length
+            ? labels.map((a) => a.id).filter((i) => i >= 0 && i < tracks.length)
+            : tracks.map((_, i) => i);
+
+        // Pick the track to play. Honour the user's prior explicit pick (by
+        // name, stable across episodes); else collaps' default (Russian dub
+        // first); else leave hls.js' manifest default.
+        let want = -1;
+        const pref = preferredDubNameRef.current;
+        if (pref) {
+          const i = order.find((idx) => nameOf(idx) === pref);
+          if (typeof i === "number") want = i;
+        }
+        if (want < 0) {
+          const d = defaultAudioTrackRef.current;
+          if (typeof d === "number" && d >= 0 && d < tracks.length) want = d;
+        }
+        if (want >= 0 && hls.audioTrack !== want) {
+          try { hls.audioTrack = want; } catch {}
+        }
+        const cur = want >= 0 ? want : hls.audioTrack;
+
+        art.setting.add({
+          name: "kino-audio-hls",
+          html: "Озвучка",
+          tooltip: nameOf(cur),
+          icon: ICON_DUB,
+          width: 280,
+          selector: order.map((i) => ({ html: nameOf(i), value: i, default: i === cur })),
+          onSelect: function (item: any) {
+            try { hls.audioTrack = item.value; } catch {}
+            preferredDubNameRef.current = nameOf(item.value);
+            return item.html;
+          },
+        });
+      }
+    };
 
     const art = new Artplayer({
       container: containerRef.current,
@@ -272,6 +371,12 @@ export function ArtPlayerView(props: ArtPlayerProps) {
                 hls.recoverMediaError();
               }
             });
+            // Collaps gives ONE adaptive master.m3u8 carrying every dub as an
+            // in-manifest audio track. Build the Качество (from levels) and
+            // Озвучка (from audioTracks) menus natively off hls.js, so dub
+            // switching is instant (no stream refetch / reload).
+            hls.on(Hls.Events.MANIFEST_PARSED, () => applyHlsMenus(hls));
+            hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => applyHlsMenus(hls));
           } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
             video.src = url;
           }

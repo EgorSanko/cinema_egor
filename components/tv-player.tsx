@@ -73,6 +73,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [translatorLoading, setTranslatorLoading] = useState(false);
   const [subtitles, setSubtitles] = useState<ArtSubtitle[]>([]);
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(null);
+  // Active iframe player URL: collaps embed (primary) or yohoho (fallback).
+  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -210,11 +212,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
       const origName = ((show as any).original_name || "").replace(/["«»""]/g, "").trim();
       const searchName = ruName || origName;
       if (!searchName) return;
-      const tr = getLastTranslator(show.id, "tv")?.id ?? null;
-      const q = encodeURIComponent(searchName);
-      const trParam = tr ? "&translator_id=" + tr : "";
-      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + selectedSeason + "&episode=" + selectedEpisode + trParam;
+      const url = "/api/collaps/search?tmdb_id=" + show.id + "&type=tv&season=" + selectedSeason + "&episode=" + selectedEpisode;
       prefetchRef.current = { url, promise: fetch(url).then((r) => r.json()).catch(() => null) };
+      void searchName; void year;
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show.id, selectedSeason, selectedEpisode, showPlayer]);
@@ -232,28 +232,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
     loadEpisodes();
   }, [selectedSeason, show.id]);
 
-  const fetchStream = async (season: number, episode: number, translatorId?: number | null) => {
+  const fetchStream = async (season: number, episode: number, _translatorId?: number | null) => {
     setLoading(true);
     setError("");
-    // Fallback chain — explicit arg > state > localStorage. Storage read covers
-    // the race where the play button is tapped before the initial restore effect
-    // sets selectedTranslator; without this the backend gets no translator_id
-    // and returns the default dub even though the label shows the saved one.
-    const effectiveTr = translatorId ?? selectedTranslator ?? getLastTranslator(show.id, "tv")?.id ?? null;
-    if (effectiveTr && effectiveTr !== selectedTranslator) setSelectedTranslator(effectiveTr);
-    if (!effectiveTr) setStreamData(null);
+    setEmbedUrl(null);
     try {
-      const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
-      // HDRezka indexes Russian titles primarily — see the matching block in
-      // movie-player.tsx for full context. Use localized first, fallback to
-      // English original_name only if no result.
-      const origName = ((show as any).original_name || "").replace(/["«»""]/g, "").trim();
-      const ruName = (show.name || "").replace(/["«»""]/g, "").trim();
-      const searchName = ruName || origName;
-      const q = encodeURIComponent(searchName);
-      const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
-      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam;
-      // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
+      const url = "/api/collaps/search?tmdb_id=" + show.id + "&type=tv&season=" + season + "&episode=" + episode;
       let data: any = null;
       if (prefetchRef.current && prefetchRef.current.url === url) {
         data = await prefetchRef.current.promise;
@@ -263,78 +247,18 @@ export function TVPlayer({ show }: TVPlayerProps) {
         const res = await fetch(url);
         data = await res.json();
       }
-      if (data.stream) {
-        // What translator is ACTUALLY playing? Trust the backend's
-        // active_translator_id — NOT effectiveTr. They diverge when the
-        // requested dub hasn't covered this episode (e.g. Яроцкий dubbed
-        // eps 1-2 but not 3): HDRezka silently substitutes another dub,
-        // usually a premium one whose stream is a 1-min "buy subscription"
-        // stub. Using effectiveTr here hid that — the old code thought it
-        // was playing the free dub and happily showed the stub.
-        const actualId: number | undefined = data.active_translator_id ?? data.translators?.[0]?.id;
-        const actualTr = data.translators?.find((t: any) => t.id === actualId);
-        const actualIsPremium = !!actualTr?.is_premium;
-        const requestedId = effectiveTr;
-        const substituted = requestedId != null && actualId != null && requestedId !== actualId;
-        const freeAlt = data.translators?.find((t: any) => !t.is_premium && t.id !== requestedId);
-
-        // Case A — first load with no explicit pick: if the server default is
-        // a premium stub, silently switch to a free dub (existing behaviour).
-        if (!translatorId && actualIsPremium && freeAlt) {
-          setTranslators(data.translators);
-          setSelectedTranslator(freeAlt.id);
-          saveLastTranslator(show.id, "tv", freeAlt.id, freeAlt.name);
-          return fetchStream(season, episode, freeAlt.id);
-        }
-
-        // Case B — the requested dub was substituted with a premium stub:
-        // this episode isn't dubbed in the chosen voiceover. Do NOT play the
-        // 1-min stub. Show the dub list + a notice; let the user pick another.
-        if (substituted && actualIsPremium) {
-          if (data.translators?.length) setTranslators(data.translators);
-          setStreamData(null);
-          setError(
-            `Серия ${episode} в выбранной озвучке ещё не вышла. Выберите другую озвучку.`,
-          );
-          setShowTranslators(true);
-          return;
-        }
-
-        setStreamData(data);
-        setSelectedQuality(data.quality);
-        if (data.translators && data.translators.length > 0 && translators.length === 0) {
-          setTranslators(data.translators);
-          if (!selectedTranslator) {
-            setSelectedTranslator(data.active_translator_id ?? data.translators[0].id);
-          }
-        }
-        // Track which dub user is actually watching with — counts toward Polyglot
-        const activeId = effectiveTr ?? data.active_translator_id ?? data.translators?.[0]?.id;
-        const activeName = data.translators?.find((t: any) => t.id === activeId)?.name;
-        if (activeName) recordTranslatorTry(activeName);
+      if (data && data.embed) {
+        // collaps plays in its own iframe (raw HLS segment-signed + domain-locked).
+        setEmbedUrl(data.embed);
+        if (data.translators?.length) recordTranslatorTry(data.translators[0]?.name || "");
         return;
       }
-      if (data.results && data.results.length > 0) {
-        for (let i = 0; i < Math.min(data.results.length, 5); i++) {
-          const res2 = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&index=" + i + "&season=" + season + "&episode=" + episode + trParam);
-          const data2 = await res2.json();
-          if (data2.stream) {
-            setStreamData(data2);
-            setSelectedQuality(data2.quality);
-            if (data2.translators && data2.translators.length > 0 && translators.length === 0) {
-              setTranslators(data2.translators);
-              if (!selectedTranslator) {
-                setSelectedTranslator(data2.active_translator_id ?? data2.translators[0].id);
-              }
-            }
-            const activeId2 = effectiveTr ?? data2.active_translator_id ?? data2.translators?.[0]?.id;
-            const activeName2 = data2.translators?.find((t: any) => t.id === activeId2)?.name;
-            if (activeName2) recordTranslatorTry(activeName2);
-            return;
-          }
-        }
-        setError("Серия не найдена");
-      } else { setError(data.error || "Сериал не найден"); }
+      // collaps miss → graceful fallback to the yohoho aggregator iframe.
+      const t = ((show.name || (show as any).original_name) || "").trim();
+      setEmbedUrl(
+        "/api/yohoho?tmdb_id=" + show.id + "&title=" + encodeURIComponent(t) +
+        "&season=" + season + "&episode=" + episode
+      );
     } catch { setError("Сервер не отвечает"); }
     finally { setLoading(false); setTranslatorLoading(false); }
   };
@@ -698,9 +622,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 qualities={streamData.streams}
                 selectedQuality={selectedQuality}
                 onQualityChange={changeQuality}
-                translators={translators}
-                selectedTranslator={selectedTranslator}
-                onTranslatorChange={changeTranslator}
+                audioLabels={streamData.translators}
+                defaultAudioTrack={streamData.active_translator_id}
                 subtitles={subtitles}
                 selectedSubtitleId={selectedSubtitleId}
                 onSubtitleChange={setSelectedSubtitleId}
@@ -749,6 +672,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
               )}
 
             </>
+          ) : embedUrl ? (
+            <iframe
+              src={embedUrl}
+              className="w-full h-full border-0"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+            />
           ) : null}
         </div>
 
