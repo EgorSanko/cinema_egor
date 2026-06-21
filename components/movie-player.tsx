@@ -46,6 +46,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const [playerContainer, setPlayerContainer] = useState<HTMLElement | null>(null);
   const [resumeTime, setResumeTime] = useState<number | null>(null);
   const [showResume, setShowResume] = useState(false);
+  // "Смотреть" starts from 0; "Продолжить просмотр" is the ONLY thing that
+  // seeks to the saved position. wantResume gates the auto-seek so the main
+  // play button never does the jarring load-from-0-then-jump.
+  const [wantResume, setWantResume] = useState(false);
   const [translators, setTranslators] = useState<Translator[]>([]);
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
   const [showTranslators, setShowTranslators] = useState(false);
@@ -320,6 +324,20 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     return () => clearTimeout(t);
   }, [loading]);
 
+  // Open the player. resume=false → start from 0 ("Смотреть"); resume=true →
+  // seek to the saved position ("Продолжить просмотр").
+  const openPlayer = (resume: boolean) => {
+    if (isNotReleased) return;
+    if (!requireAuth("Войдите, чтобы смотреть фильмы и сохранять прогресс")) return;
+    setWantResume(resume);
+    if (!showPlayer) {
+      setShowPlayer(true);
+      fetchStream();
+    } else if (resume && resumeTime && videoRef.current) {
+      videoRef.current.currentTime = resumeTime;
+    }
+  };
+
   const handleResume = () => {
     if (videoRef.current && resumeTime) {
       videoRef.current.currentTime = resumeTime;
@@ -381,11 +399,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
           {!showPlayer ? (
-            <div className="w-full h-full relative cursor-pointer" onClick={() => {
-              if (isNotReleased) return;
-              if (!requireAuth("Войдите, чтобы смотреть фильмы и сохранять прогресс")) return;
-              setShowPlayer(true); fetchStream();
-            }}>
+            <div className="w-full h-full relative cursor-pointer" onClick={() => openPlayer(false)}>
               {backdropUrl && <img src={backdropUrl} alt={movie.title} className={"absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-105 " + (movie.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/10 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-5">
@@ -405,8 +419,16 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                         <Play size={44} className="text-black ml-1.5" fill="currentColor" />
                       </div>
                       <span className="text-white/80 text-sm font-semibold tracking-widest uppercase">
-                        {resumeTime ? "Продолжить с " + formatTime(resumeTime) : "Смотреть онлайн"}
+                        {"Смотреть онлайн"}
                       </span>
+                      {resumeTime && resumeTime > 10 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openPlayer(true); }}
+                          className="mt-1 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-black/55 hover:bg-black/75 text-white text-[12px] font-semibold ring-1 ring-white/20 backdrop-blur-sm transition-colors normal-case tracking-normal"
+                        >
+                          <Play size={13} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -500,7 +522,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                 selectedSubtitleId={selectedSubtitleId}
                 onSubtitleChange={setSelectedSubtitleId}
                 onLoadSubtitles={fetchSubtitles}
-                resumeTime={resumeTime || undefined}
+                resumeTime={wantResume ? (resumeTime || undefined) : undefined}
                 onVideoReady={(v) => {
                   videoRef.current = v;
                   startSaving();
@@ -614,21 +636,24 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
                 <div className="flex items-center gap-2 flex-wrap pt-1">
                   <button
-                    onClick={() => {
-                      if (isNotReleased) return;
-                      if (!requireAuth("Войдите, чтобы смотреть фильмы и сохранять прогресс")) return;
-                      if (!showPlayer) { setShowPlayer(true); fetchStream(); }
-                      else if (resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
-                    }}
+                    onClick={() => openPlayer(false)}
                     disabled={isNotReleased}
                     className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {isNotReleased ? (
                       <><CalendarDays size={15} /> {"Скоро в кино"}</>
                     ) : (
-                      <><Play size={15} fill="currentColor" /> {resumeTime ? "Продолжить просмотр" : "Смотреть"}</>
+                      <><Play size={15} fill="currentColor" /> {"Смотреть"}</>
                     )}
                   </button>
+                  {!isNotReleased && resumeTime && resumeTime > 10 && (
+                    <button
+                      onClick={() => openPlayer(true)}
+                      className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-white/[0.06] ring-1 ring-white/15 text-foreground/90 text-[13px] font-semibold hover:bg-white/[0.12] transition-colors"
+                    >
+                      <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
+                    </button>
+                  )}
                   {streamData && (
                     <SendToTV
                       streamData={{

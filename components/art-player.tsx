@@ -265,7 +265,11 @@ export function ArtPlayerView(props: ArtPlayerProps) {
             hlsRef.current = null;
           }
           if (Hls.isSupported()) {
-            const hls = new Hls({ enableWorker: true });
+            // Start loading DIRECTLY at the saved position when "Продолжить"
+            // passed a resumeTime — avoids the jarring load-from-0-then-jump.
+            // -1 = normal start from 0 (the "Смотреть" path passes no resume).
+            const _rt = resumeTimeRef.current;
+            const hls = new Hls({ enableWorker: true, startPosition: (_rt && _rt > 5) ? _rt : -1 });
             hls.loadSource(url);
             hls.attachMedia(video);
             hlsRef.current = hls;

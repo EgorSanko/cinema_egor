@@ -331,18 +331,21 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
             if u.startswith("http"):
                 streams[q_name] = u.replace("http://", "https://")
 
-        # Order ascending by numeric resolution so the menu + default are sane
-        # regardless of label ("2160p", "4K Ultra HD", "1080p Ultra", …).
+        # Order ascending by real quality. "1080p Ultra" (higher-bitrate 1080)
+        # ranks just above plain "1080p"; "1440p (2K)"/"2160p (4K)" above that.
         import re as _re_q
         def _qnum(q):
-            m = _re_q.search(r"(\d{3,4})", str(q))
-            return int(m.group(1)) if m else 0
+            s = str(q).lower()
+            m = _re_q.search(r"(\d{3,4})", s)
+            n = int(m.group(1)) if m else 0
+            if "ultra" in s:
+                n += 1
+            return n
         ordered = sorted(streams.keys(), key=_qnum)
         streams = {k: streams[k] for k in ordered}
-        # Default to the best quality ≤1080p for a smooth instant start; 2K/4K
-        # stay one tap away in the quality menu (heavy to autoplay for everyone).
-        best_quality = next((q for q in reversed(ordered) if _qnum(q) <= 1080),
-                            ordered[-1] if ordered else "")
+        # Default to the HIGHEST available quality (user wants max-quality-first,
+        # incl 2K/4K). Falls to whatever the top tier is for this title.
+        best_quality = ordered[-1] if ordered else ""
         best_url = streams.get(best_quality, "")
 
         print(f"OK: {post.name} ({post.url})")
