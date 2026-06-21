@@ -296,9 +296,8 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                     if raw_fallback:
                         streams = {}
                         for q2, u in raw_fallback:
-                            qn = int(q2.replace('p', ''))
-                            if qn <= 1080:
-                                streams[q2] = u.replace("http://", "https://").strip()
+                            # expose all qualities incl 2K/4K (premium account)
+                            streams[q2] = u.replace("http://", "https://").strip()
                         best_quality = list(streams.keys())[-1] if streams else ""
                         best_url = streams.get(best_quality, "")
                         print(f"OK (HTML fallback): {post.name}")
@@ -314,16 +313,36 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
 
         raw = stream.video.raw_data
         streams = {}
+        # HDRezka labels its top tiers "2K"/"4K" (sometimes Cyrillic "2К"/"4К"),
+        # which have no sortable number — the player's quality menu sorts by
+        # parseInt, so they'd wrongly land at the bottom. Relabel to numeric-
+        # leading strings so both the backend ordering and the frontend sort put
+        # them at the top, while still showing the friendly 2K/4K tag.
+        def _relabel(q):
+            s = str(q).strip().lower()
+            if s in ("4k", "4к"): return "2160p (4K)"
+            if s in ("2k", "2к"): return "1440p (2K)"
+            return str(q)
         for quality, urls in raw.items():
-            q_name_check = str(quality)
-            if "ultra" in q_name_check.lower() or int(quality) > 1080:
-                continue
-            q_name = str(quality)
+            # Premium account → expose EVERY quality incl 2K/4K.
+            # The old >1080 cap was a free-tier relic.
+            q_name = _relabel(quality)
             u = urls[0] if isinstance(urls, tuple) else str(urls)
             if u.startswith("http"):
                 streams[q_name] = u.replace("http://", "https://")
 
-        best_quality = list(streams.keys())[-1] if streams else ""
+        # Order ascending by numeric resolution so the menu + default are sane
+        # regardless of label ("2160p", "4K Ultra HD", "1080p Ultra", …).
+        import re as _re_q
+        def _qnum(q):
+            m = _re_q.search(r"(\d{3,4})", str(q))
+            return int(m.group(1)) if m else 0
+        ordered = sorted(streams.keys(), key=_qnum)
+        streams = {k: streams[k] for k in ordered}
+        # Default to the best quality ≤1080p for a smooth instant start; 2K/4K
+        # stay one tap away in the quality menu (heavy to autoplay for everyone).
+        best_quality = next((q for q in reversed(ordered) if _qnum(q) <= 1080),
+                            ordered[-1] if ordered else "")
         best_url = streams.get(best_quality, "")
 
         print(f"OK: {post.name} ({post.url})")

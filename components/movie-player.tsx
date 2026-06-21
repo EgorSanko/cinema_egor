@@ -52,9 +52,6 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const [translatorLoading, setTranslatorLoading] = useState(false);
   const [subtitles, setSubtitles] = useState<ArtSubtitle[]>([]);
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(null);
-  // Active iframe player URL: collaps embed (primary) or yohoho (fallback).
-  // collaps/yohoho/vidsrc all play inside their own iframe player.
-  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   // Available quality + dub count, surfaced from the prefetch so the user sees
   // "1080p · N озвучек" before pressing play (no extra request).
   const [availInfo, setAvailInfo] = useState<{ quality?: string; dubs?: number } | null>(null);
@@ -114,15 +111,15 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       const origTitle = ((movie as any).original_title || "").replace(/["«»""]/g, "").trim();
       const searchTitle = ruTitle || origTitle;
       if (!searchTitle) return;
-      // Collaps resolves by IMDB id (mapped from TMDB id server-side). One
-      // request warms the embed so "Смотреть" plays instantly.
-      const url = "/api/collaps/search?tmdb_id=" + movie.id + "&type=movie";
+      const tr = getLastTranslator(movie.id, "movie")?.id ?? null;
+      const q = encodeURIComponent(searchTitle);
+      const trParam = tr ? "&translator_id=" + tr : "";
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam;
       const p = fetch(url).then((r) => r.json()).catch(() => null);
       prefetchRef.current = { url, promise: p };
       p.then((d: any) => {
-        if (alive && d?.stream) setAvailInfo({ quality: d.quality || "HD", dubs: (d.translators || []).length });
+        if (alive && d?.stream) setAvailInfo({ quality: d.quality, dubs: (d.translators || []).length });
       });
-      void searchTitle;
     } catch {}
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,13 +170,31 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [movie.id]);
 
-  const fetchStream = async (_translatorId?: number | null) => {
+  const fetchStream = async (translatorId?: number | null) => {
     if (isNotReleased) return;
     setLoading(true);
     setError("");
-    setEmbedUrl(null);
+    // Fallback chain — explicit arg > state > localStorage. Storage read covers
+    // the race where the play button is tapped before the initial restore effect
+    // sets selectedTranslator state; without this the backend gets no
+    // translator_id and returns the default dub even though the label says
+    // "saved translator".
+    const effectiveTr = translatorId ?? selectedTranslator ?? getLastTranslator(movie.id, "movie")?.id ?? null;
+    if (effectiveTr && effectiveTr !== selectedTranslator) setSelectedTranslator(effectiveTr);
+    if (!effectiveTr) setStreamData(null);
     try {
-      const url = "/api/collaps/search?tmdb_id=" + movie.id + "&type=movie";
+      const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
+      // HDRezka indexes Russian titles primarily — searching by the English
+      // `original_title` fails for Russian-language productions ("Normal" → no
+      // hit, "Нормал" → match). Use the localized title first, fall back to
+      // original only if the search returns nothing.
+      const origTitle = ((movie as any).original_title || "").replace(/["«»""]/g, "").trim();
+      const ruTitle = (movie.title || "").replace(/["«»""]/g, "").trim();
+      const searchTitle = ruTitle || origTitle;
+      const q = encodeURIComponent(searchTitle);
+      const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam;
+      // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
       let data: any = null;
       if (prefetchRef.current && prefetchRef.current.url === url) {
         data = await prefetchRef.current.promise;
@@ -189,17 +204,85 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         const res = await fetch(url);
         data = await res.json();
       }
-      if (data && data.embed) {
-        // collaps plays via its own iframe player (raw HLS is segment-signed
-        // + domain-locked — see /api/collaps route). We render the embed in an
-        // iframe; dub + quality live inside it.
-        setEmbedUrl(data.embed);
-        if (data.translators?.length) recordTranslatorTry(data.translators[0]?.name || "");
+      if (data.stream) {
+        // What dub is ACTUALLY playing? Trust the backend's
+        // active_translator_id, NOT effectiveTr — they diverge when HDRezka
+        // substitutes a premium dub (whose stream is a 60-sec "buy
+        // subscription" pre-roll). Using effectiveTr hid the substitution.
+        const actualId: number | undefined = data.active_translator_id ?? data.translators?.[0]?.id;
+        const actualIsPremium = !!data.translators?.find((t: any) => t.id === actualId)?.is_premium;
+        const requestedId = effectiveTr;
+        const substituted = requestedId != null && actualId != null && requestedId !== actualId;
+        const freeAlt = data.translators?.find((t: any) => !t.is_premium && t.id !== requestedId);
+
+        // First play / no explicit pick: if the default is a premium stub,
+        // silently switch to a free dub.
+        if (!translatorId && actualIsPremium && freeAlt) {
+          setTranslators(data.translators);
+          setSelectedTranslator(freeAlt.id);
+          saveLastTranslator(movie.id, "movie", freeAlt.id, freeAlt.name);
+          return fetchStream(freeAlt.id);
+        }
+
+        // Requested dub got substituted with a premium stub — don't play it.
+        if (substituted && actualIsPremium) {
+          if (data.translators?.length) setTranslators(data.translators);
+          setStreamData(null);
+          setError("Этот фильм в выбранной озвучке доступен только по подписке. Выберите другую озвучку.");
+          setShowTranslators(true);
+          return;
+        }
+
+        setStreamData(data);
+        setSelectedQuality(data.quality);
+        if (data.translators && data.translators.length > 0 && translators.length === 0) {
+          setTranslators(data.translators);
+          if (!selectedTranslator) {
+            setSelectedTranslator(data.active_translator_id ?? data.translators[0].id);
+          }
+        }
+        const activeId = effectiveTr ?? data.active_translator_id ?? data.translators?.[0]?.id;
+        const activeName = data.translators?.find((t: any) => t.id === activeId)?.name;
+        if (activeName) recordTranslatorTry(activeName);
         return;
       }
-      // collaps miss → graceful fallback to the yohoho aggregator iframe.
-      const t = ((movie.title || (movie as any).original_title) || "").trim();
-      setEmbedUrl("/api/yohoho?tmdb_id=" + movie.id + "&title=" + encodeURIComponent(t));
+      if (data.results && data.results.length > 0) {
+        for (let i = 0; i < Math.min(data.results.length, 5); i++) {
+          const res2 = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie&index=" + i + trParam);
+          const data2 = await res2.json();
+          if (data2.stream) {
+            setStreamData(data2);
+            setSelectedQuality(data2.quality);
+            if (data2.translators && data2.translators.length > 0 && translators.length === 0) {
+              setTranslators(data2.translators);
+              if (!selectedTranslator) {
+                setSelectedTranslator(data2.active_translator_id ?? data2.translators[0].id);
+              }
+            }
+            const activeId2 = effectiveTr ?? data2.active_translator_id ?? data2.translators?.[0]?.id;
+            const activeName2 = data2.translators?.find((t: any) => t.id === activeId2)?.name;
+            if (activeName2) recordTranslatorTry(activeName2);
+            return;
+          }
+        }
+      }
+      // Fallback: if our primary (Russian) title returned nothing, retry with
+      // original_title. Covers titles HDRezka indexes only in English.
+      if (origTitle && origTitle !== ruTitle) {
+        const q2 = encodeURIComponent(origTitle);
+        const resAlt = await fetch("/hdrezka/api/search?q=" + q2 + "&year=" + year + "&type=movie" + trParam);
+        const dataAlt = await resAlt.json();
+        if (dataAlt.stream) {
+          setStreamData(dataAlt);
+          setSelectedQuality(dataAlt.quality);
+          if (dataAlt.translators && dataAlt.translators.length > 0 && translators.length === 0) {
+            setTranslators(dataAlt.translators);
+            if (!selectedTranslator) setSelectedTranslator(dataAlt.active_translator_id ?? dataAlt.translators[0].id);
+          }
+          return;
+        }
+      }
+      setError("Фильм пока недоступен для просмотра");
     } catch {
       setError("Сервер не отвечает");
     } finally {
@@ -410,8 +493,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                 qualities={streamData.streams}
                 selectedQuality={selectedQuality}
                 onQualityChange={changeQuality}
-                audioLabels={streamData.translators}
-                defaultAudioTrack={streamData.active_translator_id}
+                translators={translators}
+                selectedTranslator={selectedTranslator}
+                onTranslatorChange={changeTranslator}
                 subtitles={subtitles}
                 selectedSubtitleId={selectedSubtitleId}
                 onSubtitleChange={setSelectedSubtitleId}
@@ -452,13 +536,6 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               )}
 
             </>
-          ) : embedUrl ? (
-            <iframe
-              src={embedUrl}
-              className="w-full h-full border-0"
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-              allowFullScreen
-            />
           ) : null}
         </div>
 
