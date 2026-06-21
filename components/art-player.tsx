@@ -152,8 +152,18 @@ function buildQualitySetting(
   if (!qualities) return null;
   const keys = Object.keys(qualities);
   if (keys.length === 0) return null;
-  // Sort: highest resolution first
-  const sorted = keys.sort((a, b) => parseInt(b) - parseInt(a));
+  // Rank by real quality, not naive parseInt: "2K"/"4K" labels have no sortable
+  // number, and "1080p Ultra" (higher-bitrate 1080) must sit ABOVE plain
+  // "1080p" even though both parseInt to 1080.
+  const qRank = (q: string) => {
+    const s = q.toLowerCase();
+    let n = parseInt(s) || 0;
+    if (s.includes("4k") || s.includes("2160")) n = 2160;
+    else if (s.includes("2k") || s.includes("1440")) n = 1440;
+    if (s.includes("ultra")) n += 1; // Ultra ranks just above same-resolution
+    return n;
+  };
+  const sorted = keys.sort((a, b) => qRank(b) - qRank(a));
   return {
     name: "kino-quality",
     html: "Качество",
