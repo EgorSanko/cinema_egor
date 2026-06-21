@@ -13,6 +13,10 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 const righteous = Righteous({ subsets: ["latin"], weight: "400", variable: "--font-brand" });
 
+// Yandex.Metrika counter id. Set this to the number from metrika.yandex.ru
+// (Настройки счётчика → «Номер счётчика»). 0 = disabled until provided.
+const YM_ID = 0;
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://sapkeflykino.ru"),
   title: "sapkeflykino — смотреть фильмы онлайн",
@@ -65,6 +69,15 @@ export default function RootLayout({
         <MobileNav />
         <PWABackButton />
         <ReloadOnStale />
+        {YM_ID > 0 && (
+          <Script id="yandex-metrika" strategy="afterInteractive">{`
+            (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+            m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}
+            k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+            (window,document,"script","https://mc.yandex.ru/metrika/tag.js","ym");
+            ym(${YM_ID}, "init", { clickmap:true, trackLinks:true, accurateTrackBounce:true, webvisor:true });
+          `}</Script>
+        )}
         <Script src="https://telegram.org/js/telegram-web-app.js" strategy="afterInteractive" />
         <Script id="tg-init" strategy="afterInteractive">{`
           try {
