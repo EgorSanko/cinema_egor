@@ -15,7 +15,7 @@ const righteous = Righteous({ subsets: ["latin"], weight: "400", variable: "--fo
 
 // Yandex.Metrika counter id. Set this to the number from metrika.yandex.ru
 // (Настройки счётчика → «Номер счётчика»). 0 = disabled until provided.
-const YM_ID = 0;
+const YM_ID = 110041488;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://sapkeflykino.ru"),
