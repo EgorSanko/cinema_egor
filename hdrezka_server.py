@@ -108,8 +108,11 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
             if type_filtered:
                 filtered = type_filtered
 
-        # For split-season anime/series [ТВ-1], [ТВ-2] etc — match FIRST
-        if s_num >= 1:
+        # For split-season anime/series [ТВ-1], [ТВ-2] etc — match FIRST.
+        # ONLY for TV/series requests — for a MOVIE this wrongly grabbed an anime
+        # SERIES whose name happened to contain the query + "[ТВ-1]" (e.g. movie
+        # "Горничная" 2025 → "Кобаяси и её горничная-дракон [ТВ-1]" 2017).
+        if type in ('tv', 'series') and s_num >= 1:
             for tag in [f"[ТВ-{s_num}]", f"[Сезон {s_num}]", f"ТВ-{s_num}", f"{s_num} сезон"]:
                 for r in filtered:
                     if tag in str(getattr(r, 'name', '')):
