@@ -247,9 +247,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setSelectedQuality(sq || d.quality);
   };
 
-  const fetchStream = async (season: number, episode: number, translatorId?: number | null) => {
+  const fetchStream = async (season: number, episode: number, translatorId?: number | null, _attempt = 0) => {
     setLoading(true);
     setError("");
+    let retrying = false; // when true, the finally skips clearing loading
     // Fallback chain — explicit arg > state > localStorage. Storage read covers
     // the race where the play button is tapped before the initial restore effect
     // sets selectedTranslator; without this the backend gets no translator_id
@@ -347,9 +348,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
           }
         }
         setError("Серия не найдена");
-      } else { setError(data.error || "Сериал не найден"); }
-    } catch { setError("Сервер не отвечает"); }
-    finally { setLoading(false); setTranslatorLoading(false); }
+      } else {
+        // Auto-retry once on a transient resolve error before giving up.
+        if (_attempt < 1) { retrying = true; await new Promise(r => setTimeout(r, 800)); return fetchStream(season, episode, translatorId, _attempt + 1); }
+        setError(data.error || "Сериал не найден");
+      }
+    } catch {
+      if (_attempt < 1) { retrying = true; await new Promise(r => setTimeout(r, 800)); return fetchStream(season, episode, translatorId, _attempt + 1); }
+      setError("Сервер не отвечает");
+    }
+    finally { if (!retrying) { setLoading(false); setTranslatorLoading(false); } }
   };
 
   const fetchSubtitles = useCallback(async () => {

@@ -59,6 +59,22 @@ async def ensure_login():
         except Exception as e:
             print(f"Login failed: {e}")
 
+async def _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key):
+    # A transient HDRezka blip (timeout / mirror hiccup / expired session) comes
+    # back as an error that ISN'T a genuine "Not found". Re-login once and retry
+    # so the user gets the movie WITHOUT having to reload the page (reported:
+    # "иногда фильмы не отдаются, приходится перезагружать, и то не с первого раза").
+    res = await _resolve_search(q, year, type, season, episode, index, translator_id, cache_key)
+    if isinstance(res, dict) and res.get("error") and res.get("error") != "Not found":
+        global logged_in
+        logged_in = False
+        await ensure_login()
+        res2 = await _resolve_search(q, year, type, season, episode, index, translator_id, cache_key)
+        if isinstance(res2, dict) and (res2.get("stream") or res2.get("error") == "Not found"):
+            return res2
+    return res
+
+
 @app.get("/api/search")
 async def search(q: str, year: str = None, type: str = None, season: str = None, episode: str = None, index: int = 0, translator_id: int = None):
     await ensure_login()
@@ -70,7 +86,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
     if _flight is not None:
         return await _flight
     _flight = _asyncio.ensure_future(
-        _resolve_search(q, year, type, season, episode, index, translator_id, cache_key)
+        _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key)
     )
     _inflight[cache_key] = _flight
     try:

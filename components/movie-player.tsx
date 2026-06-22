@@ -183,10 +183,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     setSelectedQuality(sq || d.quality);
   };
 
-  const fetchStream = async (translatorId?: number | null) => {
+  const fetchStream = async (translatorId?: number | null, _attempt = 0) => {
     if (isNotReleased) return;
     setLoading(true);
     setError("");
+    let retrying = false; // when true, the finally skips clearing loading
     // Fallback chain — explicit arg > state > localStorage. Storage read covers
     // the race where the play button is tapped before the initial restore effect
     // sets selectedTranslator state; without this the backend gets no
@@ -292,12 +293,15 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           return;
         }
       }
+      // Auto-retry once before giving up — covers transient HDRezka blips so
+      // the user doesn't have to reload the page.
+      if (_attempt < 1) { retrying = true; await new Promise(r => setTimeout(r, 800)); return fetchStream(translatorId, _attempt + 1); }
       setError("Фильм пока недоступен для просмотра");
     } catch {
+      if (_attempt < 1) { retrying = true; await new Promise(r => setTimeout(r, 800)); return fetchStream(translatorId, _attempt + 1); }
       setError("Сервер не отвечает");
     } finally {
-      setLoading(false);
-      setTranslatorLoading(false);
+      if (!retrying) { setLoading(false); setTranslatorLoading(false); }
     }
   };
 
