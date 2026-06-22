@@ -191,44 +191,11 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
         player = await post.player
 
         translators = []
+        # Premium account is PAID — every dub plays and downloads, none are
+        # locked. So we no longer probe the post page for "b-prem_translator"
+        # / surface lock icons. Bonus: dropping that ~130KB page fetch makes the
+        # resolve noticeably faster. premium_ids stays empty → is_premium=False.
         premium_ids = set()
-        # Detect translators that require HDRezka premium — they are marked with
-        # the CSS class "b-prem_translator". Free users get a 60-second "buy
-        # premium" pre-roll instead of the actual stream when such a translator
-        # is selected, so we surface this flag to the frontend (lock icon).
-        _post_url = str(post.url)
-        _pc = _prem_cache.get(_post_url)
-        if _pc and _time.monotonic() - _pc[0] < _PREM_TTL:
-            premium_ids = _pc[1]
-        else:
-            try:
-                page_html = (await hdrezka_http.get_response('GET', _post_url)).text
-                import re as _r_prem
-                m_prem = _r_prem.search(
-                    r"<ul[^>]*id=.translators-list.[^>]*>(.+?)</ul>",
-                    page_html, _r_prem.S,
-                )
-                print(f"[prem-probe] url={_post_url} len={len(page_html)} ul_found={bool(m_prem)}")
-                if m_prem:
-                    li_re = _r_prem.compile(
-                        r"<li[^>]*?data-translator_id=[\"\'](\d+)[\"\'][^>]*>"
-                    )
-                    for li in li_re.finditer(m_prem.group(1)):
-                        full = li.group(0)
-                        is_p = "b-prem_translator" in full
-                        if is_p:
-                            premium_ids.add(int(li.group(1)))
-                        print(f"[prem-probe]   id={li.group(1)} prem={is_p}")
-                print(f"[prem-probe] result premium_ids={premium_ids}")
-                # Memoize ONLY a non-empty result. An empty set can mean either
-                # "genuinely no premium" OR "mirror served bare HTML this time" —
-                # pinning that for 6h would hide locks. So we only lock in a
-                # positive detection; empty falls back to the 5-min result cache
-                # and re-probes, so a missed premium recovers within minutes.
-                if premium_ids:
-                    _prem_cache[_post_url] = (_time.monotonic(), premium_ids)
-            except Exception as ex_prem:
-                print(f"premium probe failed: {ex_prem}")
 
         try:
             raw_t = []

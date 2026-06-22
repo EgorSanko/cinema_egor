@@ -86,7 +86,7 @@ function buildTranslatorSetting(
       // Lock icon flags HDRezka premium dubs (serve a "buy subscription" pre-roll
       // instead of the stream). Users can still try them — some show pre-roll
       // and skip; mileage varies — but the visual warning is worth it.
-      html: t.is_premium ? `🔒 ${t.name}` : t.name,
+      html: t.name,
       value: t.id,
       default: t.id === selectedId,
     })),

@@ -714,7 +714,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                           t.id === selectedTranslator ? "bg-primary/20 text-white" : "bg-white/[0.06] text-white hover:bg-white/[0.12]"
                         }`}
                       >
-                        <span>{t.is_premium ? `🔒 ${t.name}` : t.name}</span>
+                        <span>{t.name}</span>
                         {t.id === selectedTranslator && <span className="text-primary text-xs">текущая</span>}
                       </button>
                     ))}
