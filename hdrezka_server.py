@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Response
+from fastapi import Request as HTTPRequest  # aliased — `Request` is later shadowed by hdrezka.url.Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
@@ -149,22 +150,33 @@ async def hls_manifest(u: str):
         return Response("err: " + str(e), status_code=502)
 
 @app.get("/api/hls/seg")
-async def hls_seg(u: str):
+async def hls_seg(u: str, request: HTTPRequest):
     try:
         url = _dec_u(u)
     except Exception:
         return Response("bad u", status_code=400)
     try:
-        req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=_HLS_HEADERS)
+        headers = dict(_HLS_HEADERS)
+        # Forward the client's Range header — iOS Safari plays HLS natively and
+        # SEEKS via byte-range requests; without passing Range through, seeking on
+        # iPhone froze. Honour the upstream 206 + range headers in the reply.
+        rng = request.headers.get("range")
+        if rng:
+            headers["Range"] = rng
+        req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=headers)
         r = await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
         ct = r.headers.get("content-type", "video/mp2t")
+        out_headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
+        for h in ("content-range", "content-length"):
+            if h in r.headers:
+                out_headers[h.title()] = r.headers[h]
         async def gen():
             try:
                 async for chunk in r.aiter_bytes():
                     yield chunk
             finally:
                 await r.aclose()
-        return StreamingResponse(gen(), media_type=ct, headers={"Cache-Control": "no-store"})
+        return StreamingResponse(gen(), status_code=r.status_code, media_type=ct, headers=out_headers)
     except Exception as e:
         return Response("err: " + str(e), status_code=502)
 
