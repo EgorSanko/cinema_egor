@@ -17,6 +17,7 @@ import os
 import sys
 import time
 import html
+import datetime
 import httpx
 
 TOKEN = os.environ.get("BOT_TOKEN", "")
@@ -158,18 +159,50 @@ def resolves_on_hdrezka(title, year, mtype):
         return False
 
 
+POST_PER_RUN = int(os.environ.get("POST_PER_RUN", "3"))
+MIN_RATING = float(os.environ.get("MIN_RATING", "6"))
+RECENT_MONTHS = int(os.environ.get("RECENT_MONTHS", "8"))
+
+
+def discover_pool():
+    """Recently-RELEASED, popular, decently-rated titles — a deep pool so the
+    channel never reposts the same trending handful and never advertises a film
+    that hasn't come out yet (date filter caps at today)."""
+    today = datetime.date.today()
+    gte = (today - datetime.timedelta(days=RECENT_MONTHS * 30)).isoformat()
+    lte = today.isoformat()
+    pool = []
+    for media in ("movie", "tv"):
+        datekey = "primary_release_date" if media == "movie" else "first_air_date"
+        for page in range(1, 6):  # ~100 titles per media
+            try:
+                r = http.get(
+                    f"https://api.themoviedb.org/3/discover/{media}",
+                    params={
+                        "api_key": TMDB, "language": "ru-RU",
+                        "sort_by": "popularity.desc",
+                        f"{datekey}.gte": gte, f"{datekey}.lte": lte,
+                        "vote_count.gte": 20, "vote_average.gte": MIN_RATING,
+                        "include_adult": "false", "page": page,
+                    },
+                ).json()
+                rows = r.get("results") or []
+                for it in rows:
+                    if it.get("poster_path"):
+                        it["_media"] = media
+                        pool.append(it)
+                if page >= (r.get("total_pages") or 1) or not rows:
+                    break
+            except Exception as e:
+                print("discover err", media, page, e, flush=True)
+                break
+    pool.sort(key=lambda x: -(x.get("popularity") or 0))
+    return pool
+
+
 def post_new():
     if not CHANNEL:
         print("CHANNEL not set — skip", flush=True)
-        return
-    # what's hot right now
-    try:
-        data = http.get(
-            "https://api.themoviedb.org/3/trending/all/week",
-            params={"api_key": TMDB, "language": "ru-RU"},
-        ).json()
-    except Exception as e:
-        print("trending err", e, flush=True)
         return
     posted_file = "/root/sapkefly-bot/posted.txt"
     try:
@@ -177,18 +210,23 @@ def post_new():
     except Exception:
         posted = set()
     new_ids = []
-    for it in (data.get("results") or []):
-        mt = it.get("media_type")
-        if mt not in ("movie", "tv") or not it.get("poster_path"):
-            continue
+    sent = 0
+    checks = 0
+    for it in discover_pool():
+        if sent >= POST_PER_RUN or checks >= 50:
+            break
+        mt = it["_media"]
         key = f"{mt}{it['id']}"
         if key in posted:
-            continue
+            continue  # already in the channel
         title = it.get("title") or it.get("name") or ""
         date = it.get("release_date") or it.get("first_air_date") or ""
         year = date[:4] if date else ""
+        checks += 1
+        # Misses (not on HDRezka yet) are NOT remembered — a fresh release may
+        # become available later, so we let it be rechecked on a future run.
         if not resolves_on_hdrezka(title, year, mt):
-            continue  # don't advertise what we can't play
+            continue
         cap = (
             f"{'🎬' if mt == 'movie' else '📺'} <b>{html.escape(title)}</b>"
             f"{' (' + year + ')' if year else ''}  ⭐ {it.get('vote_average') or 0:.1f}\n\n"
@@ -201,13 +239,13 @@ def post_new():
                  reply_markup={"inline_keyboard": [[{"text": "▶️ Смотреть бесплатно", "url": url}]]})
         if res.get("ok"):
             new_ids.append(key)
+            sent += 1
             print("posted", key, title, flush=True)
             time.sleep(3)
-        if len(new_ids) >= 3:  # a few per run, не спамить
-            break
     if new_ids:
         with open(posted_file, "a") as f:
             f.write("\n".join(new_ids) + "\n")
+    print(f"done: {sent} posted, {checks} checked", flush=True)
 
 
 if __name__ == "__main__":
