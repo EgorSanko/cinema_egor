@@ -426,6 +426,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           {streamData?.stream && (
             <ArtPlayerView
               streamUrl={streamData.stream}
+              poster={backdropUrl || undefined}
               qualities={streamData.streams}
               selectedQuality={selectedQuality}
               onQualityChange={changeQuality}
@@ -504,9 +505,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
           {/* Poster overlay — covers the (pre-buffering) player until play. */}
           {!showPlayer && (
-            <div className="absolute inset-0 z-30 cursor-pointer" onClick={() => openPlayer(false)}>
-              {backdropUrl && <img src={backdropUrl} alt={movie.title} className={"absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-105 " + (movie.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/10 flex items-center justify-center">
+            <div className="absolute inset-0 z-30 cursor-pointer group/play" onClick={() => openPlayer(false)}>
+              {!streamData?.stream && backdropUrl && <img src={backdropUrl} alt={movie.title} className={"absolute inset-0 w-full h-full " + (movie.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
+              <div className={"absolute inset-0 flex items-center justify-center " + (streamData?.stream ? "" : "bg-gradient-to-t from-black via-black/30 to-black/10")}>
                 <div className="flex flex-col items-center gap-5">
                   {isNotReleased ? (
                     <>
@@ -520,46 +521,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                     </>
                   ) : (
                     <>
-                      <div className="w-24 h-24 rounded-full bg-white/95 flex items-center justify-center shadow-xl shadow-black/40 transition-all duration-300 group-hover:scale-110 group-hover:bg-white">
-                        <Play size={44} className="text-black ml-1.5" fill="currentColor" />
-                      </div>
-                      <span className="text-white/80 text-sm font-semibold tracking-widest uppercase">
-                        {"Смотреть онлайн"}
-                      </span>
-                      {resumeTime && resumeTime > 10 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openPlayer(true); }}
-                          className="mt-1 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-black/55 hover:bg-black/75 text-white text-[12px] font-semibold ring-1 ring-white/20 backdrop-blur-sm transition-colors normal-case tracking-normal"
-                        >
-                          <Play size={13} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
-                        </button>
+                      {!streamData?.stream && (
+                        <div className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl shadow-black/40 transition-transform duration-300 group-hover:scale-110">
+                          <Play size={38} className="text-black ml-1" fill="currentColor" />
+                        </div>
                       )}
                     </>
                   )}
-                </div>
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black/90 to-transparent">
-                <h2 className="text-white font-bold text-2xl mb-3">{movie.title}</h2>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {isNotReleased ? (
-                    <span className="bg-amber-600/80 text-white text-xs px-3 py-1 rounded-md font-bold">Скоро</span>
-                  ) : (
-                    <span className="bg-primary text-white text-xs px-3 py-1 rounded-md font-bold">HD</span>
-                  )}
-                  {movie.runtime > 0 && <span className="bg-white/10 backdrop-blur text-white/80 text-xs px-3 py-1 rounded-md">{Math.round(movie.runtime) + " мин"}</span>}
-                  <span className="bg-white/10 backdrop-blur text-white/80 text-xs px-3 py-1 rounded-md">{movie.vote_average.toFixed(1)}</span>
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <TrailerButton mediaId={movie.id} mediaType="movie" />
-                  </div>
-                </div>
-              </div>
-              <div className="absolute top-4 right-4 z-10">
-                <div className="bg-black/60 backdrop-blur-sm rounded-full p-2">
-                  <FavoriteButton size="md" item={{
-                    id: movie.id, type: "movie", title: movie.title,
-                    poster_path: movie.poster_path, vote_average: movie.vote_average,
-                    release_date: movie.release_date, addedAt: Date.now(),
-                  }} />
                 </div>
               </div>
             </div>

@@ -649,12 +649,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
               {backdropUrl && <img src={backdropUrl} alt={show.name} className={`absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-105 ${show.backdrop_path ? "object-cover" : "object-contain bg-black/90"}`} />}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/10 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-5">
-                  <div className="w-24 h-24 rounded-full bg-white/95 flex items-center justify-center shadow-xl shadow-black/40 transition-all duration-300 group-hover:scale-110 group-hover:bg-white">
-                    <Play size={44} className="text-black ml-1.5" fill="currentColor" />
+                  <div className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl shadow-black/40 transition-transform duration-300 group-hover:scale-110">
+                    <Play size={38} className="text-black ml-1" fill="currentColor" />
                   </div>
-                  <span className="text-white/80 text-sm font-semibold tracking-widest uppercase">
-                    {"Смотреть онлайн"}
-                  </span>
                   {resumeTime && resumeTime > 10 && (
                     <button
                       onClick={(e) => { e.stopPropagation(); openPlayerEp(true); }}
