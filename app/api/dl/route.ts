@@ -198,17 +198,17 @@ function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest)
   });
 }
 
-/** Picks the HLS→mp4 strategy: iOS gets a real faststart file (correct
-    duration); everyone else gets the cheap streamed fragmented mp4. Falls
-    back to streaming if the disk is low so a download can't fill it. */
+/** HLS→mp4 strategy.
+ *
+ *  We now STREAM the fragmented mp4 to everyone, iOS included. The old iOS path
+ *  remuxed the WHOLE movie to a /tmp faststart file before sending a single
+ *  byte — for a full film that's minutes of silence, so iOS Safari aborted the
+ *  request before any headers arrived and the download "didn't work" at all.
+ *  Streaming sends bytes immediately (continuous flow → no client timeout, no
+ *  disk usage). The fragmented mp4 carries the total duration (verified via
+ *  ffprobe), so modern iOS reads it. A completed download beats a timed-out one.
+ *  (downloadHlsAsFile kept below for a possible future headers-first variant.) */
 async function remuxHls(url: string, filename: string, req: NextRequest): Promise<Response> {
-  if (isIOS(req)) {
-    const free = await freeBytes(os.tmpdir());
-    if (free === null || free >= MIN_FREE_BYTES) {
-      return downloadHlsAsFile(url, filename, req);
-    }
-    console.warn("[dl] low disk, iOS falls back to streamed fmp4");
-  }
   return streamHlsAsMp4(url, filename, req);
 }
 
