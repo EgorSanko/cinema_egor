@@ -43,6 +43,23 @@ function hostAllowed(host: string): boolean {
   return ALLOWED_HOST_PATTERNS.some((re) => re.test(host));
 }
 
+// HDRezka stream URLs carry a distinctive token in the path:
+//   /<hex-hash>:<digits>:<base64>/.../<file>.mp4(:hls:manifest.m3u8)
+// The CDN host rotates constantly (laptostack.org, vdbmate.org, interkh.com, …),
+// so trust the URL SHAPE instead of chasing hostnames — arbitrary/random URLs
+// won't match this token, so it's not an open proxy.
+const HDREZKA_TOKEN = /\/[0-9a-f]{16,}:\d{6,}:[A-Za-z0-9+/_=-]{16,}\//i;
+function looksLikeHdrezkaStream(u: URL): boolean {
+  return HDREZKA_TOKEN.test(u.pathname);
+}
+
+// Never proxy to internal/private targets (SSRF), whatever the pattern says.
+const PRIVATE_HOST =
+  /^(localhost|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$)/i;
+function isPrivateHost(host: string): boolean {
+  return PRIVATE_HOST.test(host);
+}
+
 function sanitizeFilename(raw: string): string {
   return raw.replace(/[\r\n"\\\/]/g, "_").trim().slice(0, 200) || "video.mp4";
 }
@@ -98,7 +115,12 @@ export async function GET(req: NextRequest) {
   if (target.protocol !== "https:" && target.protocol !== "http:") {
     return NextResponse.json({ error: "bad protocol" }, { status: 400 });
   }
-  if (!hostAllowed(target.hostname)) {
+  if (isPrivateHost(target.hostname)) {
+    return NextResponse.json({ error: "host not allowed" }, { status: 403 });
+  }
+  // Allow known hosts OR any host serving an HDRezka-shaped stream URL (covers
+  // the constantly-rotating CDN hosts like laptostack.org without an open proxy).
+  if (!hostAllowed(target.hostname) && !looksLikeHdrezkaStream(target)) {
     return NextResponse.json(
       { error: `host not allowed: ${target.hostname}` },
       { status: 403 },

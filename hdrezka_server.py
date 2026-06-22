@@ -313,9 +313,11 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
             return n
         ordered = sorted(streams.keys(), key=_qnum)
         streams = {k: streams[k] for k in ordered}
-        # Default to the HIGHEST available quality (user wants max-quality-first,
-        # incl 2K/4K). Falls to whatever the top tier is for this title.
-        best_quality = ordered[-1] if ordered else ""
+        # Default to plain 1080p — 2K/4K (and even 1080p Ultra) load too slowly to
+        # autoplay; they stay one tap away in the quality menu. (Reverted from
+        # max-first per feedback: "4к оч долго прогружает".)
+        le1080 = [q for q in ordered if _qnum(q) <= 1080]
+        best_quality = le1080[-1] if le1080 else (ordered[0] if ordered else "")
         best_url = streams.get(best_quality, "")
 
         print(f"OK: {post.name} ({post.url})")

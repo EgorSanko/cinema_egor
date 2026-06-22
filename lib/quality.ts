@@ -44,14 +44,15 @@ function connectionCeiling(): number {
         (navigator as any).mozConnection ||
         (navigator as any).webkitConnection
       : null;
-  if (!c) return Infinity; // no API (Safari/desktop) → allow the max
+  // Default ceiling is 1080p for everyone — 4K/2K load too slowly to autoplay
+  // and stay one tap away in the menu. Slow links drop lower. A user's explicit
+  // manual pick (remembered) still overrides this in pickDefaultQuality.
+  if (!c) return 1080;
   if (c.saveData) return 720;
   const et = c.effectiveType;
   if (et === "slow-2g" || et === "2g") return 480;
   if (et === "3g") return 720;
-  // 4g or undefined: cap mobile data at 1080, otherwise allow the max.
-  if (c.type === "cellular") return 1080;
-  return Infinity;
+  return 1080;
 }
 
 /** Pick the default quality LABEL from the available streams. */
