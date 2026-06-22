@@ -7,7 +7,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
   Home, Tv, Layers, Flame, Users, LayoutGrid,
-  Bookmark, ChevronDown, Heart, Clock, Smartphone, Clapperboard,
+  Bookmark, ChevronDown, Heart, Clock, Smartphone, Clapperboard, Send,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -189,6 +189,18 @@ export function Navbar() {
 
             {/* Right pill */}
             <div className="hidden sm:flex items-center gap-2" ref={searchPanelRef}>
+              {/* Telegram channel — blue chip */}
+              <a
+                href="https://t.me/sapkeflykino"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 h-10 px-3 lg:px-3.5 rounded-full bg-sky-500/12 ring-1 ring-sky-500/30 text-sky-400 text-[12.5px] font-semibold hover:bg-sky-500/18 transition-colors"
+                title="Наш Telegram-канал — новинки каждый день"
+              >
+                <Send size={14} />
+                <span className="hidden lg:inline">Telegram</span>
+              </a>
+
               {/* Android app download — chip style, primary-tinted */}
               <Link
                 href="/download"
