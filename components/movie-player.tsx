@@ -20,7 +20,7 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
-import { probeFastQualities, streamUrlFor, hlsProxyUrl, isTierFast } from "@/lib/quality-probe";
+import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -77,14 +77,6 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // True once the user actually pressed play — gates the (async) pre-warm probe
   // from clobbering the stream the click already started resolving.
   const startedRef = useRef(false);
-  // Tiers found fast on THIS viewer's route by the page-open probe. Reused by
-  // the cold-click fetchStream so even a non-prewarmed (mobile) open lands on
-  // the fastest tier.
-  const fastQRef = useRef<string[] | null>(null);
-  // Set before a dub change: the page-open probe is for the OLD dub (the new
-  // dub's segments live on different edges with their own throttling), so route
-  // the next resolve through the proxy — it always loads.
-  const forceProxyRef = useRef(false);
 
   const fetchSubtitles = useCallback(async () => {
     if (subsFetchedRef.current) return;
@@ -143,22 +135,14 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         setAvailInfo({ quality: d.quality, dubs: (d.translators || []).length });
         // Warm the CDN connection + manifest the moment the page opens.
         warmStream(d.stream);
-        // ALWAYS measure which tiers are fast on THIS viewer's route (HDRezka
-        // throttles different tiers per route; our server can't tell). Runs on
-        // every connection so the fastest tier is the default even on mobile —
-        // it's cheap (samples 1080p first, others only if it's throttled) and
-        // the result is stored for the cold-click path too (fastQRef).
-        probeFastQualities(d.streams).then((fastQ) => {
-          if (!alive) return;
-          if (fastQ.length) fastQRef.current = fastQ;
-          // The HEAVY pre-buffer (mount the player + buffer ~30s) stays gated to
-          // fast connections — don't pre-pull video on mobile for a film that may
-          // not be watched. Mobile still gets the fast tier, just on click.
-          const c: any = (navigator as any).connection;
-          const fast = !c || (!c.saveData && c.type !== "cellular" &&
-            c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
-          if (fast && !isNotReleased && !startedRef.current) applyStream({ ...d, fast: fastQ });
-        });
+        // Pre-buffer the player (mounts hidden) so play is instant — gated to
+        // fast connections so we don't pre-pull video on mobile. Everything
+        // plays through the LeadSeek proxy (applyStream), so there's no throttle
+        // lottery and no speed probe needed.
+        const c: any = (navigator as any).connection;
+        const fast = !c || (!c.saveData && c.type !== "cellular" &&
+          c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
+        if (fast && !isNotReleased && !startedRef.current) applyStream(d);
       });
     } catch {}
     return () => { alive = false; };
@@ -213,16 +197,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
-    const fastSet = d.fast ?? fastQRef.current ?? null;
-    const sq = pickDefaultQuality(d.streams, d.quality, fastSet ?? undefined);
-    // Route a throttled default through the LeadSeek proxy so it isn't a "stuck"
-    // black screen on this viewer's route (no-op when the tier is fast → direct).
-    // A dub change (forceProxy) always goes via the proxy — the probe is stale
-    // for the new dub's edges, and the proxy reliably loads any of them.
-    const force = forceProxyRef.current; forceProxyRef.current = false;
-    const url = sq && d.streams?.[sq]
-      ? (force ? hlsProxyUrl(d.streams[sq]) : streamUrlFor(sq, d.streams[sq], fastSet))
-      : d.stream;
+    const sq = pickDefaultQuality(d.streams, d.quality);
+    // Everything plays through the LeadSeek proxy — it has a fast route to every
+    // CDN edge, so there's no per-route throttle "lottery" on any quality/dub.
+    const url = sq && d.streams?.[sq] ? hlsProxyUrl(d.streams[sq]) : d.stream;
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: url, quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     // Populate the dub list here too — the pre-warm path (mount on open) sets the
@@ -364,7 +342,6 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     setShowTranslators(false);
     setTranslatorLoading(true);
     const currentTime = videoRef.current?.currentTime || 0;
-    forceProxyRef.current = true; // new dub → resolve via proxy (reliable)
     await fetchStream(trId);
     setTimeout(() => {
       if (videoRef.current && currentTime > 0) {
@@ -416,13 +393,8 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const changeQuality = (q: string) => {
     if (!streamData?.streams?.[q]) return;
     setQualityPref(q); // remember explicit choice for future titles
-    // Tiers the page-open probe confirmed fast play direct; anything else
-    // (throttled on this route, or not probed) goes through the LeadSeek proxy
-    // — deterministic, so a manually picked high tier never lands on a dead
-    // direct edge. Extra proxy bytes on a chosen high tier are acceptable.
-    const fast = fastQRef.current;
-    const direct = streamData.streams[q];
-    const url = fast && fast.includes(q) ? direct : hlsProxyUrl(direct);
+    // Always via the proxy — any tier loads reliably, no throttle lottery.
+    const url = hlsProxyUrl(streamData.streams[q]);
     // Start the new stream AT the current position (seekOnSwitch) instead of
     // resetting to 0, then only re-assert play if it sneaks in a pause — NEVER
     // touch currentTime here, or we'd fight a forward seek made right after.

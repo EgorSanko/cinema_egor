@@ -21,7 +21,7 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
-import { probeFastQualities, streamUrlFor, hlsProxyUrl, isTierFast } from "@/lib/quality-probe";
+import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -103,10 +103,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Tiers found fast on THIS viewer's route by the probe. Reused by the
   // cold-click fetchStream + episode switches (a series' tiers sit on the same
   // edges, so the route's throttle pattern carries across episodes).
-  const fastQRef = useRef<string[] | null>(null);
-  // Set before a dub change: the probe is stale for the new dub's edges, so
-  // resolve it through the proxy (always loads).
-  const forceProxyRef = useRef(false);
 
   const validSeasons = show.seasons?.filter(s => s.season_number > 0) || [];
 
@@ -242,18 +238,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
         if (!alive || !d?.stream) return;
         // Warm the CDN connection + manifest on open so play starts fast.
         warmStream(d.stream);
-        // ALWAYS measure which tiers are fast on THIS viewer's route, so the
-        // fastest is the default even on mobile (cheap: 1080p first, others only
-        // if throttled). The HEAVY pre-buffer (mount + ~30s) stays gated to fast
-        // connections; mobile still gets the fast tier, just on click (fastQRef).
-        probeFastQualities(d.streams).then((fastQ) => {
-          if (!alive) return;
-          if (fastQ.length) fastQRef.current = fastQ;
-          const c: any = (navigator as any).connection;
-          const fast = !c || (!c.saveData && c.type !== "cellular" &&
-            c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
-          if (fast && !startedRef.current) applyStream({ ...d, fast: fastQ });
-        });
+        // Pre-buffer the episode (mounts hidden) on a fast connection — skip on
+        // mobile. Everything plays through the LeadSeek proxy (applyStream), so
+        // there's no throttle lottery and no speed probe needed.
+        const c: any = (navigator as any).connection;
+        const fast = !c || (!c.saveData && c.type !== "cellular" &&
+          c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
+        if (fast && !startedRef.current) applyStream(d);
       });
     } catch {}
     return () => { alive = false; };
@@ -276,14 +267,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
-    const fastSet = d.fast ?? fastQRef.current ?? null;
-    const sq = pickDefaultQuality(d.streams, d.quality, fastSet ?? undefined);
-    // Throttled default → proxy (no-op when fast). A dub change (forceProxy)
-    // always goes via the proxy — the probe is stale for the new dub's edges.
-    const force = forceProxyRef.current; forceProxyRef.current = false;
-    const url = sq && d.streams?.[sq]
-      ? (force ? hlsProxyUrl(d.streams[sq]) : streamUrlFor(sq, d.streams[sq], fastSet))
-      : d.stream;
+    const sq = pickDefaultQuality(d.streams, d.quality);
+    // Everything plays through the LeadSeek proxy — no per-route throttle lottery.
+    const url = sq && d.streams?.[sq] ? hlsProxyUrl(d.streams[sq]) : d.stream;
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: url, quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     if (d.translators?.length) {
@@ -438,7 +424,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setShowTranslators(false);
     setTranslatorLoading(true);
     const currentTime = videoRef.current?.currentTime || 0;
-    forceProxyRef.current = true; // new dub → resolve via proxy (reliable)
     await fetchStream(selectedSeason, selectedEpisode, trId);
     setTimeout(() => {
       if (videoRef.current && currentTime > 0) {
@@ -492,11 +477,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const changeQuality = (q: string) => {
     if (!streamData?.streams?.[q]) return;
     setQualityPref(q); // remember explicit choice for future titles
-    // Known-fast tiers play direct; anything else routes through the LeadSeek
-    // proxy (deterministic — a chosen high tier never lands on a dead edge).
-    const fast = fastQRef.current;
-    const direct = streamData.streams[q];
-    const url = fast && fast.includes(q) ? direct : hlsProxyUrl(direct);
+    // Always via the proxy — any tier loads reliably, no throttle lottery.
+    const url = hlsProxyUrl(streamData.streams[q]);
     // Start the new stream AT the current position (seekOnSwitch) instead of
     // resetting to 0; only re-assert play — never touch currentTime (that would
     // fight a forward seek made right after switching).
