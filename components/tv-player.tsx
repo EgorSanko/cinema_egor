@@ -21,6 +21,7 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
+import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
 interface TVPlayerProps {
@@ -221,7 +222,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
       const q = encodeURIComponent(searchName);
       const trParam = tr ? "&translator_id=" + tr : "";
       const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + selectedSeason + "&episode=" + selectedEpisode + trParam;
-      prefetchRef.current = { url, promise: fetch(url).then((r) => r.json()).catch(() => null) };
+      const p = fetch(url).then((r) => r.json()).catch(() => null);
+      prefetchRef.current = { url, promise: p };
+      // Warm the CDN connection + manifest on open so play starts fast (see movie-player).
+      p.then((d: any) => { if (d?.stream) warmStream(d.stream); });
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show.id, selectedSeason, selectedEpisode, showPlayer]);

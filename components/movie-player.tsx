@@ -20,6 +20,7 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
+import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
 interface MoviePlayerProps {
@@ -123,7 +124,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       const p = fetch(url).then((r) => r.json()).catch(() => null);
       prefetchRef.current = { url, promise: p };
       p.then((d: any) => {
-        if (alive && d?.stream) setAvailInfo({ quality: d.quality, dubs: (d.translators || []).length });
+        if (!alive || !d?.stream) return;
+        setAvailInfo({ quality: d.quality, dubs: (d.translators || []).length });
+        // Warm the CDN as soon as the page opens (not on "Смотреть" click): open
+        // the TLS/HTTP connection to the stream host and pull the manifest +
+        // first segment, so when the user hits play the connection is hot and
+        // the first chunk loads fast. Video is on HDRezka's CDN, not our server.
+        warmStream(d.stream);
       });
     } catch {}
     return () => { alive = false; };
