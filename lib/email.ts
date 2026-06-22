@@ -59,49 +59,49 @@ function codeEmail(code: string, purpose: "verify" | "reset") {
     .split("")
     .map(
       (d) =>
-        `<td style="padding:0 4px;"><div style="width:40px;height:52px;line-height:52px;background:#0b0b0c;border:1px solid #2c2c30;border-radius:9px;color:#ffffff;font-size:24px;font-weight:800;text-align:center;font-family:'Courier New',monospace;box-shadow:inset 0 -8px 16px #00000055;">${d}</div></td>`
+        `<td style="padding:0 4px;"><div style="width:42px;height:54px;line-height:54px;background:#050506;border:1px solid #26262b;border-radius:10px;color:#ffffff;font-size:25px;font-weight:800;text-align:center;font-family:'Courier New',monospace;box-shadow:inset 0 -8px 16px #00000066;">${d}</div></td>`
     )
     .join("");
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-  <body style="margin:0;background:#080809;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#080809;padding:28px 14px;">
+  <body style="margin:0;padding:0;background:#0a0a0b;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0b;padding:24px 12px;">
     <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:460px;background:#121214;border:1px solid #ffffff12;border-radius:18px;overflow:hidden;">
-        <!-- logo -->
-        <tr><td align="center" style="padding:24px 28px 6px;">
-          <img src="${SITE_URL}/email-logo.png" width="240" alt="SAPKEFLY KINO" style="display:block;width:240px;max-width:72%;height:auto;border:0;margin:0 auto;" />
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#0a0a0b;border:1px solid #ffffff10;border-radius:18px;overflow:hidden;">
+        <!-- logo (transparent png) -->
+        <tr><td align="center" style="padding:30px 28px 4px;">
+          <img src="${SITE_URL}/email-logo.png" width="230" alt="SAPKEFLY KINO" style="display:block;width:230px;max-width:70%;height:auto;border:0;margin:0 auto;" />
         </td></tr>
         <!-- title + intro -->
-        <tr><td align="center" style="padding:14px 30px 0;">
-          <div style="font-size:22px;font-weight:800;color:#ffffff;line-height:1.25;">${title}</div>
-          <p style="font-size:13.5px;line-height:1.55;color:#9b9ba1;margin:12px 0 20px;">${intro}</p>
+        <tr><td align="center" style="padding:16px 34px 0;">
+          <div style="font-size:23px;font-weight:800;color:#ffffff;line-height:1.25;">${title}</div>
+          <p style="font-size:13.5px;line-height:1.6;color:#9a9aa0;margin:12px 0 22px;">${intro}</p>
         </td></tr>
         <!-- code digits -->
         <tr><td align="center" style="padding:0 20px;">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>${digits}</tr></table>
         </td></tr>
-        <tr><td align="center" style="padding:14px 20px 4px;">
-          <span style="font-size:12.5px;color:#7c7c83;">⏱ Код действует 15 минут</span>
+        <tr><td align="center" style="padding:16px 20px 6px;">
+          <span style="font-size:12.5px;color:#8a8a90;"><span style="color:#a3e635;">&#9679;</span>&nbsp; Код действует 15 минут</span>
         </td></tr>
-        <!-- hero -->
-        <tr><td style="padding:22px 0 0;">
-          <img src="${SITE_URL}/email-cinema.jpg" width="460" alt="" style="display:block;width:100%;max-width:460px;height:auto;border:0;" />
+        <!-- cinematic hero (fades into the bg) -->
+        <tr><td style="padding:6px 0 0;">
+          <img src="${SITE_URL}/email-cinema.jpg" width="480" alt="" style="display:block;width:100%;max-width:480px;height:auto;border:0;" />
         </td></tr>
-        <!-- security footer -->
-        <tr><td style="padding:18px 28px 8px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b0b0c;border:1px solid #ffffff10;border-radius:12px;">
+        <!-- security note: green accent bar, no icon -->
+        <tr><td style="padding:6px 26px 8px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#111113;border-radius:12px;">
             <tr>
-              <td style="padding:14px 16px;vertical-align:top;width:34px;"><div style="font-size:18px;">🛡️</div></td>
-              <td style="padding:14px 14px 14px 0;">
-                <div style="font-size:13px;font-weight:700;color:#e6e6ea;">Безопасность прежде всего</div>
-                <div style="font-size:12px;line-height:1.5;color:#85858c;margin-top:3px;">Если вы не создавали аккаунт на SAPKEFLY KINO, просто проигнорируйте это письмо. Ваши данные в безопасности.</div>
+              <td style="width:3px;background:#a3e635;"></td>
+              <td style="padding:15px 18px;">
+                <div style="font-size:13.5px;font-weight:700;color:#ededf0;">Безопасность прежде всего</div>
+                <div style="font-size:12px;line-height:1.55;color:#86868c;margin-top:4px;">Если вы не создавали аккаунт на SAPKEFLY KINO, просто проигнорируйте это письмо — ваши данные в безопасности.</div>
               </td>
             </tr>
           </table>
         </td></tr>
-        <tr><td align="center" style="padding:14px 28px 26px;">
-          <div style="font-size:11px;color:#55555b;">© 2026 sapkeflykino · смотреть онлайн без рекламы</div>
+        <tr><td align="center" style="padding:16px 28px 28px;">
+          <div style="font-size:11px;color:#55555b;">© 2026 SAPKEFLY KINO · смотреть онлайн без рекламы</div>
         </td></tr>
       </table>
     </td></tr>
