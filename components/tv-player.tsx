@@ -104,6 +104,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // cold-click fetchStream + episode switches (a series' tiers sit on the same
   // edges, so the route's throttle pattern carries across episodes).
   const fastQRef = useRef<string[] | null>(null);
+  // Set before a dub change: the probe is stale for the new dub's edges, so
+  // resolve it through the proxy (always loads).
+  const forceProxyRef = useRef(false);
 
   const validSeasons = show.seasons?.filter(s => s.season_number > 0) || [];
 
@@ -275,8 +278,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const applyStream = (d: any) => {
     const fastSet = d.fast ?? fastQRef.current ?? null;
     const sq = pickDefaultQuality(d.streams, d.quality, fastSet ?? undefined);
-    // Route a throttled default through the LeadSeek proxy (no-op when fast).
-    const url = sq && d.streams?.[sq] ? streamUrlFor(sq, d.streams[sq], fastSet) : d.stream;
+    // Throttled default → proxy (no-op when fast). A dub change (forceProxy)
+    // always goes via the proxy — the probe is stale for the new dub's edges.
+    const force = forceProxyRef.current; forceProxyRef.current = false;
+    const url = sq && d.streams?.[sq]
+      ? (force ? hlsProxyUrl(d.streams[sq]) : streamUrlFor(sq, d.streams[sq], fastSet))
+      : d.stream;
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: url, quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     if (d.translators?.length) {
@@ -431,6 +438,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setShowTranslators(false);
     setTranslatorLoading(true);
     const currentTime = videoRef.current?.currentTime || 0;
+    forceProxyRef.current = true; // new dub → resolve via proxy (reliable)
     await fetchStream(selectedSeason, selectedEpisode, trId);
     setTimeout(() => {
       if (videoRef.current && currentTime > 0) {

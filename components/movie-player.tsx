@@ -81,6 +81,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // the cold-click fetchStream so even a non-prewarmed (mobile) open lands on
   // the fastest tier.
   const fastQRef = useRef<string[] | null>(null);
+  // Set before a dub change: the page-open probe is for the OLD dub (the new
+  // dub's segments live on different edges with their own throttling), so route
+  // the next resolve through the proxy — it always loads.
+  const forceProxyRef = useRef(false);
 
   const fetchSubtitles = useCallback(async () => {
     if (subsFetchedRef.current) return;
@@ -213,7 +217,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     const sq = pickDefaultQuality(d.streams, d.quality, fastSet ?? undefined);
     // Route a throttled default through the LeadSeek proxy so it isn't a "stuck"
     // black screen on this viewer's route (no-op when the tier is fast → direct).
-    const url = sq && d.streams?.[sq] ? streamUrlFor(sq, d.streams[sq], fastSet) : d.stream;
+    // A dub change (forceProxy) always goes via the proxy — the probe is stale
+    // for the new dub's edges, and the proxy reliably loads any of them.
+    const force = forceProxyRef.current; forceProxyRef.current = false;
+    const url = sq && d.streams?.[sq]
+      ? (force ? hlsProxyUrl(d.streams[sq]) : streamUrlFor(sq, d.streams[sq], fastSet))
+      : d.stream;
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: url, quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     // Populate the dub list here too — the pre-warm path (mount on open) sets the
@@ -355,6 +364,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     setShowTranslators(false);
     setTranslatorLoading(true);
     const currentTime = videoRef.current?.currentTime || 0;
+    forceProxyRef.current = true; // new dub → resolve via proxy (reliable)
     await fetchStream(trId);
     setTimeout(() => {
       if (videoRef.current && currentTime > 0) {
