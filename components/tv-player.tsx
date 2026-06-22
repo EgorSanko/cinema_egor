@@ -246,7 +246,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
-    const sq = pickDefaultQuality(d.streams, d.quality);
+    const sq = pickDefaultQuality(d.streams, d.quality, d.fast);
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     if (d.translators?.length) {

@@ -55,15 +55,26 @@ function connectionCeiling(): number {
   return 1080;
 }
 
-/** Pick the default quality LABEL from the available streams. */
+/** Pick the default quality LABEL from the available streams.
+ *  `fast` (from the backend speed-probe) lists the tiers that actually load
+ *  fast — HDRezka throttles the others to ~40 KB/s, and which ones varies per
+ *  title. We restrict the default to fast tiers so nobody lands on a throttled
+ *  stream; the throttled tiers stay selectable in the menu. */
 export function pickDefaultQuality(
   streams: Record<string, string> | undefined,
-  fallback: string
+  fallback: string,
+  fast?: string[]
 ): string {
   const keys = streams ? Object.keys(streams) : [];
   if (keys.length === 0) return fallback;
+  // Restrict to fast tiers when the probe gave us any (that exist in streams).
+  let pool = keys;
+  if (fast && fast.length) {
+    const f = fast.filter((q) => keys.includes(q));
+    if (f.length) pool = f;
+  }
   // Highest → lowest by real height.
-  const ranked = keys
+  const ranked = pool
     .map((k) => ({ k, h: qHeight(k) }))
     .sort((a, b) => b.h - a.h);
 

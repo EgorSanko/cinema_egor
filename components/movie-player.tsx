@@ -20,6 +20,7 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
+import { probeFastQualities } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -70,6 +71,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // instantly instead of waiting ~2s. fetchStream reuses this exact in-flight
   // request when the URL matches (no duplicate call).
   const prefetchRef = useRef<{ url: string; promise: Promise<any> } | null>(null);
+  // True once the user actually pressed play — gates the (async) pre-warm probe
+  // from clobbering the stream the click already started resolving.
+  const startedRef = useRef(false);
 
   const fetchSubtitles = useCallback(async () => {
     if (subsFetchedRef.current) return;
@@ -134,7 +138,14 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         const c: any = (navigator as any).connection;
         const fast = !c || (!c.saveData && c.type !== "cellular" &&
           c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
-        if (fast && !isNotReleased && !showPlayer) applyStream(d);
+        if (fast && !isNotReleased && !showPlayer) {
+          // HDRezka throttles different tiers on different viewer routes — measure
+          // in THIS browser which tiers are actually fast, then mount on the
+          // fastest. (Server can't tell: it has a fast path to every tier.)
+          probeFastQualities(d.streams).then((fastQ) => {
+            if (alive && !startedRef.current) applyStream({ ...d, fast: fastQ });
+          });
+        }
       });
     } catch {}
     return () => { alive = false; };
@@ -189,7 +200,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
-    const sq = pickDefaultQuality(d.streams, d.quality);
+    const sq = pickDefaultQuality(d.streams, d.quality, d.fast);
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     // Populate the dub list here too — the pre-warm path (mount on open) sets the
@@ -357,6 +368,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const openPlayer = (resume: boolean) => {
     if (isNotReleased) return;
     if (!requireAuth("Войдите, чтобы смотреть фильмы и сохранять прогресс")) return;
+    startedRef.current = true;
     setWantResume(resume);
     if (resume && resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
     setShowPlayer(true);
