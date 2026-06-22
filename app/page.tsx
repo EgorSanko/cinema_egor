@@ -5,7 +5,6 @@ import { TVSection } from "@/components/tv-section";
 import { ContinueWatching } from "@/components/continue-watching";
 import { Recommendations } from "@/components/recommendations";
 import { CollectionsRow } from "@/components/collections-row";
-import { MoodAndRoulette } from "@/components/mood-and-roulette";
 import { Navbar } from "@/components/navbar";
 import { TermsModal } from "@/components/terms-modal";
 import {
@@ -41,7 +40,6 @@ export default async function Home() {
         {heroSlice.length > 0 && <HeroSection movies={heroSlice} />}
         <div className="space-y-16 px-4 sm:px-6 lg:px-8 py-14 max-w-[1600px] mx-auto">
           <ContinueWatching />
-          <MoodAndRoulette />
           <Recommendations />
           <MovieSection title="Сейчас в тренде" movies={trendingMovies.slice(0, 12)} />
           <CollectionsRow />
