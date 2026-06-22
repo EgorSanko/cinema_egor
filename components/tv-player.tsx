@@ -21,6 +21,7 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
+import { probeFastQualities } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -94,6 +95,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const subsFetchedKeyRef = useRef<string>("");
   // Warmed HDRezka resolve for the initial episode — makes "Смотреть" instant.
   const prefetchRef = useRef<{ url: string; promise: Promise<any> } | null>(null);
+  // True once the user pressed play — gates the async pre-warm probe from
+  // clobbering the stream the click already started resolving.
+  const startedRef = useRef(false);
+  // Tiers found fast on THIS viewer's route by the probe. Reused by the
+  // cold-click fetchStream + episode switches (a series' tiers sit on the same
+  // edges, so the route's throttle pattern carries across episodes).
+  const fastQRef = useRef<string[] | null>(null);
 
   const validSeasons = show.seasons?.filter(s => s.season_number > 0) || [];
 
@@ -212,6 +220,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // fetchStream consumes this in-flight request when the URL matches.
   useEffect(() => {
     if (showPlayer) return;
+    let alive = true;
     try {
       const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
       const ruName = (show.name || "").replace(/["«»""]/g, "").trim();
@@ -224,9 +233,25 @@ export function TVPlayer({ show }: TVPlayerProps) {
       const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + selectedSeason + "&episode=" + selectedEpisode + trParam;
       const p = fetch(url).then((r) => r.json()).catch(() => null);
       prefetchRef.current = { url, promise: p };
-      // Warm the CDN connection + manifest on open so play starts fast (see movie-player).
-      p.then((d: any) => { if (d?.stream) warmStream(d.stream); });
+      p.then((d: any) => {
+        if (!alive || !d?.stream) return;
+        // Warm the CDN connection + manifest on open so play starts fast.
+        warmStream(d.stream);
+        // ALWAYS measure which tiers are fast on THIS viewer's route, so the
+        // fastest is the default even on mobile (cheap: 1080p first, others only
+        // if throttled). The HEAVY pre-buffer (mount + ~30s) stays gated to fast
+        // connections; mobile still gets the fast tier, just on click (fastQRef).
+        probeFastQualities(d.streams).then((fastQ) => {
+          if (!alive) return;
+          if (fastQ.length) fastQRef.current = fastQ;
+          const c: any = (navigator as any).connection;
+          const fast = !c || (!c.saveData && c.type !== "cellular" &&
+            c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
+          if (fast && !startedRef.current) applyStream({ ...d, fast: fastQ });
+        });
+      });
     } catch {}
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show.id, selectedSeason, selectedEpisode, showPlayer]);
 
@@ -246,7 +271,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
-    const sq = pickDefaultQuality(d.streams, d.quality, d.fast);
+    const sq = pickDefaultQuality(d.streams, d.quality, d.fast ?? fastQRef.current ?? undefined);
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     if (d.translators?.length) {
@@ -431,13 +456,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // ("Смотреть"); resume=true → seek to the saved position ("Продолжить").
   const openPlayerEp = (resume: boolean) => {
     if (!requireAuth("Войдите, чтобы смотреть сериалы и сохранять прогресс")) return;
+    startedRef.current = true;
     setWantResume(resume);
-    if (!showPlayer) {
-      setShowPlayer(true);
-      fetchStream(selectedSeason, selectedEpisode, selectedTranslator);
-    } else if (resume && resumeTime && videoRef.current) {
-      videoRef.current.currentTime = resumeTime;
-    }
+    if (resume && resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
+    setShowPlayer(true);
+    // If the episode was pre-warmed (streamData set on open), revealing it flips
+    // autoStart → it starts the buffered video instantly. Only cold-resolve when
+    // nothing is prewarmed yet.
+    if (!streamData?.stream) fetchStream(selectedSeason, selectedEpisode, selectedTranslator);
   };
 
   const handleResume = () => {
@@ -648,73 +674,56 @@ export function TVPlayer({ show }: TVPlayerProps) {
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
-          {!showPlayer ? (
-            <div className="w-full h-full relative cursor-pointer" onClick={() => openPlayerEp(false)}>
-              {backdropUrl && <img src={backdropUrl} alt={show.name} className={`absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-105 ${show.backdrop_path ? "object-cover" : "object-contain bg-black/90"}`} />}
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/10 flex items-center justify-center">
-                <div className="flex flex-col items-center gap-5">
-                  <div className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl shadow-black/40 transition-transform duration-300 group-hover:scale-110">
-                    <Play size={38} className="text-black ml-1" fill="currentColor" />
-                  </div>
-                  {resumeTime && resumeTime > 10 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); openPlayerEp(true); }}
-                      className="mt-1 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-black/55 hover:bg-black/75 text-white text-[12px] font-semibold ring-1 ring-white/20 backdrop-blur-sm transition-colors normal-case tracking-normal"
-                    >
-                      <Play size={13} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black/90 to-transparent">
-                <h2 className="text-white font-bold text-2xl mb-3">{show.name}</h2>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="bg-primary text-white text-xs px-3 py-1 rounded-md font-bold">HD</span>
-                  <span className="bg-white/10 backdrop-blur text-white/80 text-xs px-3 py-1 rounded-md">{"" + show.number_of_seasons + " сезон(ов)"}</span>
-                  <span className="bg-white/10 backdrop-blur text-white/80 text-xs px-3 py-1 rounded-md">{show.vote_average.toFixed(1)}</span>
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <TrailerButton mediaId={show.id} mediaType="tv" />
-                  </div>
-                </div>
-              </div>
-              <div className="absolute top-4 right-4 z-10">
-                <div className="bg-black/60 backdrop-blur-sm rounded-full p-2">
-                  <FavoriteButton size="md" item={{
-                    id: show.id, type: "tv", title: show.name,
-                    poster_path: show.poster_path, vote_average: show.vote_average,
-                    first_air_date: show.first_air_date, addedAt: Date.now(),
-                  }} />
-                </div>
-              </div>
-            </div>
-          ) : (loading || showLoadingMascot) && !streamData ? (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-5">
-              <video
-                src="/mascot.webm"
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="auto"
-                disablePictureInPicture
-                controlsList="nodownload noplaybackrate nofullscreen"
-                className="w-80 h-80 sm:w-96 sm:h-96 md:w-[28rem] md:h-[28rem] lg:w-[34rem] lg:h-[34rem] xl:w-[40rem] xl:h-[40rem] object-contain pointer-events-none select-none drop-shadow-[0_0_80px_rgba(163,230,53,0.3)]"
-                style={{ mixBlendMode: "screen" }}
-                aria-hidden="true"
-                tabIndex={-1}
-              />
-              <div className="flex flex-col items-center gap-1">
-                <p className="text-lg font-semibold">{translatorLoading ? "Смена озвучки..." : "Загрузка серии"}</p>
-                <p className="text-gray-500 text-sm">{"Сезон " + selectedSeason + ", Серия " + selectedEpisode}</p>
+          {/* Player mounts as soon as the episode resolves and pre-buffers
+              (autoStart=false) HIDDEN behind the poster, so pressing play starts
+              instantly. */}
+          {streamData?.stream && (
+            <ArtPlayerView
+              streamUrl={streamData.stream}
+              poster={backdropUrl || undefined}
+              qualities={streamData.streams}
+              selectedQuality={selectedQuality}
+              onQualityChange={changeQuality}
+              translators={translators}
+              selectedTranslator={selectedTranslator}
+              onTranslatorChange={changeTranslator}
+              subtitles={subtitles}
+              selectedSubtitleId={selectedSubtitleId}
+              onSubtitleChange={setSelectedSubtitleId}
+              onLoadSubtitles={fetchSubtitles}
+              resumeTime={wantResume ? (resumeTime || undefined) : undefined}
+              autoStart={showPlayer}
+              onVideoReady={(v) => { videoRef.current = v; startSaving(); }}
+              onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
+              onPlayerContainerReady={setPlayerContainer}
+            />
+          )}
+          {streamData?.stream && showPlayer && (
+            <SkipOverlays
+              videoRef={videoRef}
+              playerContainer={playerContainer}
+              tmdbId={show.id}
+              type="tv"
+              season={selectedSeason}
+              episode={selectedEpisode}
+              hasNextEpisode={hasNextEpisode}
+              onNextEpisode={nextEpisode}
+            />
+          )}
+          {streamData?.stream && showPlayer && translatorLoading && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-12 h-12 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
+                <p className="text-white text-sm">Смена озвучки...</p>
               </div>
             </div>
-          ) : error ? (
+          )}
+
+          {/* Loading mascot / error — only after play was pressed and the
+              episode isn't ready yet (cold start / dub substituted). */}
+          {showPlayer && !streamData?.stream && error ? (
             <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4 px-8 overflow-y-auto py-8">
               <p className="text-red-400 text-center text-lg">{error}</p>
-              {/* When a dub was substituted (episode not voiced in the chosen
-                  one), the player isn't mounted — so its translator switcher
-                  is unreachable. Surface the available dubs right here so the
-                  user can pick another instead of being stuck on the notice. */}
               {translators.length > 1 && (
                 <div className="w-full max-w-sm">
                   <p className="text-[11px] uppercase tracking-wider text-white/45 font-semibold mb-2 text-center">Выберите озвучку</p>
@@ -736,65 +745,41 @@ export function TVPlayer({ show }: TVPlayerProps) {
               )}
               <button onClick={() => fetchStream(selectedSeason, selectedEpisode)} className="px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-medium transition-colors">Попробовать снова</button>
             </div>
-          ) : streamData ? (
-            <>
-              <ArtPlayerView
-                streamUrl={streamData.stream}
-                qualities={streamData.streams}
-                selectedQuality={selectedQuality}
-                onQualityChange={changeQuality}
-                translators={translators}
-                selectedTranslator={selectedTranslator}
-                onTranslatorChange={changeTranslator}
-                subtitles={subtitles}
-                selectedSubtitleId={selectedSubtitleId}
-                onSubtitleChange={setSelectedSubtitleId}
-                onLoadSubtitles={fetchSubtitles}
-                resumeTime={wantResume ? (resumeTime || undefined) : undefined}
-                onVideoReady={(v) => {
-                  videoRef.current = v;
-                  startSaving();
-                  // Auto-resume now happens inside ArtPlayerView via the
-                  // `resumeTime` prop + a loadedmetadata listener. Setting
-                  // currentTime here used to fire too early (before MSE
-                  // attaches) and got reset to 0 by the source swap.
-                }}
-                onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
-                onPlayerContainerReady={setPlayerContainer}
+          ) : showPlayer && !streamData?.stream && (loading || showLoadingMascot) ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-5">
+              <video
+                src="/mascot.webm"
+                autoPlay muted loop playsInline preload="auto" disablePictureInPicture
+                controlsList="nodownload noplaybackrate nofullscreen"
+                className="w-80 h-80 sm:w-96 sm:h-96 md:w-[28rem] md:h-[28rem] lg:w-[34rem] lg:h-[34rem] xl:w-[40rem] xl:h-[40rem] object-contain pointer-events-none select-none drop-shadow-[0_0_80px_rgba(163,230,53,0.3)]"
+                style={{ mixBlendMode: "screen" }}
+                aria-hidden="true"
+                tabIndex={-1}
               />
-              <SkipOverlays
-                videoRef={videoRef}
-                playerContainer={playerContainer}
-                tmdbId={show.id}
-                type="tv"
-                season={selectedSeason}
-                episode={selectedEpisode}
-                hasNextEpisode={hasNextEpisode}
-                onNextEpisode={nextEpisode}
-              />
-              {translatorLoading && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
-                    <p className="text-white text-sm">Смена озвучки...</p>
-                  </div>
-                </div>
-              )}
-              {false && showResume && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-                  <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
-                    <p className="text-white text-lg font-semibold">Продолжить просмотр?</p>
-                    <p className="text-gray-400 text-sm">{"С" + selectedSeason + " Э" + selectedEpisode + " \u2014 " + formatTime(resumeTime || 0)}</p>
-                    <div className="flex gap-3 justify-center">
-                      <button onClick={handleResume} className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors">Продолжить</button>
-                      <button onClick={handleStartOver} className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl font-medium transition-colors border border-white/10">Сначала</button>
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-lg font-semibold">{translatorLoading ? "Смена озвучки..." : "Загрузка серии"}</p>
+                <p className="text-gray-500 text-sm">{"Сезон " + selectedSeason + ", Серия " + selectedEpisode}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Poster overlay — transparent catcher over the (pre-buffering)
+              player; backdrop + a single play circle show only before the
+              player has mounted. */}
+          {!showPlayer && (
+            <div className="absolute inset-0 z-30 cursor-pointer group/play" onClick={() => openPlayerEp(false)}>
+              {!streamData?.stream && (
+                <>
+                  {backdropUrl && <img src={backdropUrl} alt={show.name} className={"absolute inset-0 w-full h-full " + (show.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl shadow-black/40 transition-transform duration-300 group-hover/play:scale-110">
+                      <Play size={38} className="text-black ml-1" fill="currentColor" />
                     </div>
                   </div>
-                </div>
+                </>
               )}
-
-            </>
-          ) : null}
+            </div>
+          )}
         </div>
 
 

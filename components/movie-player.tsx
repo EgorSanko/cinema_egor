@@ -74,6 +74,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // True once the user actually pressed play — gates the (async) pre-warm probe
   // from clobbering the stream the click already started resolving.
   const startedRef = useRef(false);
+  // Tiers found fast on THIS viewer's route by the page-open probe. Reused by
+  // the cold-click fetchStream so even a non-prewarmed (mobile) open lands on
+  // the fastest tier.
+  const fastQRef = useRef<string[] | null>(null);
 
   const fetchSubtitles = useCallback(async () => {
     if (subsFetchedRef.current) return;
@@ -132,20 +136,22 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         setAvailInfo({ quality: d.quality, dubs: (d.translators || []).length });
         // Warm the CDN connection + manifest the moment the page opens.
         warmStream(d.stream);
-        // On a fast connection, go further: mount the player HIDDEN and let it
-        // pre-buffer (autoStart=false), so pressing "Смотреть" starts instantly.
-        // Skip on cellular/slow/data-saver to not burn mobile traffic.
-        const c: any = (navigator as any).connection;
-        const fast = !c || (!c.saveData && c.type !== "cellular" &&
-          c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
-        if (fast && !isNotReleased && !showPlayer) {
-          // HDRezka throttles different tiers on different viewer routes — measure
-          // in THIS browser which tiers are actually fast, then mount on the
-          // fastest. (Server can't tell: it has a fast path to every tier.)
-          probeFastQualities(d.streams).then((fastQ) => {
-            if (alive && !startedRef.current) applyStream({ ...d, fast: fastQ });
-          });
-        }
+        // ALWAYS measure which tiers are fast on THIS viewer's route (HDRezka
+        // throttles different tiers per route; our server can't tell). Runs on
+        // every connection so the fastest tier is the default even on mobile —
+        // it's cheap (samples 1080p first, others only if it's throttled) and
+        // the result is stored for the cold-click path too (fastQRef).
+        probeFastQualities(d.streams).then((fastQ) => {
+          if (!alive) return;
+          if (fastQ.length) fastQRef.current = fastQ;
+          // The HEAVY pre-buffer (mount the player + buffer ~30s) stays gated to
+          // fast connections — don't pre-pull video on mobile for a film that may
+          // not be watched. Mobile still gets the fast tier, just on click.
+          const c: any = (navigator as any).connection;
+          const fast = !c || (!c.saveData && c.type !== "cellular" &&
+            c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
+          if (fast && !isNotReleased && !startedRef.current) applyStream({ ...d, fast: fastQ });
+        });
       });
     } catch {}
     return () => { alive = false; };
@@ -200,7 +206,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
-    const sq = pickDefaultQuality(d.streams, d.quality, d.fast);
+    const sq = pickDefaultQuality(d.streams, d.quality, d.fast ?? fastQRef.current ?? undefined);
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     // Populate the dub list here too — the pre-warm path (mount on open) sets the
