@@ -192,6 +192,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     const sq = pickDefaultQuality(d.streams, d.quality);
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
     setSelectedQuality(sq || d.quality);
+    // Populate the dub list here too — the pre-warm path (mount on open) sets the
+    // stream via applyStream but NOT through fetchStream, so without this the
+    // "Озвучка" menu was empty / showed a single dub.
+    if (d.translators?.length) {
+      setTranslators(d.translators);
+      setSelectedTranslator((prev) => prev ?? d.active_translator_id ?? d.translators[0].id);
+    }
   };
 
   const fetchStream = async (translatorId?: number | null, _attempt = 0) => {

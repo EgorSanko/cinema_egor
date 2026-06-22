@@ -249,6 +249,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const sq = pickDefaultQuality(d.streams, d.quality);
     setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
     setSelectedQuality(sq || d.quality);
+    if (d.translators?.length) {
+      setTranslators(d.translators);
+      setSelectedTranslator((prev) => prev ?? d.active_translator_id ?? d.translators[0].id);
+    }
   };
 
   const fetchStream = async (season: number, episode: number, translatorId?: number | null, _attempt = 0) => {
