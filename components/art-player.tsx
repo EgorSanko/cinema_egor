@@ -38,6 +38,10 @@ interface ArtPlayerProps {
   onLoadSubtitles?: () => void;
 
   resumeTime?: number;
+  /** Position the NEXT source switch should START at (used for quality switches:
+   *  the new stream begins here instead of restarting at 0, so the position is
+   *  preserved without a jarring reset + re-seek). Consumed once per switch. */
+  seekOnSwitch?: number;
   /** When false, mount + buffer the stream but DON'T autoplay (hidden pre-warm).
    *  The parent starts playback via the video ref it gets from onVideoReady. */
   autoStart?: boolean;
@@ -222,6 +226,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     onSubtitleChange,
     onLoadSubtitles,
     resumeTime,
+    seekOnSwitch,
     autoStart,
     onVideoReady,
     onVideoUnmount,
@@ -239,6 +244,13 @@ export function ArtPlayerView(props: ArtPlayerProps) {
   React.useEffect(() => { resumeTimeRef.current = resumeTime; }, [resumeTime]);
   const autoStartRef = React.useRef(autoStart);
   React.useEffect(() => { autoStartRef.current = autoStart; }, [autoStart]);
+  // One-shot start position for the next source switch (quality switch keeps the
+  // current position). Synced from the prop BEFORE the switchUrl effect runs;
+  // consumed (→0) once the switch starts so it never leaks to a later switch.
+  const startPosOverrideRef = React.useRef(0);
+  React.useEffect(() => {
+    if (seekOnSwitch && seekOnSwitch > 1) startPosOverrideRef.current = seekOnSwitch;
+  }, [seekOnSwitch]);
   // When the parent reveals a pre-warmed (paused, pre-buffered) player, start
   // playback — gives an instant start because the buffer is already filled.
   React.useEffect(() => {
@@ -284,7 +296,9 @@ export function ArtPlayerView(props: ArtPlayerProps) {
             // Start loading DIRECTLY at the saved position when "Продолжить"
             // passed a resumeTime — avoids the jarring load-from-0-then-jump.
             // -1 = normal start from 0 (the "Смотреть" path passes no resume).
-            const _rt = resumeTimeRef.current;
+            // A quality switch passes the live position via startPosOverrideRef
+            // so the new stream begins THERE (no reset-to-0 + re-seek fight).
+            const _rt = startPosOverrideRef.current || resumeTimeRef.current;
             const hls = new Hls({
               enableWorker: true,
               startPosition: (_rt && _rt > 5) ? _rt : -1,
@@ -516,6 +530,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // the new resumeTime (if any) when the fresh source loads.
     resumeOnceRef.current = false;
     art.switchUrl(streamUrl).then(() => {
+      startPosOverrideRef.current = 0; // consume — don't leak to the next switch
       if (wasPlaying) art.play().catch(() => {});
     });
   }, [streamUrl]);

@@ -42,6 +42,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const [showLoadingMascot, setShowLoadingMascot] = useState(false);
   const [error, setError] = useState("");
   const [streamData, setStreamData] = useState<any>(null);
+  // Position to start the next source switch at — set on a quality switch so the
+  // new stream begins where playback is, not at 0.
+  const [seekOnSwitch, setSeekOnSwitch] = useState<number | undefined>(undefined);
   const [selectedQuality, setSelectedQuality] = useState("");
   const [cssFullscreen, setCssFullscreen] = useState(false);
   // ArtPlayer container — once captured, SkipOverlays portals into it so
@@ -410,20 +413,18 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     const fast = fastQRef.current;
     const direct = streamData.streams[q];
     const url = fast && fast.includes(q) ? direct : hlsProxyUrl(direct);
-    // The source reload restarts at 0 and the player can sneak in a pause once
-    // the new stream is ready — restore the position and re-assert play for a
-    // few seconds so a quality switch doesn't "load forever" or jump to start.
+    // Start the new stream AT the current position (seekOnSwitch) instead of
+    // resetting to 0, then only re-assert play if it sneaks in a pause — NEVER
+    // touch currentTime here, or we'd fight a forward seek made right after.
     const pos = videoRef.current?.currentTime || 0;
+    setSeekOnSwitch(pos > 1 ? pos : undefined);
     setSelectedQuality(q);
     setStreamData((prev: any) => prev ? { ...prev, stream: url } : prev);
     let n = 0;
     const iv = setInterval(() => {
       const v = videoRef.current;
-      if (v && v.readyState >= 1) {
-        if (pos > 1 && Math.abs(v.currentTime - pos) > 3) { try { v.currentTime = pos; } catch {} }
-        if (v.paused && v.readyState >= 2) v.play().catch(() => {});
-      }
-      if (++n > 22) clearInterval(iv);
+      if (v && v.paused && v.readyState >= 2) v.play().catch(() => {});
+      if ((v && !v.paused) || ++n > 16) clearInterval(iv);
     }, 400);
   };
 
@@ -487,6 +488,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               onSubtitleChange={setSelectedSubtitleId}
               onLoadSubtitles={fetchSubtitles}
               resumeTime={wantResume ? (resumeTime || undefined) : undefined}
+              seekOnSwitch={seekOnSwitch}
               autoStart={showPlayer}
               onVideoReady={(v) => { videoRef.current = v; startSaving(); }}
               onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}

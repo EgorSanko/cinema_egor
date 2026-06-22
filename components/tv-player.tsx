@@ -57,6 +57,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [showLoadingMascot, setShowLoadingMascot] = useState(false);
   const [error, setError] = useState("");
   const [streamData, setStreamData] = useState<any>(null);
+  // Position to start the next source switch at (set on a quality switch).
+  const [seekOnSwitch, setSeekOnSwitch] = useState<number | undefined>(undefined);
   const [selectedQuality, setSelectedQuality] = useState("");
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [selectedEpisode, setSelectedEpisode] = useState(1);
@@ -487,19 +489,18 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const fast = fastQRef.current;
     const direct = streamData.streams[q];
     const url = fast && fast.includes(q) ? direct : hlsProxyUrl(direct);
-    // Restore position + re-assert play after the source reload (it restarts at
-    // 0 and can sneak in a pause) so a quality switch doesn't "load forever".
+    // Start the new stream AT the current position (seekOnSwitch) instead of
+    // resetting to 0; only re-assert play — never touch currentTime (that would
+    // fight a forward seek made right after switching).
     const pos = videoRef.current?.currentTime || 0;
+    setSeekOnSwitch(pos > 1 ? pos : undefined);
     setSelectedQuality(q);
     setStreamData((prev: any) => prev ? { ...prev, stream: url } : prev);
     let n = 0;
     const iv = setInterval(() => {
       const v = videoRef.current;
-      if (v && v.readyState >= 1) {
-        if (pos > 1 && Math.abs(v.currentTime - pos) > 3) { try { v.currentTime = pos; } catch {} }
-        if (v.paused && v.readyState >= 2) v.play().catch(() => {});
-      }
-      if (++n > 22) clearInterval(iv);
+      if (v && v.paused && v.readyState >= 2) v.play().catch(() => {});
+      if ((v && !v.paused) || ++n > 16) clearInterval(iv);
     }, 400);
   };
 
@@ -711,6 +712,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
               onSubtitleChange={setSelectedSubtitleId}
               onLoadSubtitles={fetchSubtitles}
               resumeTime={wantResume ? (resumeTime || undefined) : undefined}
+              seekOnSwitch={seekOnSwitch}
               autoStart={showPlayer}
               onVideoReady={(v) => { videoRef.current = v; startSaving(); }}
               onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
