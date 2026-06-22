@@ -422,6 +422,15 @@ export function Navbar() {
                 >
                   <Smartphone size={17} /> Приложение для Android
                 </Link>
+                <a
+                  href="https://t.me/sapkeflykino"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-sky-400 font-semibold bg-sky-500/10 hover:bg-sky-500/15 rounded-lg transition-colors"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <Send size={17} /> Telegram-канал
+                </a>
 
                 {user ? (
                   <>
