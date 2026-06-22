@@ -25,40 +25,57 @@ export function Recommendations() {
       const history = getHistory();
       if (history.length === 0) { setLoading(false); return; }
 
-      // Get unique movie IDs from history (last 5)
+      // Serve a recent cache instantly — no refetch on every home visit.
+      try {
+        const raw = sessionStorage.getItem("recs_cache");
+        if (raw) {
+          const c = JSON.parse(raw);
+          if (c && Date.now() - c.at < 10 * 60 * 1000 && Array.isArray(c.items) && c.items.length) {
+            setItems(c.items);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch { }
+
+      // Up to 3 most-recent unique titles → recommendations.
       const seen = new Set<string>();
       const sources: { id: number; type: string }[] = [];
       for (const h of history) {
         const key = `${h.type}-${h.id}`;
-        if (!seen.has(key) && sources.length < 5) {
+        if (!seen.has(key) && sources.length < 3) {
           seen.add(key);
           sources.push({ id: h.id, type: h.type });
         }
       }
 
       try {
+        // Fetch all sources IN PARALLEL (was sequential → 3× the latency).
+        const datas = await Promise.all(
+          sources.map((src) =>
+            fetch(`/api/tmdb-proxy?path=/${src.type === "tv" ? "tv" : "movie"}/${src.id}/recommendations`)
+              .then((r) => (r.ok ? r.json() : null))
+              .catch(() => null)
+          )
+        );
+
         const allRecs: RecommendedItem[] = [];
         const seenIds = new Set<string>();
-
-        for (const src of sources.slice(0, 3)) {
-          const endpoint = src.type === "tv"
-            ? `/api/tmdb-proxy?path=/tv/${src.id}/recommendations`
-            : `/api/tmdb-proxy?path=/movie/${src.id}/recommendations`;
-
-          const res = await fetch(endpoint);
-          if (res.ok) {
-            const data = await res.json();
-            for (const item of (data.results || []).slice(0, 6)) {
-              const key = `${item.media_type || src.type}-${item.id}`;
-              if (!seenIds.has(key) && !history.some(h => h.id === item.id && h.type === (item.media_type || src.type))) {
-                seenIds.add(key);
-                allRecs.push({ ...item, media_type: item.media_type || src.type });
-              }
+        datas.forEach((data, i) => {
+          const srcType = sources[i].type;
+          for (const item of (data?.results || []).slice(0, 6)) {
+            const mt = item.media_type || srcType;
+            const key = `${mt}-${item.id}`;
+            if (!seenIds.has(key) && !history.some((h) => h.id === item.id && h.type === mt)) {
+              seenIds.add(key);
+              allRecs.push({ ...item, media_type: mt });
             }
           }
-        }
+        });
 
-        setItems(allRecs.slice(0, 12));
+        const final = allRecs.slice(0, 12);
+        setItems(final);
+        try { sessionStorage.setItem("recs_cache", JSON.stringify({ at: Date.now(), items: final })); } catch { }
       } catch { }
       finally { setLoading(false); }
     };
