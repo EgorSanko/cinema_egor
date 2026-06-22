@@ -517,20 +517,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               <button onClick={() => fetchStream()} className="px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-medium transition-colors">Попробовать снова</button>
             </div>
           ) : showPlayer && !streamData?.stream && (loading || showLoadingMascot) ? (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-5">
-              <video
-                src="/mascot.webm"
-                autoPlay muted loop playsInline preload="auto" disablePictureInPicture
-                controlsList="nodownload noplaybackrate nofullscreen"
-                className="w-80 h-80 sm:w-96 sm:h-96 md:w-[28rem] md:h-[28rem] lg:w-[34rem] lg:h-[34rem] xl:w-[40rem] xl:h-[40rem] object-contain pointer-events-none select-none drop-shadow-[0_0_80px_rgba(163,230,53,0.3)]"
-                style={{ mixBlendMode: "screen" }}
-                aria-hidden="true"
-                tabIndex={-1}
-              />
-              <div className="flex flex-col items-center gap-1">
-                <p className="text-lg font-semibold">{translatorLoading ? "Смена озвучки..." : "Загрузка фильма"}</p>
-                <p className="text-gray-500 text-sm">Поиск лучшего качества...</p>
-              </div>
+            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4">
+              <div className="w-12 h-12 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
+              <p className="text-[15px] font-medium text-white/85">{translatorLoading ? "Смена озвучки..." : "Загрузка фильма"}</p>
             </div>
           ) : null}
 
