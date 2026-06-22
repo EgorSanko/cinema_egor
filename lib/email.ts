@@ -69,9 +69,8 @@ function codeEmail(code: string, purpose: "verify" | "reset") {
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:460px;background:#121214;border:1px solid #ffffff12;border-radius:18px;overflow:hidden;">
         <!-- logo -->
-        <tr><td align="center" style="padding:26px 28px 6px;">
-          <div style="font-size:22px;line-height:1;">🎬</div>
-          <div style="margin-top:6px;font-size:15px;font-weight:800;letter-spacing:3px;color:#a3e635;">SAPKEFLY<span style="color:#ffffff;"> KINO</span></div>
+        <tr><td align="center" style="padding:24px 28px 6px;">
+          <img src="${SITE_URL}/email-logo.png" width="240" alt="SAPKEFLY KINO" style="display:block;width:240px;max-width:72%;height:auto;border:0;margin:0 auto;" />
         </td></tr>
         <!-- title + intro -->
         <tr><td align="center" style="padding:14px 30px 0;">
