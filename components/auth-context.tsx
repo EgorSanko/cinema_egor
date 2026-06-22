@@ -8,10 +8,17 @@ interface User {
   name: string;
 }
 
+type RegisterResult = { error?: string; pending?: boolean; devCode?: string };
+type CodeResult = { error?: string; devCode?: string };
+
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<string | null>;
-  register: (name: string, email: string, password: string) => Promise<string | null>;
+  register: (name: string, email: string, password: string) => Promise<RegisterResult>;
+  verifyRegister: (email: string, code: string) => Promise<string | null>;
+  forgotPassword: (email: string) => Promise<CodeResult>;
+  resetPassword: (email: string, code: string, password: string) => Promise<string | null>;
+  resendCode: (email: string) => Promise<CodeResult>;
   logout: () => void;
   syncing: boolean;
 }
@@ -24,6 +31,15 @@ export function useAuth() {
   return ctx;
 }
 
+async function postAuth(payload: any) {
+  const res = await fetch("/api/auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -34,7 +50,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const parsed = JSON.parse(saved);
         setUser(parsed);
-        // Auto-sync on page load if logged in
         if (parsed?.email) {
           setSyncing(true);
           syncFromServer(parsed.email).finally(() => setSyncing(false));
@@ -43,48 +58,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = async (email: string, password: string): Promise<string | null> => {
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "login", email, password }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      setUser(data.user);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      // Sync data from server after login
-      setSyncing(true);
-      await syncFromServer(data.user.email);
-      setSyncing(false);
-      // Reload to reflect synced data
-      window.location.reload();
-      return null;
-    }
-    return data.error;
+  // Shared: persist the authenticated user, pull their server data, reflect it.
+  const completeAuth = async (u: User, reload: boolean) => {
+    setUser(u);
+    localStorage.setItem("user", JSON.stringify(u));
+    setSyncing(true);
+    await syncFromServer(u.email);
+    setSyncing(false);
+    if (reload) window.location.reload();
   };
 
-  const register = async (name: string, email: string, password: string): Promise<string | null> => {
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "register", name, email, password }),
-    });
-    const data = await res.json();
+  const login = async (email: string, password: string): Promise<string | null> => {
+    const data = await postAuth({ action: "login", email, password });
     if (data.success) {
-      setUser(data.user);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      // Sync local data to server for new user
-      setSyncing(true);
-      await syncFromServer(data.user.email);
-      setSyncing(false);
+      await completeAuth(data.user, true);
       return null;
     }
-    return data.error;
+    return data.error || "Ошибка входа";
+  };
+
+  // Register now stages a pending account and emails a code — caller then
+  // collects the code and calls verifyRegister.
+  const register = async (name: string, email: string, password: string): Promise<RegisterResult> => {
+    const data = await postAuth({ action: "register", name, email, password });
+    if (data.pending) return { pending: true, devCode: data.devCode };
+    return { error: data.error || "Ошибка регистрации" };
+  };
+
+  const verifyRegister = async (email: string, code: string): Promise<string | null> => {
+    const data = await postAuth({ action: "verify", email, code });
+    if (data.success) {
+      await completeAuth(data.user, false);
+      return null;
+    }
+    return data.error || "Неверный код";
+  };
+
+  const forgotPassword = async (email: string): Promise<CodeResult> => {
+    const data = await postAuth({ action: "forgot", email });
+    if (data.success) return { devCode: data.devCode };
+    return { error: data.error || "Ошибка" };
+  };
+
+  const resetPassword = async (email: string, code: string, password: string): Promise<string | null> => {
+    const data = await postAuth({ action: "reset", email, code, password });
+    if (data.success) {
+      await completeAuth(data.user, true);
+      return null;
+    }
+    return data.error || "Не удалось сменить пароль";
+  };
+
+  const resendCode = async (email: string): Promise<CodeResult> => {
+    const data = await postAuth({ action: "resend", email });
+    if (data.success) return { devCode: data.devCode };
+    return { error: data.error || "Не удалось отправить" };
   };
 
   const logout = () => {
-    // Save to server before logout
     const email = user?.email;
     if (email) {
       const data = {
@@ -102,7 +133,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })(),
         comments: JSON.parse(localStorage.getItem("kino_comments") || "[]"),
       };
-      // Fire and forget
       fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, syncing }}>
+    <AuthContext.Provider value={{ user, login, register, verifyRegister, forgotPassword, resetPassword, resendCode, logout, syncing }}>
       {children}
     </AuthContext.Provider>
   );
