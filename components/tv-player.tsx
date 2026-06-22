@@ -20,6 +20,7 @@ import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
+import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
 interface TVPlayerProps {
@@ -238,6 +239,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
     loadEpisodes();
   }, [selectedSeason, show.id]);
 
+  // Apply a fetched resolve with the smart default quality (connection-aware +
+  // remembered manual choice) instead of the backend's raw max.
+  const applyStream = (d: any) => {
+    const sq = pickDefaultQuality(d.streams, d.quality);
+    setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
+    setSelectedQuality(sq || d.quality);
+  };
+
   const fetchStream = async (season: number, episode: number, translatorId?: number | null) => {
     setLoading(true);
     setError("");
@@ -306,8 +315,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
           return;
         }
 
-        setStreamData(data);
-        setSelectedQuality(data.quality);
+        applyStream(data);
         if (data.translators && data.translators.length > 0 && translators.length === 0) {
           setTranslators(data.translators);
           if (!selectedTranslator) {
@@ -325,8 +333,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
           const res2 = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&index=" + i + "&season=" + season + "&episode=" + episode + trParam);
           const data2 = await res2.json();
           if (data2.stream) {
-            setStreamData(data2);
-            setSelectedQuality(data2.quality);
+            applyStream(data2);
             if (data2.translators && data2.translators.length > 0 && translators.length === 0) {
               setTranslators(data2.translators);
               if (!selectedTranslator) {
@@ -429,6 +436,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
 
   const changeQuality = (q: string) => {
     if (!streamData?.streams?.[q]) return;
+    setQualityPref(q); // remember explicit choice for future titles
     // ArtPlayer picks up the new stream URL via the streamUrl prop change.
     setSelectedQuality(q);
     setStreamData((prev: any) => prev ? { ...prev, stream: prev.streams[q] } : prev);

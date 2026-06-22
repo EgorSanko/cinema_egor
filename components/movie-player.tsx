@@ -19,6 +19,7 @@ import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
+import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
 interface MoviePlayerProps {
@@ -174,6 +175,14 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [movie.id]);
 
+  // Apply a fetched resolve with the smart default quality (connection-aware +
+  // remembered manual choice) instead of the backend's raw max.
+  const applyStream = (d: any) => {
+    const sq = pickDefaultQuality(d.streams, d.quality);
+    setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
+    setSelectedQuality(sq || d.quality);
+  };
+
   const fetchStream = async (translatorId?: number | null) => {
     if (isNotReleased) return;
     setLoading(true);
@@ -237,8 +246,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           return;
         }
 
-        setStreamData(data);
-        setSelectedQuality(data.quality);
+        applyStream(data);
         if (data.translators && data.translators.length > 0 && translators.length === 0) {
           setTranslators(data.translators);
           if (!selectedTranslator) {
@@ -255,8 +263,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           const res2 = await fetch("/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie&index=" + i + trParam);
           const data2 = await res2.json();
           if (data2.stream) {
-            setStreamData(data2);
-            setSelectedQuality(data2.quality);
+            applyStream(data2);
             if (data2.translators && data2.translators.length > 0 && translators.length === 0) {
               setTranslators(data2.translators);
               if (!selectedTranslator) {
@@ -277,8 +284,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         const resAlt = await fetch("/hdrezka/api/search?q=" + q2 + "&year=" + year + "&type=movie" + trParam);
         const dataAlt = await resAlt.json();
         if (dataAlt.stream) {
-          setStreamData(dataAlt);
-          setSelectedQuality(dataAlt.quality);
+          applyStream(dataAlt);
           if (dataAlt.translators && dataAlt.translators.length > 0 && translators.length === 0) {
             setTranslators(dataAlt.translators);
             if (!selectedTranslator) setSelectedTranslator(dataAlt.active_translator_id ?? dataAlt.translators[0].id);
@@ -352,6 +358,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
   const changeQuality = (q: string) => {
     if (!streamData?.streams?.[q]) return;
+    setQualityPref(q); // remember explicit choice for future titles
     setSelectedQuality(q);
     setStreamData((prev: any) => prev ? { ...prev, stream: prev.streams[q] } : prev);
   };
