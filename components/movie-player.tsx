@@ -339,13 +339,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     saveLastTranslator(movie.id, "movie", trId, trName);
     setShowTranslators(false);
     setTranslatorLoading(true);
+    // Resume at the current position once the new dub's stream loads — via the
+    // same reliable seekOnSwitch path the quality switch uses (the old fixed
+    // 500ms seek fired before the proxied stream was ready → restarted at 0).
     const currentTime = videoRef.current?.currentTime || 0;
+    setSeekOnSwitch(currentTime > 1 ? currentTime : undefined);
     await fetchStream(trId);
-    setTimeout(() => {
-      if (videoRef.current && currentTime > 0) {
-        videoRef.current.currentTime = currentTime;
-      }
-    }, 500);
   };
 
   // HLS loading + recovery + visibilitychange resume live inside ArtPlayerView now.

@@ -421,13 +421,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
     saveLastTranslator(show.id, "tv", trId, trName);
     setShowTranslators(false);
     setTranslatorLoading(true);
+    // Resume at the current position once the new dub loads — via the reliable
+    // seekOnSwitch path (the old fixed 500ms seek fired before the proxied
+    // stream was ready → restarted at 0).
     const currentTime = videoRef.current?.currentTime || 0;
+    setSeekOnSwitch(currentTime > 1 ? currentTime : undefined);
     await fetchStream(selectedSeason, selectedEpisode, trId);
-    setTimeout(() => {
-      if (videoRef.current && currentTime > 0) {
-        videoRef.current.currentTime = currentTime;
-      }
-    }, 500);
   };
 
   // Min-show маскота 800ms — гарантия что не моргнёт

@@ -448,10 +448,15 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // didn't have the position buffered yet), re-seek.
     const tryResume = () => {
       if (resumeOnceRef.current) return;
-      const t = resumeTimeRef.current;
+      // Quality / dub switch passes the live position via startPosOverrideRef;
+      // "Продолжить" passes the saved position via resumeTime. Seek to whichever
+      // is set once the fresh stream's metadata is ready (reliable — hls.js
+      // startPosition alone didn't stick across a switchUrl).
+      const t = startPosOverrideRef.current || resumeTimeRef.current;
       if (!t || t <= 5) return;
       if (!art.video || art.video.readyState < 1) return;
       resumeOnceRef.current = true;
+      startPosOverrideRef.current = 0; // consumed — committed to seeking t now
       try { art.video.currentTime = t; } catch {}
       // Watchdog: if something else (browser, HLS, ArtPlayer) seeks back
       // to 0 within a second, force the seek again. Try up to 5 times,
@@ -530,7 +535,8 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // the new resumeTime (if any) when the fresh source loads.
     resumeOnceRef.current = false;
     art.switchUrl(streamUrl).then(() => {
-      startPosOverrideRef.current = 0; // consume — don't leak to the next switch
+      // startPosOverrideRef is consumed inside tryResume (after the new stream's
+      // metadata loads) — don't clear it here, or the seek loses its target.
       if (wasPlaying) art.play().catch(() => {});
     });
   }, [streamUrl]);
