@@ -126,11 +126,15 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       p.then((d: any) => {
         if (!alive || !d?.stream) return;
         setAvailInfo({ quality: d.quality, dubs: (d.translators || []).length });
-        // Warm the CDN as soon as the page opens (not on "Смотреть" click): open
-        // the TLS/HTTP connection to the stream host and pull the manifest +
-        // first segment, so when the user hits play the connection is hot and
-        // the first chunk loads fast. Video is on HDRezka's CDN, not our server.
+        // Warm the CDN connection + manifest the moment the page opens.
         warmStream(d.stream);
+        // On a fast connection, go further: mount the player HIDDEN and let it
+        // pre-buffer (autoStart=false), so pressing "Смотреть" starts instantly.
+        // Skip on cellular/slow/data-saver to not burn mobile traffic.
+        const c: any = (navigator as any).connection;
+        const fast = !c || (!c.saveData && c.type !== "cellular" &&
+          c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
+        if (fast && !isNotReleased && !showPlayer) applyStream(d);
       });
     } catch {}
     return () => { alive = false; };
@@ -347,12 +351,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     if (isNotReleased) return;
     if (!requireAuth("Войдите, чтобы смотреть фильмы и сохранять прогресс")) return;
     setWantResume(resume);
-    if (!showPlayer) {
-      setShowPlayer(true);
-      fetchStream();
-    } else if (resume && resumeTime && videoRef.current) {
-      videoRef.current.currentTime = resumeTime;
-    }
+    if (resume && resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
+    setShowPlayer(true);
+    // If the player was already pre-warmed (streamData set on open), revealing it
+    // flips autoStart → the player starts the buffered video instantly. Only do a
+    // cold resolve when nothing is prewarmed yet.
+    if (!streamData?.stream) fetchStream();
   };
 
   const handleResume = () => {
@@ -416,8 +420,91 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
-          {!showPlayer ? (
-            <div className="w-full h-full relative cursor-pointer" onClick={() => openPlayer(false)}>
+          {/* Player mounts as soon as the stream resolves and pre-buffers
+              (autoStart=false) HIDDEN behind the poster on a fast connection, so
+              pressing "Смотреть" starts instantly. */}
+          {streamData?.stream && (
+            <ArtPlayerView
+              streamUrl={streamData.stream}
+              qualities={streamData.streams}
+              selectedQuality={selectedQuality}
+              onQualityChange={changeQuality}
+              translators={translators}
+              selectedTranslator={selectedTranslator}
+              onTranslatorChange={changeTranslator}
+              subtitles={subtitles}
+              selectedSubtitleId={selectedSubtitleId}
+              onSubtitleChange={setSelectedSubtitleId}
+              onLoadSubtitles={fetchSubtitles}
+              resumeTime={wantResume ? (resumeTime || undefined) : undefined}
+              autoStart={showPlayer}
+              onVideoReady={(v) => { videoRef.current = v; startSaving(); }}
+              onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
+              onPlayerContainerReady={setPlayerContainer}
+            />
+          )}
+          {streamData?.stream && showPlayer && (
+            <SkipOverlays videoRef={videoRef} playerContainer={playerContainer} tmdbId={movie.id} type="movie" />
+          )}
+          {streamData?.stream && showPlayer && translatorLoading && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-12 h-12 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
+                <p className="text-white text-sm">Смена озвучки...</p>
+              </div>
+            </div>
+          )}
+
+          {/* Loading mascot / error — only after play was pressed and the stream
+              isn't ready yet (cold start / slow connection). */}
+          {showPlayer && !streamData?.stream && error ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4 px-8 overflow-y-auto py-8">
+              <Clock size={48} className="text-gray-500" />
+              <p className="text-gray-300 text-center text-lg">{error}</p>
+              {translators.length > 1 ? (
+                <div className="w-full max-w-sm">
+                  <p className="text-[11px] uppercase tracking-wider text-white/45 font-semibold mb-2 text-center">Выберите озвучку</p>
+                  <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto">
+                    {Array.from(new Map(translators.map(t => [t.id, t])).values()).map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => { setError(""); fetchStream(t.id); }}
+                        className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-[14px] text-left transition-colors ${
+                          t.id === selectedTranslator ? "bg-primary/20 text-white" : "bg-white/[0.06] text-white hover:bg-white/[0.12]"
+                        }`}
+                      >
+                        <span>{t.name}</span>
+                        {t.id === selectedTranslator && <span className="text-primary text-xs">текущая</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center text-sm">Попробуйте позже или выберите другой фильм</p>
+              )}
+              <button onClick={() => fetchStream()} className="px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-medium transition-colors">Попробовать снова</button>
+            </div>
+          ) : showPlayer && !streamData?.stream && (loading || showLoadingMascot) ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-5">
+              <video
+                src="/mascot.webm"
+                autoPlay muted loop playsInline preload="auto" disablePictureInPicture
+                controlsList="nodownload noplaybackrate nofullscreen"
+                className="w-80 h-80 sm:w-96 sm:h-96 md:w-[28rem] md:h-[28rem] lg:w-[34rem] lg:h-[34rem] xl:w-[40rem] xl:h-[40rem] object-contain pointer-events-none select-none drop-shadow-[0_0_80px_rgba(163,230,53,0.3)]"
+                style={{ mixBlendMode: "screen" }}
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-lg font-semibold">{translatorLoading ? "Смена озвучки..." : "Загрузка фильма"}</p>
+                <p className="text-gray-500 text-sm">Поиск лучшего качества...</p>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Poster overlay — covers the (pre-buffering) player until play. */}
+          {!showPlayer && (
+            <div className="absolute inset-0 z-30 cursor-pointer" onClick={() => openPlayer(false)}>
               {backdropUrl && <img src={backdropUrl} alt={movie.title} className={"absolute inset-0 w-full h-full transition-transform duration-700 group-hover:scale-105 " + (movie.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/10 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-5">
@@ -476,107 +563,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                 </div>
               </div>
             </div>
-          ) : (loading || showLoadingMascot) && !streamData ? (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-5">
-              <video
-                src="/mascot.webm"
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="auto"
-                disablePictureInPicture
-                controlsList="nodownload noplaybackrate nofullscreen"
-                className="w-80 h-80 sm:w-96 sm:h-96 md:w-[28rem] md:h-[28rem] lg:w-[34rem] lg:h-[34rem] xl:w-[40rem] xl:h-[40rem] object-contain pointer-events-none select-none drop-shadow-[0_0_80px_rgba(163,230,53,0.3)]"
-                style={{ mixBlendMode: "screen" }}
-                aria-hidden="true"
-                tabIndex={-1}
-              />
-              <div className="flex flex-col items-center gap-1">
-                <p className="text-lg font-semibold">{translatorLoading ? "Смена озвучки..." : "Загрузка фильма"}</p>
-                <p className="text-gray-500 text-sm">Поиск лучшего качества...</p>
-              </div>
-            </div>
-          ) : error ? (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4 px-8 overflow-y-auto py-8">
-              <Clock size={48} className="text-gray-500" />
-              <p className="text-gray-300 text-center text-lg">{error}</p>
-              {/* Dub picker reachable from the error state — the player (and
-                  its switcher) isn't mounted when a premium stub was refused. */}
-              {translators.length > 1 ? (
-                <div className="w-full max-w-sm">
-                  <p className="text-[11px] uppercase tracking-wider text-white/45 font-semibold mb-2 text-center">Выберите озвучку</p>
-                  <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto">
-                    {Array.from(new Map(translators.map(t => [t.id, t])).values()).map(t => (
-                      <button
-                        key={t.id}
-                        onClick={() => { setError(""); fetchStream(t.id); }}
-                        className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-[14px] text-left transition-colors ${
-                          t.id === selectedTranslator ? "bg-primary/20 text-white" : "bg-white/[0.06] text-white hover:bg-white/[0.12]"
-                        }`}
-                      >
-                        <span>{t.name}</span>
-                        {t.id === selectedTranslator && <span className="text-primary text-xs">текущая</span>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-gray-500 text-center text-sm">Попробуйте позже или выберите другой фильм</p>
-              )}
-              <button onClick={() => fetchStream()} className="px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-medium transition-colors">Попробовать снова</button>
-            </div>
-          ) : streamData ? (
-            <>
-              <ArtPlayerView
-                streamUrl={streamData.stream}
-                qualities={streamData.streams}
-                selectedQuality={selectedQuality}
-                onQualityChange={changeQuality}
-                translators={translators}
-                selectedTranslator={selectedTranslator}
-                onTranslatorChange={changeTranslator}
-                subtitles={subtitles}
-                selectedSubtitleId={selectedSubtitleId}
-                onSubtitleChange={setSelectedSubtitleId}
-                onLoadSubtitles={fetchSubtitles}
-                resumeTime={wantResume ? (resumeTime || undefined) : undefined}
-                onVideoReady={(v) => {
-                  videoRef.current = v;
-                  startSaving();
-                  // Resume is handled inside ArtPlayerView (loadedmetadata).
-                }}
-                onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
-                onPlayerContainerReady={setPlayerContainer}
-              />
-              <SkipOverlays videoRef={videoRef} playerContainer={playerContainer} tmdbId={movie.id} type="movie" />
-              {translatorLoading && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
-                    <p className="text-white text-sm">Смена озвучки...</p>
-                  </div>
-                </div>
-              )}
-              {false && showResume && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-                  <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-sm mx-4 text-center space-y-4">
-                    <p className="text-white text-lg font-semibold">Продолжить просмотр?</p>
-                    <p className="text-gray-400 text-sm">{"Вы остановились на " + formatTime(resumeTime || 0)}</p>
-                    <div className="flex gap-3 justify-center">
-                      <button onClick={handleResume} className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors">
-                        Продолжить
-                      </button>
-                      <button onClick={handleStartOver} className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl font-medium transition-colors border border-white/10">
-                        Сначала
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            </>
-          ) : null}
+          )}
         </div>
 
 

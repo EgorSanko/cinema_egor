@@ -38,6 +38,9 @@ interface ArtPlayerProps {
   onLoadSubtitles?: () => void;
 
   resumeTime?: number;
+  /** When false, mount + buffer the stream but DON'T autoplay (hidden pre-warm).
+   *  The parent starts playback via the video ref it gets from onVideoReady. */
+  autoStart?: boolean;
   onVideoReady?: (v: HTMLVideoElement) => void;
   onVideoUnmount?: () => void;
   /** Called once ArtPlayer is mounted. Hands back the ArtPlayer-owned
@@ -219,6 +222,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     onSubtitleChange,
     onLoadSubtitles,
     resumeTime,
+    autoStart,
     onVideoReady,
     onVideoUnmount,
     onPlayerContainerReady,
@@ -233,6 +237,18 @@ export function ArtPlayerView(props: ArtPlayerProps) {
   // latest value — useState in the parent sets resumeTime AFTER mount.
   const resumeTimeRef = React.useRef(resumeTime);
   React.useEffect(() => { resumeTimeRef.current = resumeTime; }, [resumeTime]);
+  const autoStartRef = React.useRef(autoStart);
+  React.useEffect(() => { autoStartRef.current = autoStart; }, [autoStart]);
+  // When the parent reveals a pre-warmed (paused, pre-buffered) player, start
+  // playback — gives an instant start because the buffer is already filled.
+  React.useEffect(() => {
+    if (!autoStart) return;
+    const art = artRef.current;
+    const v = art?.video;
+    if (v && v.paused) {
+      v.play().catch(() => { try { (art as any).muted = true; v.play().catch(() => {}); } catch {} });
+    }
+  }, [autoStart]);
 
   // Mount ArtPlayer once; switch URL via switchUrl on changes
   React.useEffect(() => {
@@ -269,7 +285,14 @@ export function ArtPlayerView(props: ArtPlayerProps) {
             // passed a resumeTime — avoids the jarring load-from-0-then-jump.
             // -1 = normal start from 0 (the "Смотреть" path passes no resume).
             const _rt = resumeTimeRef.current;
-            const hls = new Hls({ enableWorker: true, startPosition: (_rt && _rt > 5) ? _rt : -1 });
+            const hls = new Hls({
+              enableWorker: true,
+              startPosition: (_rt && _rt > 5) ? _rt : -1,
+              // Faster cold start: prefetch the first fragment while the (large,
+              // full-movie) HDRezka manifest is still parsing.
+              startFragPrefetch: true,
+              backBufferLength: 30,
+            });
             hls.loadSource(url);
             hls.attachMedia(video);
             hlsRef.current = hls;
@@ -322,7 +345,9 @@ export function ArtPlayerView(props: ArtPlayerProps) {
           }
         } catch {}
       };
-      tryAutoplay();
+      // Skip autoplay during a hidden pre-warm (autoStart === false) — the
+      // parent starts playback when the user actually presses play.
+      if (autoStartRef.current !== false) tryAutoplay();
 
       try {
         const playerEl = (art as any)?.template?.$player as HTMLElement | undefined;
