@@ -410,8 +410,21 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     const fast = fastQRef.current;
     const direct = streamData.streams[q];
     const url = fast && fast.includes(q) ? direct : hlsProxyUrl(direct);
+    // The source reload restarts at 0 and the player can sneak in a pause once
+    // the new stream is ready — restore the position and re-assert play for a
+    // few seconds so a quality switch doesn't "load forever" or jump to start.
+    const pos = videoRef.current?.currentTime || 0;
     setSelectedQuality(q);
     setStreamData((prev: any) => prev ? { ...prev, stream: url } : prev);
+    let n = 0;
+    const iv = setInterval(() => {
+      const v = videoRef.current;
+      if (v && v.readyState >= 1) {
+        if (pos > 1 && Math.abs(v.currentTime - pos) > 3) { try { v.currentTime = pos; } catch {} }
+        if (v.paused && v.readyState >= 2) v.play().catch(() => {});
+      }
+      if (++n > 22) clearInterval(iv);
+    }, 400);
   };
 
   const toggleFullscreen = () => {

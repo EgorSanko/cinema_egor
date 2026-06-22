@@ -487,9 +487,20 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const fast = fastQRef.current;
     const direct = streamData.streams[q];
     const url = fast && fast.includes(q) ? direct : hlsProxyUrl(direct);
-    // ArtPlayer picks up the new stream URL via the streamUrl prop change.
+    // Restore position + re-assert play after the source reload (it restarts at
+    // 0 and can sneak in a pause) so a quality switch doesn't "load forever".
+    const pos = videoRef.current?.currentTime || 0;
     setSelectedQuality(q);
     setStreamData((prev: any) => prev ? { ...prev, stream: url } : prev);
+    let n = 0;
+    const iv = setInterval(() => {
+      const v = videoRef.current;
+      if (v && v.readyState >= 1) {
+        if (pos > 1 && Math.abs(v.currentTime - pos) > 3) { try { v.currentTime = pos; } catch {} }
+        if (v.paused && v.readyState >= 2) v.play().catch(() => {});
+      }
+      if (++n > 22) clearInterval(iv);
+    }, 400);
   };
 
   const selectEpisode = (season: number, episode: number) => {
