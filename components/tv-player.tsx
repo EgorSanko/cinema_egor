@@ -21,7 +21,7 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
-import { probeFastQualities } from "@/lib/quality-probe";
+import { probeFastQualities, streamUrlFor, hlsProxyUrl, isTierFast } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -271,8 +271,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
-    const sq = pickDefaultQuality(d.streams, d.quality, d.fast ?? fastQRef.current ?? undefined);
-    setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
+    const fastSet = d.fast ?? fastQRef.current ?? null;
+    const sq = pickDefaultQuality(d.streams, d.quality, fastSet ?? undefined);
+    // Route a throttled default through the LeadSeek proxy (no-op when fast).
+    const url = sq && d.streams?.[sq] ? streamUrlFor(sq, d.streams[sq], fastSet) : d.stream;
+    setStreamData(sq && d.streams?.[sq] ? { ...d, stream: url, quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     if (d.translators?.length) {
       setTranslators(d.translators);
@@ -479,9 +482,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const changeQuality = (q: string) => {
     if (!streamData?.streams?.[q]) return;
     setQualityPref(q); // remember explicit choice for future titles
+    // Known-fast tiers play direct; anything else routes through the LeadSeek
+    // proxy (deterministic — a chosen high tier never lands on a dead edge).
+    const fast = fastQRef.current;
+    const direct = streamData.streams[q];
+    const url = fast && fast.includes(q) ? direct : hlsProxyUrl(direct);
     // ArtPlayer picks up the new stream URL via the streamUrl prop change.
     setSelectedQuality(q);
-    setStreamData((prev: any) => prev ? { ...prev, stream: prev.streams[q] } : prev);
+    setStreamData((prev: any) => prev ? { ...prev, stream: url } : prev);
   };
 
   const selectEpisode = (season: number, episode: number) => {

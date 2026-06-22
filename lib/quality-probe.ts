@@ -53,6 +53,37 @@ async function probeTier(manifestUrl: string): Promise<number> {
   }
 }
 
+// LeadSeek HLS proxy — for tiers HDRezka throttles on this viewer's route. The
+// proxy fetches the manifest + segments from its (fast) route to the CDN edge
+// and relays them, so a tier that hangs direct loads normally through here.
+// Path ends in .m3u8 so ArtPlayer routes it to the hls.js handler (it picks the
+// player type by URL extension); without it the proxy manifest never reaches
+// hls.js and segments aren't proxied.
+const HLS_PROXY = "https://kino.lead-seek.ru/hdrezka/api/hls.m3u8?u=";
+
+export function hlsProxyUrl(directManifestUrl: string): string {
+  const b64 = btoa(unescape(encodeURIComponent(directManifestUrl)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return HLS_PROXY + b64;
+}
+
+/** Probe a single tier — true if it loads fast for this viewer. */
+export async function isTierFast(directManifestUrl: string): Promise<boolean> {
+  return (await probeTier(directManifestUrl)) >= FAST_BYTES;
+}
+
+/** Pick the URL to actually play for a tier: direct when it's in the known-fast
+ *  set, otherwise routed through the LeadSeek proxy (throttled on this route, or
+ *  the probe found nothing fast at all → fast=[]). No probe info → play direct. */
+export function streamUrlFor(
+  quality: string,
+  directUrl: string,
+  fast?: string[] | null
+): string {
+  if (fast && !fast.includes(quality)) return hlsProxyUrl(directUrl);
+  return directUrl;
+}
+
 /** Return the tiers that load fast for THIS viewer, fastest-first.
  *  Optimised for the common case: probe plain 1080p (the usual default) first —
  *  if it's fast we stop there (one cheap sample, no extra bandwidth). Only when

@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
@@ -79,6 +80,93 @@ async def send_mail(req: _SendMailReq):
         return {"ok": True}
     except Exception as e:
         return {"error": str(e)}
+
+# ── HLS proxy ─────────────────────────────────────────────────────────────────
+# HDRezka's CDN throttles some quality tiers down to ~0 on a given viewer's
+# network ROUTE to the assigned edge (it 302s each request to e.g.
+# phantom.laptostack.org). THIS box (LeadSeek) has a fast route to those edges
+# (measured 5.9 MB/s on a segment that hangs elsewhere), so for a throttled tier
+# the player streams through here instead of direct: we rewrite the HLS manifest
+# so every segment / sub-playlist / key flows back through this proxy. Only used
+# for tiers the client probe found throttled — normal viewing stays direct.
+import base64 as _b64
+
+_HLS_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Referer": "https://hdrezka.ag/",
+}
+_PROXY_BASE = _os.environ.get("HLS_PROXY_BASE", "https://kino.lead-seek.ru/hdrezka")
+
+def _dec_u(u: str) -> str:
+    s = u.replace("-", "+").replace("_", "/")
+    s += "=" * (-len(s) % 4)
+    return _b64.b64decode(s).decode("utf-8")
+
+def _enc_u(url: str) -> str:
+    return _b64.urlsafe_b64encode(url.encode()).decode().rstrip("=")
+
+def _resolve(base: str, ref: str) -> str:
+    # HDRezka segment names contain ':' (file.mp4:hls:seg.ts), which urljoin
+    # mistakes for a scheme — so resolve relatives by hand against the dir.
+    if ref.startswith("http://") or ref.startswith("https://"):
+        return ref
+    return base[: base.rfind("/") + 1] + ref
+
+import re as _re_hls
+def _rewrite_uri_attr(line: str, base: str) -> str:
+    def _repl(m):
+        abs_ = _resolve(base, m.group(1))
+        ep = "/api/hls.m3u8?u=" if ".m3u8" in m.group(1) else "/api/hls/seg?u="
+        return 'URI="' + _PROXY_BASE + ep + _enc_u(abs_) + '"'
+    return _re_hls.sub(r'URI="([^"]+)"', _repl, line)
+
+# NOTE: path ends in .m3u8 ON PURPOSE — ArtPlayer picks the HLS (hls.js) handler
+# by URL extension, so the proxied manifest must look like a .m3u8 or it falls
+# through to a plain <video src> and the segments never get proxied.
+@app.get("/api/hls.m3u8")
+async def hls_manifest(u: str):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    try:
+        r = await hdrezka_http.DEFAULT_CLIENT.get(url, headers=_HLS_HEADERS, follow_redirects=True)
+        base = str(r.url)
+        out = []
+        for line in r.text.splitlines():
+            s = line.strip()
+            if not s:
+                out.append(line)
+            elif s.startswith("#"):
+                out.append(_rewrite_uri_attr(s, base) if 'URI="' in s else s)
+            else:
+                abs_ = _resolve(base, s)
+                ep = "/api/hls.m3u8?u=" if ".m3u8" in s else "/api/hls/seg?u="
+                out.append(_PROXY_BASE + ep + _enc_u(abs_))
+        return Response("\n".join(out) + "\n", media_type="application/vnd.apple.mpegurl",
+                        headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        return Response("err: " + str(e), status_code=502)
+
+@app.get("/api/hls/seg")
+async def hls_seg(u: str):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    try:
+        req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=_HLS_HEADERS)
+        r = await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
+        ct = r.headers.get("content-type", "video/mp2t")
+        async def gen():
+            try:
+                async for chunk in r.aiter_bytes():
+                    yield chunk
+            finally:
+                await r.aclose()
+        return StreamingResponse(gen(), media_type=ct, headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        return Response("err: " + str(e), status_code=502)
 
 # Short-TTL cache for /api/search. The HDRezka resolve takes ~2-3s (it fetches
 # the post page to probe premium dubs, then resolves the stream); caching the

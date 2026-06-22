@@ -20,7 +20,7 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
-import { probeFastQualities } from "@/lib/quality-probe";
+import { probeFastQualities, streamUrlFor, hlsProxyUrl, isTierFast } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 
@@ -206,8 +206,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
-    const sq = pickDefaultQuality(d.streams, d.quality, d.fast ?? fastQRef.current ?? undefined);
-    setStreamData(sq && d.streams?.[sq] ? { ...d, stream: d.streams[sq], quality: sq } : d);
+    const fastSet = d.fast ?? fastQRef.current ?? null;
+    const sq = pickDefaultQuality(d.streams, d.quality, fastSet ?? undefined);
+    // Route a throttled default through the LeadSeek proxy so it isn't a "stuck"
+    // black screen on this viewer's route (no-op when the tier is fast → direct).
+    const url = sq && d.streams?.[sq] ? streamUrlFor(sq, d.streams[sq], fastSet) : d.stream;
+    setStreamData(sq && d.streams?.[sq] ? { ...d, stream: url, quality: sq } : d);
     setSelectedQuality(sq || d.quality);
     // Populate the dub list here too — the pre-warm path (mount on open) sets the
     // stream via applyStream but NOT through fetchStream, so without this the
@@ -399,8 +403,15 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const changeQuality = (q: string) => {
     if (!streamData?.streams?.[q]) return;
     setQualityPref(q); // remember explicit choice for future titles
+    // Tiers the page-open probe confirmed fast play direct; anything else
+    // (throttled on this route, or not probed) goes through the LeadSeek proxy
+    // — deterministic, so a manually picked high tier never lands on a dead
+    // direct edge. Extra proxy bytes on a chosen high tier are acceptable.
+    const fast = fastQRef.current;
+    const direct = streamData.streams[q];
+    const url = fast && fast.includes(q) ? direct : hlsProxyUrl(direct);
     setSelectedQuality(q);
-    setStreamData((prev: any) => prev ? { ...prev, stream: prev.streams[q] } : prev);
+    setStreamData((prev: any) => prev ? { ...prev, stream: url } : prev);
   };
 
   const toggleFullscreen = () => {
