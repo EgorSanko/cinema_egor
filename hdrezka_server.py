@@ -21,6 +21,65 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 logged_in = False
 
+# ── Mail relay ────────────────────────────────────────────────────────────────
+# The web-VPS (Next app) can't egress SMTP — its host blocks 25/465/587. THIS box
+# (LeadSeek) can reach smtp.beget.com:465, so the Next auth route renders the
+# verification / reset email and POSTs it here to be relayed via Beget. Secret-
+# gated: the endpoint is reachable through the public /hdrezka/ proxy, so without
+# the shared secret it can't be abused to send mail as noreply@sapkeflykino.ru.
+# SMTP creds + secret live in /root/movie/.mailenv (NOT in git), loaded here.
+import os as _os, smtplib as _smtplib, ssl as _ssl2
+from email.message import EmailMessage as _EmailMessage
+from pydantic import BaseModel as _BaseModel
+
+def _load_mailenv(path="/root/movie/.mailenv"):
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                _os.environ.setdefault(k.strip(), v.strip())
+    except FileNotFoundError:
+        pass
+_load_mailenv()
+
+class _SendMailReq(_BaseModel):
+    to: str
+    subject: str
+    text: str = ""
+    html: str = ""
+    secret: str = ""
+
+@app.post("/api/send-mail")
+async def send_mail(req: _SendMailReq):
+    secret = _os.environ.get("MAIL_SECRET", "")
+    if not secret or req.secret != secret:
+        return {"error": "forbidden"}
+    user = _os.environ.get("SMTP_USER", "")
+    pw = _os.environ.get("SMTP_PASS", "")
+    if not (user and pw):
+        return {"error": "smtp not configured"}
+    host = _os.environ.get("SMTP_HOST", "smtp.beget.com")
+    port = int(_os.environ.get("SMTP_PORT", "465"))
+    frm = _os.environ.get("MAIL_FROM", "sapkeflykino <noreply@sapkeflykino.ru>")
+    msg = _EmailMessage()
+    msg["From"] = frm
+    msg["To"] = req.to
+    msg["Subject"] = req.subject
+    msg.set_content(req.text or " ")
+    if req.html:
+        msg.add_alternative(req.html, subtype="html")
+    try:
+        ctx = _ssl2.create_default_context()
+        with _smtplib.SMTP_SSL(host, port, context=ctx, timeout=20) as s:
+            s.login(user, pw)
+            s.send_message(msg)
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
 # Short-TTL cache for /api/search. The HDRezka resolve takes ~2-3s (it fetches
 # the post page to probe premium dubs, then resolves the stream); caching the
 # parsed result makes prefetch→click and repeat opens near-instant. TTL is kept

@@ -1,40 +1,21 @@
-import nodemailer from "nodemailer";
-
 // Transactional email for auth (verification + password reset).
-// Configured entirely via env so creds never live in the repo:
-//   SMTP_HOST   e.g. smtp.beget.com
-//   SMTP_PORT   465
-//   SMTP_SECURE "true" for 465 (SSL), "false" for 587 (STARTTLS)
-//   SMTP_USER   e.g. noreply@sapkeflykino.ru
-//   SMTP_PASS   mailbox password
-//   MAIL_FROM   e.g. "sapkeflykino <noreply@sapkeflykino.ru>"
-// Deliverability (not spam) relies on the sending DOMAIN having SPF + DKIM +
-// DMARC. sapkeflykino.ru is on Beget (SPF already set); enable DKIM in the
-// Beget panel and add a DMARC record — see the setup notes shipped with this.
+//
+// The web-VPS that runs this Next app CANNOT egress SMTP — its host blocks ports
+// 25/465/587 (anti-spam). So instead of talking to Beget directly (nodemailer
+// just hung), we POST the rendered email to a small secret-gated relay on the
+// LeadSeek box (kino-api `/api/send-mail`), which CAN reach smtp.beget.com:465
+// and sends it as noreply@sapkeflykino.ru.
+//   MAIL_RELAY_URL  e.g. https://kino.lead-seek.ru/hdrezka/api/send-mail
+//   MAIL_SECRET     shared secret, must match the relay's .mailenv
+// Deliverability (not spam) relies on the DOMAIN having SPF + DKIM + DMARC.
+// sapkeflykino.ru is on Beget (SPF set); enable DKIM in the Beget panel + add a
+// DMARC record for best inbox placement.
 
-const HOST = process.env.SMTP_HOST || "";
-const PORT = parseInt(process.env.SMTP_PORT || "465", 10);
-const SECURE = (process.env.SMTP_SECURE ?? "true") === "true";
-const USER = process.env.SMTP_USER || "";
-const PASS = process.env.SMTP_PASS || "";
-const FROM = process.env.MAIL_FROM || "sapkeflykino <noreply@sapkeflykino.ru>";
-
-let _transport: nodemailer.Transporter | null = null;
-function transport(): nodemailer.Transporter | null {
-  if (!HOST || !USER || !PASS) return null; // not configured → caller logs instead
-  if (!_transport) {
-    _transport = nodemailer.createTransport({
-      host: HOST,
-      port: PORT,
-      secure: SECURE,
-      auth: { user: USER, pass: PASS },
-    });
-  }
-  return _transport;
-}
+const RELAY_URL = process.env.MAIL_RELAY_URL || "";
+const RELAY_SECRET = process.env.MAIL_SECRET || "";
 
 export function isEmailConfigured(): boolean {
-  return !!(HOST && USER && PASS);
+  return !!(RELAY_URL && RELAY_SECRET);
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://sapkeflykino.ru";
@@ -110,19 +91,32 @@ function codeEmail(code: string, purpose: "verify" | "reset") {
   return { subject, text, html };
 }
 
-/** Send a verification / reset code. Returns true if actually emailed,
- *  false if SMTP isn't configured (caller decides how to surface the code). */
+/** Send a verification / reset code via the LeadSeek relay. Returns true if the
+ *  relay accepted it, false if not configured / it failed (caller decides how to
+ *  surface the code — e.g. AUTH_DEV_CODES shows it on screen as a fallback). */
 export async function sendCode(
   to: string,
   code: string,
   purpose: "verify" | "reset"
 ): Promise<boolean> {
-  const t = transport();
   const { subject, text, html } = codeEmail(code, purpose);
-  if (!t) {
+  if (!isEmailConfigured()) {
     console.log(`[email:NOT-CONFIGURED] would send ${purpose} code ${code} to ${to}`);
     return false;
   }
-  await t.sendMail({ from: FROM, to, subject, text, html });
-  return true;
+  try {
+    const r = await fetch(RELAY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, subject, text, html, secret: RELAY_SECRET }),
+      signal: AbortSignal.timeout(25_000),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (data?.ok) return true;
+    console.error(`[email:RELAY-FAIL] ${purpose} to ${to}:`, data?.error || r.status);
+    return false;
+  } catch (e: any) {
+    console.error(`[email:RELAY-ERR] ${purpose} to ${to}:`, e?.message || e);
+    return false;
+  }
 }
