@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import type { MovieDetails } from "@/lib/tmdb";
-import { SendToTV } from './send-to-tv';
 import { MovieDownloadButton } from './movie-download-button';
 import {
   Play, Film, ChevronDown, Mic, Clock, CalendarDays, Users,
@@ -637,21 +636,6 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                     >
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
-                  )}
-                  {streamData && (
-                    <SendToTV
-                      streamData={{
-                        stream: streamData.stream, quality: selectedQuality, streams: streamData.streams,
-                        title: streamData.title || movie.title,
-                        translators, selectedTranslator,
-                        searchQuery: movie.title,
-                        year: movie.release_date ? new Date(movie.release_date).getFullYear().toString() : "",
-                        isSeries: false,
-                        mediaId: movie.id, mediaType: "movie",
-                        poster_path: movie.poster_path, vote_average: movie.vote_average,
-                        release_date: movie.release_date,
-                      }}
-                    />
                   )}
                   <MovieDownloadButton type="movie" movie={{
                     id: movie.id,

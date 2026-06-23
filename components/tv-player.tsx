@@ -1,5 +1,4 @@
 ﻿"use client";
-import { SendToTV } from './send-to-tv';
 import { MovieDownloadButton } from './movie-download-button';
 
 import type { TVShowDetails } from "@/lib/tmdb";
@@ -870,23 +869,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   </button>
 
                   {/* Compact chips — feature shortcuts that used to live in the bottom options bar */}
-                  {streamData && (
-                    <SendToTV
-                      streamData={{
-                        stream: streamData.stream, quality: selectedQuality, streams: streamData.streams,
-                        title: show.name + " S" + selectedSeason + "E" + selectedEpisode,
-                        translators, selectedTranslator,
-                        searchQuery: show.name,
-                        year: show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : "",
-                        season: selectedSeason, episode: selectedEpisode, isSeries: true,
-                        totalSeasons: validSeasons.length, totalEpisodes: episodes.length,
-                        mediaId: show.id, mediaType: "tv",
-                        poster_path: show.poster_path, vote_average: show.vote_average,
-                        first_air_date: show.first_air_date,
-                        episodeName: episodes.find(e => e.episode_number === selectedEpisode)?.name || "",
-                      }}
-                    />
-                  )}
                   <MovieDownloadButton
                     type="tv"
                     show={{
