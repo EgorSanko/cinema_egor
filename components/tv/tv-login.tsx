@@ -36,7 +36,7 @@ const KB_ROWS: string[][] = [
 ];
 
 // Special action cells appended as their own rows.
-const ROW_EDIT = ["SPACE", "DEL", "FIELD"]; // space, backspace, switch field
+const ROW_EDIT = ["SHIFT", "SPACE", "DEL", "FIELD"]; // case toggle, space, backspace, switch field
 const ROW_ACT = ["LOGIN", "REGISTER"]; // submit / toggle register
 
 // Build the full focusable grid: keyboard rows + edit row + action row.
@@ -66,6 +66,7 @@ export function TvLogin() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState(""); // register only
   const [activeField, setActiveField] = useState<Field>("email");
+  const [shift, setShift] = useState(false); // sticky upper-case toggle
 
   // Register flow: "login" -> normal; "register" -> collecting name/email/pw;
   // "verify" -> entering the 6-digit code emailed to the user.
@@ -232,6 +233,7 @@ export function TvLogin() {
   const press = useCallback(
     (cell: string) => {
       switch (cell) {
+        case "SHIFT": setShift((s) => !s); break;
         case "SPACE": typeChar(" "); break;
         case "DEL": del(); break;
         case "FIELD": switchField(); break;
@@ -255,10 +257,11 @@ export function TvLogin() {
           }
           break;
         default:
-          typeChar(cell); // a normal character key
+          // upper-case letters when Shift is on (passwords are case-sensitive)
+          typeChar(shift && /^[a-z]$/.test(cell) ? cell.toUpperCase() : cell);
       }
     },
-    [typeChar, del, switchField, mode, doLogin, doRegister, doVerify]
+    [typeChar, del, switchField, mode, doLogin, doRegister, doVerify, shift]
   );
 
   // ── D-pad handler — mirror tv-home's model. ──
@@ -376,7 +379,11 @@ export function TvLogin() {
             <div key={rIdx} className="flex gap-2">
               {cells.map((cell, cIdx) => {
                 const focused = focus.row === rIdx && focus.col === cIdx;
-                const label = KEY_LABEL[cell] ?? cell.toUpperCase();
+                const label =
+                  cell === "SHIFT"
+                    ? shift ? "⇧ ABC" : "⇧ abc"
+                    : KEY_LABEL[cell] ?? (shift ? cell.toUpperCase() : cell);
+                const shiftActive = cell === "SHIFT" && shift;
                 const wide = isActionRow;
                 return (
                   <button
@@ -395,12 +402,16 @@ export function TvLogin() {
                       height: 64,
                       paddingInline: wide ? 24 : 0,
                       fontSize: wide ? 22 : 26,
-                      background: focused ? "var(--primary)" : "var(--card)",
+                      background: focused
+                        ? "var(--primary)"
+                        : shiftActive ? "rgba(163,230,53,0.22)" : "var(--card)",
                       color: focused ? "var(--primary-foreground)" : "var(--foreground)",
                       transform: focused ? "scale(1.08)" : "scale(1)",
                       boxShadow: focused
                         ? "0 0 0 4px var(--primary), 0 10px 28px rgba(0,0,0,0.55)"
-                        : "0 2px 10px rgba(0,0,0,0.4)",
+                        : shiftActive
+                          ? "0 0 0 2px var(--primary)"
+                          : "0 2px 10px rgba(0,0,0,0.4)",
                     }}
                   >
                     {label}
