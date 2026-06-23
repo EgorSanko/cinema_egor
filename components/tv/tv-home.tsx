@@ -20,7 +20,7 @@ export type TvRail = {
 };
 
 // Card geometry — large, readable from across a room.
-const CARD_W = 240; // px
+const CARD_W = 158; // px
 
 // Header controls, navigated left/right when the header row is focused.
 type HeaderCell = "search" | "logout";
@@ -273,18 +273,18 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       style={{ background: "var(--background)" }}
     >
       {/* Top bar — brand logo + email + focusable controls (Поиск / Выйти) */}
-      <header className="px-12 pt-10 pb-6 flex items-center gap-6">
+      <header className="px-10 pt-6 pb-3 flex items-center gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
           alt="SAPKEFLY KINO"
           draggable={false}
-          className="h-16 w-auto"
-          style={{ filter: "drop-shadow(0 0 22px rgba(163,230,53,0.45))" }}
+          className="h-10 w-auto"
+          style={{ filter: "drop-shadow(0 0 18px rgba(163,230,53,0.45))" }}
         />
         <div className="flex-1" />
         {user && (
-          <span className="text-base text-muted-foreground truncate max-w-[280px]">
+          <span className="text-sm text-muted-foreground truncate max-w-[220px]">
             {user.email}
           </span>
         )}
@@ -303,7 +303,7 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                 else logout();
               }}
               onFocus={() => { setInHeader(true); setHeaderCol(i); }}
-              className="rounded-lg px-6 py-3 text-xl font-semibold outline-none transition-transform duration-100"
+              className="rounded-lg px-4 py-2 text-base font-semibold outline-none transition-transform duration-100"
               style={{
                 background: focused ? "var(--primary)" : "var(--card)",
                 color: focused ? "var(--primary-foreground)" : "var(--foreground)",
@@ -320,14 +320,14 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       </header>
 
       {/* Vertical stack of rails */}
-      <div className="flex flex-col gap-12 pb-24">
+      <div className="flex flex-col gap-5 pb-10">
         {rails.map((rail, rIdx) => (
           <section key={rail.title}>
-            <h2 className="px-12 mb-4 text-3xl font-bold text-foreground">
+            <h2 className="px-10 mb-2 text-xl font-bold text-foreground">
               {rail.title}
             </h2>
             <div
-              className="flex gap-6 overflow-x-auto px-12 pb-2"
+              className="flex gap-3 overflow-x-auto px-10 pb-2"
               style={{ scrollbarWidth: "none" }}
             >
               {rail.cards.map((card, cIdx) => {
@@ -371,14 +371,14 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                         style={{ aspectRatio: "2 / 3" }}
                       />
                     </div>
-                    <div className="mt-3 px-1">
+                    <div className="mt-2 px-1">
                       <p
-                        className="truncate text-xl font-semibold text-foreground"
+                        className="truncate text-sm font-semibold text-foreground"
                         title={card.title}
                       >
                         {card.title}
                       </p>
-                      <p className="text-base text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         {card.year}
                       </p>
                     </div>

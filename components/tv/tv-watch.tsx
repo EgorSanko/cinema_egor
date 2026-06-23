@@ -56,8 +56,12 @@ type ResolveData = {
 
 type Episode = { episode_number: number; name: string; still_path: string | null; air_date: string };
 
-// Which overlay/zone currently owns the D-pad.
-type Zone = "picker" | "loading" | "player" | "controls" | "settings";
+// Which screen currently owns the D-pad. The in-player overlay is a SEPARATE
+// state machine (`overlay` below) so that the player can be in "none" /
+// "controls" / "settings" independently.
+type Zone = "picker" | "loading" | "player";
+// In-player overlay state machine.
+type Overlay = "none" | "controls" | "settings";
 
 const fmt = (s: number) => {
   if (!s || !isFinite(s)) return "0:00";
@@ -113,9 +117,12 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
   // ── Playback / overlay state ──
   const [zone, setZone] = useState<Zone>(isSeries ? "picker" : "loading");
+  // The in-player overlay state machine: none → controls → settings.
+  const [overlay, setOverlay] = useState<Overlay>("none");
   const [playing, setPlaying] = useState(true);
   const [pt, setPt] = useState(0);
   const [pd, setPd] = useState(0);
+  // Controls row: 0 ⏪ rewind, 1 ⏯ play/pause, 2 ⏩ forward, 3 ⚙ settings, 4 ✕ exit.
   const [ctrlIdx, setCtrlIdx] = useState(1); // default focus on Play/Pause
   const [settingsTab, setSettingsTab] = useState<0 | 1 | 2>(0); // 0 quality 1 dub 2 episodes
   const [settingsIdx, setSettingsIdx] = useState(0);
@@ -345,12 +352,37 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   }, [season, episode, isSeries, media]);
 
   // ── Controls auto-hide ──
+  // Show the controls bar and (re)arm the ~5s auto-hide timer. Never auto-hides
+  // while the settings panel is open.
   const revealControls = useCallback(() => {
-    setZone("controls");
+    setOverlay("controls");
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
-      setZone((z) => (z === "controls" ? "player" : z));
-    }, 4000);
+      setOverlay((o) => (o === "controls" ? "none" : o));
+    }, 5000);
+  }, []);
+
+  // Reset the auto-hide timer on every handled key press (no-op while settings
+  // is open — settings must stay until Back).
+  const bumpHideTimer = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      setOverlay((o) => (o === "controls" ? "none" : o));
+    }, 5000);
+  }, []);
+
+  // Briefly flash the controls bar on a blind seek, then let it auto-hide.
+  const flashControls = useCallback(() => {
+    setOverlay("controls");
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      setOverlay((o) => (o === "controls" ? "none" : o));
+    }, 1800);
+  }, []);
+
+  // Clear any pending auto-hide (used when entering settings).
+  const clearHideTimer = useCallback(() => {
+    if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
   }, []);
 
   // ════════════════════════════════════════════════════════════════
@@ -395,6 +427,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     setSeason(s);
     setEpisode(e);
     saveLastEpisode(media.id, s, e);
+    setOverlay("none");
     setZone("loading");
     const ok = await resolve({ s, e });
     setZone(ok ? "player" : "picker");
@@ -406,6 +439,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     saveNow();
     if (videoRef.current) videoRef.current.pause();
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    setOverlay("none");
     if (isSeries) {
       setData(null);
       setZone("picker");
@@ -466,75 +500,83 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         return;
       }
 
-      // ────────── SETTINGS PANEL (Качество / Озвучка / Серии) ──────────
-      if (zone === "settings") {
-        const tabs: Array<0 | 1 | 2> = isSeries ? [0, 1, 2] : [0, 1];
-        const qualities = data?.streams ? Object.keys(data.streams) : [];
-        const list =
-          settingsTab === 0 ? qualities
-          : settingsTab === 1 ? translators.map((t) => t.name)
-          : episodes.map((ep) => `${ep.episode_number}. ${ep.name || "Серия"}`);
+      // From here on we are in the PLAYER (zone === "player"). The overlay
+      // state machine (none / controls / settings) owns the D-pad.
 
-        if (isBack) { setZone("controls"); revealControls(); return; }
+      // ════════ overlay === "settings" ════════
+      // Panel with tabs Качество / Озвучка / Серии and a scrollable list.
+      if (overlay === "settings") {
+        const tabs: Array<0 | 1 | 2> = isSeries ? [0, 1, 2] : [0, 1];
+        const list =
+          settingsTab === 0 ? (data?.streams ? Object.keys(data.streams) : [])
+          : settingsTab === 1 ? translators.map((t) => t.name)
+          : episodes.map((ep) => `${ep.episode_number}`);
+
+        // Back → close settings → controls (NOT exit the player).
+        if (isBack) { setOverlay("controls"); revealControls(); return; }
+        // ◀▶ switch the active tab.
         if (isLeft) {
           const ti = tabs.indexOf(settingsTab);
           if (ti > 0) { setSettingsTab(tabs[ti - 1]); setSettingsIdx(0); }
         } else if (isRight) {
           const ti = tabs.indexOf(settingsTab);
           if (ti < tabs.length - 1) { setSettingsTab(tabs[ti + 1]); setSettingsIdx(0); }
+        // ▲▼ move focus within the active list.
         } else if (isUp) {
           setSettingsIdx((i) => Math.max(0, i - 1));
         } else if (isDown) {
           setSettingsIdx((i) => Math.min(Math.max(0, list.length - 1), i + 1));
-        } else if (isEnter || isSpace) {
-          if (settingsTab === 0 && qualities[settingsIdx]) { changeQuality(qualities[settingsIdx]); setZone("player"); }
-          else if (settingsTab === 1 && translators[settingsIdx]) { changeTranslator(translators[settingsIdx].id); setZone("player"); }
-          else if (settingsTab === 2 && episodes[settingsIdx]) { playEpisode(season, episodes[settingsIdx].episode_number); }
+        // OK → select the focused item; KEEP settings open afterwards.
+        } else if (isEnter || isSpace || isPlayPause) {
+          const qualities = data?.streams ? Object.keys(data.streams) : [];
+          if (settingsTab === 0 && qualities[settingsIdx]) changeQuality(qualities[settingsIdx]);
+          else if (settingsTab === 1 && translators[settingsIdx]) changeTranslator(translators[settingsIdx].id);
+          else if (settingsTab === 2 && episodes[settingsIdx]) playEpisode(season, episodes[settingsIdx].episode_number);
         }
         return;
       }
 
-      // ────────── PLAYER / CONTROLS ──────────
-      // Number of control buttons: ✕ ⏮ ⏯ ⏭ ⚙(settings). (Settings always shown.)
+      // ════════ overlay === "controls" ════════
+      // Horizontal focusable row: ⏪ rewind, ⏯ play/pause, ⏩ forward, ⚙ settings, ✕ exit.
       const CTRL_COUNT = 5;
-      if (isBack) { exit(); return; }
-      if (isUp) { setSettingsTab(0); setSettingsIdx(0); setZone("settings"); return; }
-      if (isEnter || isSpace || isPlayPause) {
-        if (zone === "controls") {
-          // Activate the focused control.
-          if (ctrlIdx === 0) exit();
-          else if (ctrlIdx === 1) seek(-10);
-          else if (ctrlIdx === 2) togglePlay();
-          else if (ctrlIdx === 3) seek(10);
-          else if (ctrlIdx === 4) { setSettingsTab(0); setSettingsIdx(0); setZone("settings"); }
-          revealControls();
-        } else {
-          togglePlay();
-          revealControls();
+      if (overlay === "controls") {
+        // Back OR ▼ → hide controls.
+        if (isBack || isDown) { clearHideTimer(); setOverlay("none"); return; }
+        // ◀▶ → move focus between buttons.
+        if (isLeft) { setCtrlIdx((i) => Math.max(0, i - 1)); bumpHideTimer(); return; }
+        if (isRight) { setCtrlIdx((i) => Math.min(CTRL_COUNT - 1, i + 1)); bumpHideTimer(); return; }
+        // ▲ → just keep controls visible (must NOT open settings).
+        if (isUp) { bumpHideTimer(); return; }
+        // OK → ACTIVATE the focused button. Settings open ONLY here, on ⚙.
+        if (isEnter || isSpace || isPlayPause) {
+          if (ctrlIdx === 0) { seek(-10); bumpHideTimer(); }
+          else if (ctrlIdx === 1) { togglePlay(); bumpHideTimer(); }
+          else if (ctrlIdx === 2) { seek(10); bumpHideTimer(); }
+          else if (ctrlIdx === 3) { clearHideTimer(); setSettingsTab(0); setSettingsIdx(0); setOverlay("settings"); }
+          else if (ctrlIdx === 4) { exit(); }
+          return;
         }
         return;
       }
-      if (isDown) { revealControls(); return; }
-      if (isLeft) {
-        if (zone === "controls") setCtrlIdx((i) => Math.max(0, i - 1));
-        else seek(-10);
-        revealControls();
-        return;
-      }
-      if (isRight) {
-        if (zone === "controls") setCtrlIdx((i) => Math.min(CTRL_COUNT - 1, i + 1));
-        else seek(10);
-        revealControls();
-        return;
-      }
+
+      // ════════ overlay === "none" (just playing) ════════
+      // Back → exit the player (router back / picker for a series).
+      if (isBack) { exit(); return; }
+      // ▲ or ▼ → reveal the controls bar, focus Play/Pause. MUST NOT open settings.
+      if (isUp || isDown) { setCtrlIdx(1); revealControls(); return; }
+      // OK / Space / MediaPlayPause → toggle play/pause.
+      if (isEnter || isSpace || isPlayPause) { togglePlay(); return; }
+      // ◀▶ → blind seek −10s / +10s and briefly flash the controls bar.
+      if (isLeft) { seek(-10); flashControls(); return; }
+      if (isRight) { seek(10); flashControls(); return; }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [
-    zone, pickerCol, seasonIdx, episodeIdx, validSeasons, episodes, season, episode,
+    zone, overlay, pickerCol, seasonIdx, episodeIdx, validSeasons, episodes, season, episode,
     isSeries, data, translators, translatorId, settingsTab, settingsIdx, ctrlIdx,
     router, exit, resolve, playEpisode, changeQuality, changeTranslator, seek,
-    togglePlay, revealControls,
+    togglePlay, revealControls, bumpHideTimer, flashControls, clearHideTimer,
   ]);
 
   const qualities = data?.streams ? Object.keys(data.streams) : [];
@@ -624,13 +666,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       )}
 
       {/* ───────── PLAYER ───────── */}
-      {(zone === "player" || zone === "controls" || zone === "settings") && (
+      {zone === "player" && (
         <>
           <video ref={videoRef} className="absolute inset-0 h-full w-full bg-black" playsInline autoPlay />
 
-          {/* Title chip */}
-          {zone !== "player" && (
-            <div className="pointer-events-none absolute left-9 top-7 z-10 text-lg font-semibold text-white/70">
+          {/* Title chip — shown whenever an overlay is up. */}
+          {overlay !== "none" && (
+            <div className="pointer-events-none absolute z-10 text-lg font-semibold text-white/70" style={{ left: "4vw", top: "4vh" }}>
               {media.title}{isSeries ? ` · S${season}E${episode}` : ""}
             </div>
           )}
@@ -656,9 +698,12 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
             </div>
           )}
 
-          {/* ── CONTROLS BAR ── */}
-          {zone === "controls" && (
-            <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/95 via-black/70 to-transparent px-12 pb-8 pt-16">
+          {/* ── CONTROLS BAR ── overscan-safe (pad ~4vh/4vw, not flush). */}
+          {overlay === "controls" && (
+            <div
+              className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/95 via-black/70 to-transparent pt-16"
+              style={{ paddingLeft: "4vw", paddingRight: "4vw", paddingBottom: "4vh" }}
+            >
               <div className="mb-5 flex items-center gap-4">
                 <span className="w-[68px] text-right tabular-nums text-sm text-muted-foreground">{fmt(pt)}</span>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15">
@@ -667,12 +712,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                 <span className="w-[68px] tabular-nums text-sm text-muted-foreground/70">{fmt(pd)}</span>
               </div>
               <div className="flex items-center justify-center gap-3">
+                {/* Order MUST match the key handler: 0 ⏪ 1 ⏯ 2 ⏩ 3 ⚙ 4 ✕ */}
                 {[
-                  { ic: "✕", label: "Выход" },
                   { ic: "⏪", label: "−10с" },
-                  { ic: playing ? "⏸" : "▶", label: "Play" },
+                  { ic: playing ? "⏸" : "▶", label: "Пауза" },
                   { ic: "⏩", label: "+10с" },
                   { ic: "⚙", label: "Настройки" },
+                  { ic: "✕", label: "Выход" },
                 ].map((b, i) => {
                   const f = ctrlIdx === i;
                   return (
@@ -680,15 +726,14 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                       key={i}
                       onClick={() => {
                         setCtrlIdx(i);
-                        if (i === 0) exit();
-                        else if (i === 1) seek(-10);
-                        else if (i === 2) togglePlay();
-                        else if (i === 3) seek(10);
-                        else { setSettingsTab(0); setSettingsIdx(0); setZone("settings"); }
-                        revealControls();
+                        if (i === 0) { seek(-10); bumpHideTimer(); }
+                        else if (i === 1) { togglePlay(); bumpHideTimer(); }
+                        else if (i === 2) { seek(10); bumpHideTimer(); }
+                        else if (i === 3) { clearHideTimer(); setSettingsTab(0); setSettingsIdx(0); setOverlay("settings"); }
+                        else { exit(); }
                       }}
                       className="rounded-xl font-bold"
-                      style={{ ...ringStyle(f), padding: i === 2 ? "14px 26px" : "12px 18px", fontSize: i === 2 ? 22 : 16 }}
+                      style={{ ...ringStyle(f, i === 1), padding: i === 1 ? "14px 26px" : "12px 18px", fontSize: i === 1 ? 22 : 16 }}
                       aria-label={b.label}
                     >
                       {b.ic}
@@ -696,14 +741,14 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                   );
                 })}
               </div>
-              <p className="mt-4 text-center text-xs text-muted-foreground/50">◀▶ выбор · OK активировать · ▲ настройки · ↩ выход</p>
+              <p className="mt-4 text-center text-xs text-muted-foreground/50">◀▶ выбор · OK активировать · ▼ скрыть · ↩ выход</p>
             </div>
           )}
 
-          {/* ── SETTINGS PANEL (Качество / Озвучка / Серии) ── */}
-          {zone === "settings" && (
-            <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/60 backdrop-blur-md">
-              <div className="mb-10 w-[760px] max-w-[90vw] rounded-2xl border border-white/10 bg-zinc-900/95 p-7">
+          {/* ── SETTINGS PANEL (Качество / Озвучка / Серии) ── overscan-safe. */}
+          {overlay === "settings" && (
+            <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/60 backdrop-blur-md" style={{ padding: "4vh 4vw" }}>
+              <div className="w-[760px] max-w-[90vw] rounded-2xl border border-white/10 bg-zinc-900/95 p-7">
                 {/* Tabs */}
                 <div className="mb-5 flex gap-3">
                   {([0, 1, ...(isSeries ? [2 as const] : [])] as Array<0 | 1 | 2>).map((t) => {
@@ -717,8 +762,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                     );
                   })}
                 </div>
-                {/* List */}
-                <div className="max-h-[42vh] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+                {/* List — scrollable (max-height 60vh) so EVERY item is reachable;
+                    the focused row scrollIntoView()s itself. */}
+                <div className="overflow-y-auto" style={{ maxHeight: "60vh", scrollbarWidth: "none" }}>
                   {settingsTab === 0 && (
                     <div className="flex flex-col gap-2">
                       {qualities.length === 0 && <p className="text-muted-foreground">Нет вариантов</p>}
@@ -726,7 +772,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                         const f = settingsIdx === i;
                         const cur = q === quality;
                         return (
-                          <button key={q} onClick={() => { changeQuality(q); setZone("player"); }}
+                          <button key={q} onClick={() => changeQuality(q)}
+                            ref={(node) => { if (f && node) node.scrollIntoView({ block: "nearest" }); }}
                             className="flex items-center justify-between rounded-xl px-5 py-3.5 text-left text-lg font-semibold"
                             style={ringStyle(f)}>
                             <span>{q}</span>{cur && <span className="text-sm" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>текущее</span>}
@@ -742,7 +789,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                         const f = settingsIdx === i;
                         const cur = t.id === translatorId;
                         return (
-                          <button key={t.id} onClick={() => { changeTranslator(t.id); setZone("player"); }}
+                          <button key={t.id} onClick={() => changeTranslator(t.id)}
+                            ref={(node) => { if (f && node) node.scrollIntoView({ block: "nearest" }); }}
                             className="flex items-center justify-between rounded-xl px-5 py-3.5 text-left text-lg font-semibold"
                             style={ringStyle(f)}>
                             <span>{t.name} {t.is_premium && "🔒"}</span>
@@ -759,6 +807,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                         const cur = ep.episode_number === episode;
                         return (
                           <button key={ep.episode_number} onClick={() => playEpisode(season, ep.episode_number)}
+                            ref={(node) => { if (f && node) node.scrollIntoView({ block: "nearest" }); }}
                             className="flex items-center gap-3 rounded-xl px-4 py-3 text-left"
                             style={ringStyle(f)}>
                             <span className="text-lg font-bold tabular-nums" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>{ep.episode_number}</span>
