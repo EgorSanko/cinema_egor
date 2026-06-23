@@ -180,6 +180,41 @@ async def hls_seg(u: str, request: HTTPRequest):
     except Exception as e:
         return Response("err: " + str(e), status_code=502)
 
+
+# ── TMDB proxy for the Android TV app ─────────────────────────────────────────
+# RU consumer ISPs throttle/block api.themoviedb.org + image.tmdb.org, so the TV
+# app routes ALL TMDB traffic through here (this server reaches TMDB fine). The
+# web site proxies TMDB for the same reason.
+_TMDB_KEY = "275c9d09780aadb4b13ff57a731eda00"
+
+@app.get("/api/tmdb")
+async def tmdb_proxy(request: HTTPRequest):
+    params = dict(request.query_params)
+    path = params.pop("path", "")
+    if not path.startswith("/"):
+        return Response('{"error":"bad path"}', status_code=400, media_type="application/json")
+    params["api_key"] = _TMDB_KEY
+    params.setdefault("language", "ru-RU")
+    try:
+        r = await hdrezka_http.DEFAULT_CLIENT.get(
+            "https://api.themoviedb.org/3" + path, params=params, timeout=15)
+        return Response(r.content, status_code=r.status_code, media_type="application/json",
+                        headers={"Cache-Control": "public, max-age=600"})
+    except Exception as e:
+        return Response('{"error":"%s"}' % str(e)[:80], status_code=502, media_type="application/json")
+
+@app.get("/api/img")
+async def tmdb_img(p: str):
+    if not p.startswith("/t/p/"):
+        return Response("bad", status_code=400)
+    try:
+        r = await hdrezka_http.DEFAULT_CLIENT.get("https://image.tmdb.org" + p, timeout=20)
+        return Response(r.content, status_code=r.status_code,
+                        media_type=r.headers.get("content-type", "image/jpeg"),
+                        headers={"Cache-Control": "public, max-age=604800"})
+    except Exception:
+        return Response(b"", status_code=502)
+
 # Short-TTL cache for /api/search. The HDRezka resolve takes ~2-3s (it fetches
 # the post page to probe premium dubs, then resolves the stream); caching the
 # parsed result makes prefetch→click and repeat opens near-instant. TTL is kept
