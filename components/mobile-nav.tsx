@@ -15,6 +15,9 @@ const tabs = [
 export function MobileNav() {
   const pathname = usePathname();
 
+  // The /tv-* routes are the full-screen Android-TV UI — no site chrome there.
+  if (pathname.startsWith("/tv-")) return null;
+
   // Hide on watch room pages (not /watch or /watch/create)
   if (pathname.match(/^\/watch\/[A-Z0-9]{4,}$/i)) return null;
 

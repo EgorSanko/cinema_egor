@@ -322,11 +322,11 @@ export function TvLogin() {
 
   return (
     <main
-      className="min-h-screen bg-background text-foreground select-none flex flex-col items-center"
+      className="h-screen overflow-hidden bg-background text-foreground select-none flex flex-col items-center justify-center px-[3vw] py-[3vh]"
       style={{ background: "var(--background)" }}
     >
       {/* Logo */}
-      <header className="pt-12 pb-6">
+      <header className="pb-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
@@ -340,14 +340,14 @@ export function TvLogin() {
       <h1 className="text-3xl font-bold mb-2">
         {mode === "verify" ? "Подтверждение" : mode === "register" ? "Регистрация" : "Вход"}
       </h1>
-      <p className="text-muted-foreground mb-6 text-lg">
+      <p className="text-muted-foreground mb-3 text-base">
         {mode === "verify"
           ? "Введите код из письма"
           : "Войдите, чтобы смотреть"}
       </p>
 
       {/* Fields */}
-      <div className="w-full max-w-2xl px-8 space-y-3 mb-6">
+      <div className="w-full max-w-2xl px-8 space-y-2 mb-3">
         {mode === "register" && (
           <FieldBox label="Имя" value={name || " "} active={nameActive} />
         )}
@@ -372,7 +372,7 @@ export function TvLogin() {
       </div>
 
       {/* On-screen keyboard grid */}
-      <div className="flex flex-col items-center gap-2 pb-16">
+      <div className="flex flex-col items-center gap-1.5">
         {grid.map((cells, rIdx) => {
           const isActionRow = rIdx >= KB_ROWS.length;
           return (
@@ -398,10 +398,10 @@ export function TvLogin() {
                     onFocus={() => setFocus({ row: rIdx, col: cIdx })}
                     className="rounded-lg font-semibold outline-none transition-transform duration-100"
                     style={{
-                      minWidth: wide ? 200 : 64,
-                      height: 64,
-                      paddingInline: wide ? 24 : 0,
-                      fontSize: wide ? 22 : 26,
+                      minWidth: wide ? 168 : 52,
+                      height: 52,
+                      paddingInline: wide ? 18 : 0,
+                      fontSize: wide ? 19 : 22,
                       background: focused
                         ? "var(--primary)"
                         : shiftActive ? "rgba(163,230,53,0.22)" : "var(--card)",
