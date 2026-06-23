@@ -59,9 +59,12 @@ type Episode = { episode_number: number; name: string; still_path: string | null
 // Which screen currently owns the D-pad. The in-player overlay is a SEPARATE
 // state machine (`overlay` below) so that the player can be in "none" /
 // "controls" / "settings" independently.
-type Zone = "picker" | "loading" | "player";
+type Zone = "picker" | "loading" | "player" | "error";
 // In-player overlay state machine.
 type Overlay = "none" | "controls" | "settings";
+// When overlay === "controls", the D-pad focus is in one of two zones:
+// the timeline scrubber ("bar") or the button row ("buttons").
+type CtrlZone = "bar" | "buttons";
 
 const fmt = (s: number) => {
   if (!s || !isFinite(s)) return "0:00";
@@ -103,6 +106,11 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   const [translatorId, setTranslatorId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Hard failure → full-screen error card (timeout / no playable stream / threw).
+  // Distinct from the small inline `error` toast used during dub/quality switches.
+  const [resolveFailed, setResolveFailed] = useState(false);
+  // Error-card focus: 0 = Повторить, 1 = Назад.
+  const [errBtnIdx, setErrBtnIdx] = useState<0 | 1>(0);
 
   // ── Series picker state ──
   const validSeasons = media.seasons.filter((s) => s.season_number > 0);
@@ -124,6 +132,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   const [pd, setPd] = useState(0);
   // Controls row: 0 ⏪ rewind, 1 ⏯ play/pause, 2 ⏩ forward, 3 ⚙ settings, 4 ✕ exit.
   const [ctrlIdx, setCtrlIdx] = useState(1); // default focus on Play/Pause
+  // Which zone of the controls overlay has the D-pad: timeline bar or buttons.
+  const [ctrlZone, setCtrlZone] = useState<CtrlZone>("bar");
   const [settingsTab, setSettingsTab] = useState<0 | 1 | 2>(0); // 0 quality 1 dub 2 episodes
   const [settingsIdx, setSettingsIdx] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -133,6 +143,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   const saveInt = useRef<ReturnType<typeof setInterval> | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekOnNext = useRef<number | undefined>(undefined); // preserve pos across source switch
+
+  // Resolve timeout — a title that never resolves (not on HDRezka / not yet
+  // released / hung network) must NOT spin forever. 25s → hard failure.
+  const RESOLVE_TIMEOUT_MS = 25000;
 
   const flash = useCallback((m: string) => {
     setToast(m);
@@ -165,7 +179,11 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       const trId = opts?.trId ?? translatorId ?? getLastTranslator(media.id, media.type)?.id ?? null;
       const s = opts?.s ?? season;
       const e = opts?.e ?? episode;
+      // A dub/quality re-resolve (preservePos) keeps the existing inline toast on
+      // failure; a fresh resolve raises the full-screen error card instead.
+      const isSwitch = !!opts?.preservePos;
       setError("");
+      setResolveFailed(false);
       setLoading(true);
       const pos = opts?.preservePos ? videoRef.current?.currentTime || 0 : 0;
       if (pos > 1) seekOnNext.current = pos;
@@ -183,7 +201,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         seriesParam +
         trParam;
 
-      try {
+      // The actual resolve work — fetch chain that yields a playable ResolveData
+      // or null. Raced against a timeout below so it can never hang forever.
+      const doResolve = async (): Promise<ResolveData | null> => {
         let d: ResolveData | null = null;
         const r = await fetch(build(searchTitle));
         d = await r.json();
@@ -203,17 +223,33 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
           const da: ResolveData = await ra.json();
           if (da.stream) d = da;
         }
+        return d?.stream ? d : null;
+      };
 
+      // Reject after RESOLVE_TIMEOUT_MS so a never-resolving title (not on
+      // HDRezka / not yet released / hung network) falls into the catch below.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("resolve-timeout")), RESOLVE_TIMEOUT_MS);
+      });
+
+      try {
+        const d = await Promise.race([doResolve(), timeout]);
         if (d?.stream) {
           applyStream(d, trId);
           return true;
         }
-        setError("Контент пока недоступен в этой озвучке");
+        // No playable stream returned.
+        if (isSwitch) setError("Контент пока недоступен в этой озвучке");
+        else setResolveFailed(true);
         return false;
       } catch {
-        setError("Сервер не отвечает");
+        // Threw or timed out.
+        if (isSwitch) setError("Сервер не отвечает");
+        else setResolveFailed(true);
         return false;
       } finally {
+        if (timer) clearTimeout(timer);
         setLoading(false);
       }
     },
@@ -238,7 +274,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   useEffect(() => {
     if (!isSeries) {
       setZone("loading");
-      resolve().then((ok) => { if (ok) setZone("player"); });
+      resolve().then((ok) => { setZone(ok ? "player" : "error"); });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -354,8 +390,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // ── Controls auto-hide ──
   // Show the controls bar and (re)arm the ~5s auto-hide timer. Never auto-hides
   // while the settings panel is open.
-  const revealControls = useCallback(() => {
+  const revealControls = useCallback((zone: CtrlZone = "bar") => {
     setOverlay("controls");
+    setCtrlZone(zone);
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       setOverlay((o) => (o === "controls" ? "none" : o));
@@ -374,6 +411,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // Briefly flash the controls bar on a blind seek, then let it auto-hide.
   const flashControls = useCallback(() => {
     setOverlay("controls");
+    setCtrlZone("bar");
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       setOverlay((o) => (o === "controls" ? "none" : o));
@@ -400,6 +438,35 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     v.currentTime = Math.max(0, Math.min((v.duration || 1e9), v.currentTime + delta));
     flash(delta > 0 ? "⏩ +10с" : "⏪ −10с");
   }, [flash]);
+
+  // Scrubber seek — ±delta along the timeline, updating progress state live so
+  // the filled bar + current-time label track the playhead immediately.
+  const scrub = useCallback((delta: number) => {
+    const v = videoRef.current;
+    if (!v || !v.duration) return;
+    const next = Math.max(0, Math.min(v.duration, v.currentTime + delta));
+    v.currentTime = next;
+    setPt(next);
+  }, []);
+
+  // ── Error card: retry the resolve, or go back. ──
+  const retryResolve = useCallback(() => {
+    setZone("loading");
+    setErrBtnIdx(0);
+    resolve().then((ok) => { setZone(ok ? "player" : "error"); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolve]);
+
+  // «Назад» from the error card: movie → /tv-home, series → episode picker.
+  const errorBack = useCallback(() => {
+    if (isSeries) {
+      setResolveFailed(false);
+      setData(null);
+      setZone("picker");
+    } else {
+      router.push("/tv-home");
+    }
+  }, [isSeries, router]);
 
   // Quality switch — preserve position via seekOnNext, switch proxied source.
   const changeQuality = useCallback((q: string) => {
@@ -430,7 +497,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     setOverlay("none");
     setZone("loading");
     const ok = await resolve({ s, e });
-    setZone(ok ? "player" : "picker");
+    setZone(ok ? "player" : "error");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolve, media]);
 
@@ -500,6 +567,20 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         return;
       }
 
+      // ────────── ERROR CARD ──────────
+      // Two buttons: 0 Повторить, 1 Назад. ◀▶ move, OK activates, Back = Назад.
+      if (zone === "error") {
+        if (isBack) { errorBack(); return; }
+        if (isLeft) { setErrBtnIdx(0); return; }
+        if (isRight) { setErrBtnIdx(1); return; }
+        if (isEnter || isSpace || isPlayPause) {
+          if (errBtnIdx === 0) retryResolve();
+          else errorBack();
+          return;
+        }
+        return;
+      }
+
       // From here on we are in the PLAYER (zone === "player"). The overlay
       // state machine (none / controls / settings) owns the D-pad.
 
@@ -537,16 +618,33 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       }
 
       // ════════ overlay === "controls" ════════
-      // Horizontal focusable row: ⏪ rewind, ⏯ play/pause, ⏩ forward, ⚙ settings, ✕ exit.
+      // Two focus zones: "bar" (the timeline scrubber) and "buttons" (the
+      // ⏪ ⏯ ⏩ ⚙ ✕ row).
       const CTRL_COUNT = 5;
       if (overlay === "controls") {
+        // ───── zone "bar": the scrubbable timeline ─────
+        if (ctrlZone === "bar") {
+          // Back → hide controls.
+          if (isBack) { clearHideTimer(); setOverlay("none"); return; }
+          // ◀▶ → seek ±10s live along the timeline.
+          if (isLeft) { scrub(-10); bumpHideTimer(); return; }
+          if (isRight) { scrub(10); bumpHideTimer(); return; }
+          // ▼ → drop to the button row.
+          if (isDown) { setCtrlZone("buttons"); bumpHideTimer(); return; }
+          // ▲ → stay on the bar.
+          if (isUp) { bumpHideTimer(); return; }
+          // OK → toggle play/pause.
+          if (isEnter || isSpace || isPlayPause) { togglePlay(); bumpHideTimer(); return; }
+          return;
+        }
+        // ───── zone "buttons": the existing control row ─────
+        // ▲ → return to the timeline bar.
+        if (isUp) { setCtrlZone("bar"); bumpHideTimer(); return; }
         // Back OR ▼ → hide controls.
         if (isBack || isDown) { clearHideTimer(); setOverlay("none"); return; }
         // ◀▶ → move focus between buttons.
         if (isLeft) { setCtrlIdx((i) => Math.max(0, i - 1)); bumpHideTimer(); return; }
         if (isRight) { setCtrlIdx((i) => Math.min(CTRL_COUNT - 1, i + 1)); bumpHideTimer(); return; }
-        // ▲ → just keep controls visible (must NOT open settings).
-        if (isUp) { bumpHideTimer(); return; }
         // OK → ACTIVATE the focused button. Settings open ONLY here, on ⚙.
         if (isEnter || isSpace || isPlayPause) {
           if (ctrlIdx === 0) { seek(-10); bumpHideTimer(); }
@@ -562,8 +660,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // ════════ overlay === "none" (just playing) ════════
       // Back → exit the player (router back / picker for a series).
       if (isBack) { exit(); return; }
-      // ▲ or ▼ → reveal the controls bar, focus Play/Pause. MUST NOT open settings.
-      if (isUp || isDown) { setCtrlIdx(1); revealControls(); return; }
+      // ▲ or ▼ → reveal the controls overlay, focus the TIMELINE bar by default.
+      // MUST NOT open settings.
+      if (isUp || isDown) { setCtrlIdx(1); revealControls("bar"); return; }
       // OK / Space / MediaPlayPause → toggle play/pause.
       if (isEnter || isSpace || isPlayPause) { togglePlay(); return; }
       // ◀▶ → blind seek −10s / +10s and briefly flash the controls bar.
@@ -574,9 +673,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     return () => window.removeEventListener("keydown", handler);
   }, [
     zone, overlay, pickerCol, seasonIdx, episodeIdx, validSeasons, episodes, season, episode,
-    isSeries, data, translators, translatorId, settingsTab, settingsIdx, ctrlIdx,
-    router, exit, resolve, playEpisode, changeQuality, changeTranslator, seek,
+    isSeries, data, translators, translatorId, settingsTab, settingsIdx, ctrlIdx, ctrlZone,
+    errBtnIdx, router, exit, resolve, playEpisode, changeQuality, changeTranslator, seek, scrub,
     togglePlay, revealControls, bumpHideTimer, flashControls, clearHideTimer,
+    retryResolve, errorBack,
   ]);
 
   const qualities = data?.streams ? Object.keys(data.streams) : [];
@@ -665,6 +765,46 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         </div>
       )}
 
+      {/* ───────── ERROR CARD ───────── */}
+      {/* Shown when a fresh resolve fails (timeout / no playable stream / threw).
+          Centered, dark, lime accent. ◀▶ between the two buttons, OK activates,
+          Back = Назад. */}
+      {zone === "error" && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 px-12 text-center" style={{ background: "var(--background)" }}>
+          <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "color-mix(in srgb, var(--primary) 18%, transparent)" }}>
+            <span className="text-3xl" style={{ color: "var(--primary)" }}>!</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <h2 className="text-3xl font-extrabold tracking-tight text-white">
+              {media.title}{isSeries ? ` · S${season}E${episode}` : ""}
+            </h2>
+            <p className="text-xl font-semibold" style={{ color: "var(--primary)" }}>Не удалось загрузить</p>
+            <p className="max-w-[640px] text-base text-muted-foreground">
+              Возможно, фильм ещё не вышел или временно недоступен.
+            </p>
+          </div>
+          <div className="mt-2 flex items-center gap-4">
+            {[
+              { label: "Повторить", primary: true },
+              { label: "Назад", primary: false },
+            ].map((b, i) => {
+              const f = errBtnIdx === i;
+              return (
+                <button
+                  key={b.label}
+                  onClick={() => (i === 0 ? retryResolve() : errorBack())}
+                  className="rounded-xl px-8 py-4 text-lg font-bold"
+                  style={ringStyle(f, b.primary && f ? true : b.primary)}
+                >
+                  {b.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground/60">◀▶ выбор · OK · ↩ назад</p>
+        </div>
+      )}
+
       {/* ───────── PLAYER ───────── */}
       {zone === "player" && (
         <>
@@ -704,13 +844,50 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
               className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/95 via-black/70 to-transparent pt-16"
               style={{ paddingLeft: "4vw", paddingRight: "4vw", paddingBottom: "4vh" }}
             >
-              <div className="mb-5 flex items-center gap-4">
-                <span className="w-[68px] text-right tabular-nums text-sm text-muted-foreground">{fmt(pt)}</span>
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15">
-                  <div className="h-full rounded-full" style={{ width: `${pd > 0 ? (pt / pd) * 100 : 0}%`, background: "var(--primary)" }} />
-                </div>
-                <span className="w-[68px] tabular-nums text-sm text-muted-foreground/70">{fmt(pd)}</span>
-              </div>
+              {/* Scrubbable timeline — focus zone "bar". When focused: lime track,
+                  thicker bar, a knob at the playhead. ◀▶ seek ±10s live. */}
+              {(() => {
+                const barFocused = ctrlZone === "bar";
+                const pct = pd > 0 ? Math.min(100, (pt / pd) * 100) : 0;
+                return (
+                  <div className="mb-5 flex items-center gap-4">
+                    <span
+                      className="w-[68px] text-right tabular-nums text-sm"
+                      style={{ color: barFocused ? "var(--primary)" : undefined }}
+                    >
+                      {fmt(pt)}
+                    </span>
+                    <div
+                      className="relative flex-1 rounded-full"
+                      style={{
+                        height: barFocused ? 8 : 6,
+                        background: "rgba(255,255,255,0.15)",
+                        transition: "height .15s ease-out, box-shadow .15s ease-out",
+                        boxShadow: barFocused ? "0 0 0 3px var(--primary)" : "none",
+                      }}
+                    >
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full"
+                        style={{ width: `${pct}%`, background: "var(--primary)" }}
+                      />
+                      {/* Playhead knob */}
+                      <div
+                        className="absolute top-1/2 rounded-full"
+                        style={{
+                          left: `${pct}%`,
+                          width: barFocused ? 18 : 12,
+                          height: barFocused ? 18 : 12,
+                          transform: "translate(-50%, -50%)",
+                          background: "var(--primary)",
+                          boxShadow: barFocused ? "0 0 0 4px rgba(0,0,0,0.45)" : "0 0 0 2px rgba(0,0,0,0.4)",
+                          transition: "width .15s ease-out, height .15s ease-out",
+                        }}
+                      />
+                    </div>
+                    <span className="w-[68px] tabular-nums text-sm text-muted-foreground/70">{fmt(pd)}</span>
+                  </div>
+                );
+              })()}
               <div className="flex items-center justify-center gap-3">
                 {/* Order MUST match the key handler: 0 ⏪ 1 ⏯ 2 ⏩ 3 ⚙ 4 ✕ */}
                 {[
@@ -720,11 +897,12 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                   { ic: "⚙", label: "Настройки" },
                   { ic: "✕", label: "Выход" },
                 ].map((b, i) => {
-                  const f = ctrlIdx === i;
+                  const f = ctrlZone === "buttons" && ctrlIdx === i;
                   return (
                     <button
                       key={i}
                       onClick={() => {
+                        setCtrlZone("buttons");
                         setCtrlIdx(i);
                         if (i === 0) { seek(-10); bumpHideTimer(); }
                         else if (i === 1) { togglePlay(); bumpHideTimer(); }
@@ -741,7 +919,11 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                   );
                 })}
               </div>
-              <p className="mt-4 text-center text-xs text-muted-foreground/50">◀▶ выбор · OK активировать · ▼ скрыть · ↩ выход</p>
+              <p className="mt-4 text-center text-xs text-muted-foreground/50">
+                {ctrlZone === "bar"
+                  ? "◀▶ перемотка · ▼ кнопки · OK пауза · ↩ скрыть"
+                  : "◀▶ выбор · OK активировать · ▲ таймлайн · ▼ скрыть · ↩ выход"}
+              </p>
             </div>
           )}
 
