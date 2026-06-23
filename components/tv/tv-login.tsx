@@ -326,18 +326,18 @@ export function TvLogin() {
       style={{ background: "var(--background)" }}
     >
       {/* Logo */}
-      <header className="pb-3">
+      <header className="pb-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
           alt="SAPKEFLY KINO"
           draggable={false}
-          className="h-16 w-auto"
+          className="h-10 w-auto"
           style={{ filter: "drop-shadow(0 0 22px rgba(163,230,53,0.45))" }}
         />
       </header>
 
-      <h1 className="text-3xl font-bold mb-2">
+      <h1 className="text-2xl font-bold mb-1">
         {mode === "verify" ? "Подтверждение" : mode === "register" ? "Регистрация" : "Вход"}
       </h1>
       <p className="text-muted-foreground mb-3 text-base">
@@ -372,11 +372,11 @@ export function TvLogin() {
       </div>
 
       {/* On-screen keyboard grid */}
-      <div className="flex flex-col items-center gap-1.5">
+      <div className="flex flex-col items-center gap-1">
         {grid.map((cells, rIdx) => {
           const isActionRow = rIdx >= KB_ROWS.length;
           return (
-            <div key={rIdx} className="flex gap-2">
+            <div key={rIdx} className="flex gap-1">
               {cells.map((cell, cIdx) => {
                 const focused = focus.row === rIdx && focus.col === cIdx;
                 const label =
@@ -398,10 +398,10 @@ export function TvLogin() {
                     onFocus={() => setFocus({ row: rIdx, col: cIdx })}
                     className="rounded-lg font-semibold outline-none transition-transform duration-100"
                     style={{
-                      minWidth: wide ? 168 : 52,
-                      height: 52,
-                      paddingInline: wide ? 18 : 0,
-                      fontSize: wide ? 19 : 22,
+                      minWidth: wide ? 150 : 46,
+                      height: 44,
+                      paddingInline: wide ? 16 : 0,
+                      fontSize: wide ? 16 : 18,
                       background: focused
                         ? "var(--primary)"
                         : shiftActive ? "rgba(163,230,53,0.22)" : "var(--card)",
@@ -429,14 +429,14 @@ export function TvLogin() {
 function FieldBox({ label, value, active }: { label: string; value: string; active: boolean }) {
   return (
     <div
-      className="rounded-xl px-5 py-3 flex items-center gap-4"
+      className="rounded-xl px-4 py-2 flex items-center gap-3"
       style={{
         background: "var(--card)",
         boxShadow: active ? "0 0 0 3px var(--primary)" : "0 0 0 1px rgba(255,255,255,0.08)",
       }}
     >
       <span className="text-muted-foreground w-24 shrink-0 text-lg">{label}</span>
-      <span className="text-2xl font-mono truncate flex-1">{value}</span>
+      <span className="text-xl font-mono truncate flex-1">{value}</span>
     </div>
   );
 }
