@@ -198,18 +198,173 @@ function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest)
   });
 }
 
-/** HLS→mp4 strategy.
- *
- *  We now STREAM the fragmented mp4 to everyone, iOS included. The old iOS path
- *  remuxed the WHOLE movie to a /tmp faststart file before sending a single
- *  byte — for a full film that's minutes of silence, so iOS Safari aborted the
- *  request before any headers arrived and the download "didn't work" at all.
- *  Streaming sends bytes immediately (continuous flow → no client timeout, no
- *  disk usage). The fragmented mp4 carries the total duration (verified via
- *  ffprobe), so modern iOS reads it. A completed download beats a timed-out one.
- *  (downloadHlsAsFile kept below for a possible future headers-first variant.) */
+// ── HLS→mp4 with a resumable disk cache (fixes iOS background downloads) ──────
+//
+// Plain streaming has no Content-Length and no Range, so iOS won't background it:
+// leave Safari and the suspended connection drops with nothing to resume → the
+// download "fails". Instead we ffmpeg-remux into a CACHE FILE that keeps writing
+// even after the client disconnects, and serve it with Accept-Ranges. So:
+//   • first request streams the growing file (bytes flow immediately, no abort);
+//   • if the user backgrounds Safari and it drops, ffmpeg STILL finishes the file;
+//   • iOS retries/resumes with a Range request → we serve 206 from the finished
+//     file → the download completes in the background.
+const CACHE_DIR = path.join(os.tmpdir(), "dlcache");
+const remuxing = new Set<string>();
+
+function cacheKey(url: string): string {
+  return crypto.createHash("sha1").update(url).digest("hex");
+}
+
+// Best-effort: drop cache files older than 12h so /tmp doesn't grow unbounded.
+function cleanupCache(): void {
+  fs.readdir(CACHE_DIR, (e, files) => {
+    if (e) return;
+    const now = Date.now();
+    for (const f of files) {
+      const p = path.join(CACHE_DIR, f);
+      fs.stat(p, (e2, st) => {
+        if (!e2 && now - st.mtimeMs > 12 * 3600 * 1000) safeUnlink(p);
+      });
+    }
+  });
+}
+
+/** Spawn ffmpeg to remux url → cache file, marking `<file>.done` on success.
+ *  Deliberately NOT tied to req.signal — it keeps running after the client
+ *  leaves, so a backgrounded iOS download can resume from the finished file. */
+function ensureRemux(url: string, file: string, donePath: string, key: string): void {
+  if (remuxing.has(key) || fs.existsSync(donePath)) return;
+  remuxing.add(key);
+  try { fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch {}
+  safeUnlink(file); // start fresh
+  const args = [
+    "-nostdin", "-loglevel", "error",
+    "-user_agent", UA, "-headers", `Referer: ${REFERER}\r\n`,
+    "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc",
+    // fragmented mp4: valid at every prefix (so the growing file streams + Range
+    // works), and modern iOS still reads its duration.
+    "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+    "-f", "mp4", "-y", file,
+  ];
+  const ff = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+  let errTail = "";
+  ff.stderr.on("data", (d) => { errTail = (errTail + d.toString()).slice(-400); });
+  const finish = (ok: boolean) => {
+    remuxing.delete(key);
+    let size = 0; try { size = fs.statSync(file).size; } catch {}
+    if (ok && size > 0) fs.writeFile(donePath, "1", () => {});
+    else { if (errTail.trim()) console.error("[dl ffmpeg]", errTail.trim()); safeUnlink(file); }
+  };
+  ff.on("close", (c) => finish(c === 0));
+  ff.on("error", () => finish(false));
+}
+
+/** Serve a finished cache file, honouring Range (206) so iOS can resume. */
+function serveCompleteRange(file: string, size: number, range: string | null, filename: string): Response {
+  let start = 0;
+  let end = size - 1;
+  const m = /bytes=(\d+)-(\d*)/.exec(range || "");
+  if (m) {
+    start = parseInt(m[1], 10);
+    if (m[2]) end = Math.min(parseInt(m[2], 10), size - 1);
+    if (start >= size || start < 0) start = 0;
+  }
+  const node = fs.createReadStream(file, { start, end });
+  const headers: Record<string, string> = {
+    "Content-Type": "video/mp4",
+    "Content-Disposition": dispositionHeader(filename),
+    "Accept-Ranges": "bytes",
+    "Content-Length": String(end - start + 1),
+    "Cache-Control": "no-store",
+  };
+  if (m) headers["Content-Range"] = `bytes ${start}-${end}/${size}`;
+  return new Response(Readable.toWeb(node) as unknown as ReadableStream, {
+    status: m ? 206 : 200,
+    headers,
+  });
+}
+
+/** Stream the cache file as it grows (ffmpeg still writing), closing at EOF once
+ *  `<file>.done` exists. Sends bytes immediately so the client never times out. */
+function streamFromCache(file: string, donePath: string, filename: string, req: NextRequest): Response {
+  let pos = 0;
+  let stopped = false;
+  let fh: fs.promises.FileHandle | undefined;
+  const close = async () => {
+    stopped = true;
+    if (fh) { try { await fh.close(); } catch {} fh = undefined; }
+  };
+  req.signal.addEventListener("abort", () => { void close(); });
+
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        if (stopped) { controller.close(); return; }
+        if (!fh) fh = await fs.promises.open(file, "r");
+        while (!stopped) {
+          let size = 0;
+          try { size = (await fh.stat()).size; } catch {}
+          if (pos < size) {
+            const len = Math.min(256 * 1024, size - pos);
+            const buf = Buffer.alloc(len);
+            const { bytesRead } = await fh.read(buf, 0, len, pos);
+            if (bytesRead > 0) {
+              pos += bytesRead;
+              controller.enqueue(new Uint8Array(buf.subarray(0, bytesRead)));
+              return; // one chunk per pull
+            }
+          }
+          if (fs.existsSync(donePath) && pos >= size) {
+            await close();
+            controller.close();
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 250)); // wait for more bytes
+        }
+        controller.close();
+      } catch (e) {
+        try { controller.error(e as Error); } catch {}
+        await close();
+      }
+    },
+    cancel() { void close(); },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "video/mp4",
+      "Content-Disposition": dispositionHeader(filename),
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 async function remuxHls(url: string, filename: string, req: NextRequest): Promise<Response> {
-  return streamHlsAsMp4(url, filename, req);
+  cleanupCache();
+  const key = cacheKey(url);
+  const file = path.join(CACHE_DIR, key + ".mp4");
+  const donePath = file + ".done";
+
+  // Low on disk and nothing cached yet → fall back to a plain ffmpeg pipe
+  // (no caching) so a download still works without risking the disk.
+  const free = await freeBytes(os.tmpdir());
+  if (free !== null && free < MIN_FREE_BYTES && !fs.existsSync(donePath)) {
+    return streamHlsAsMp4(url, filename, req);
+  }
+
+  ensureRemux(url, file, donePath, key);
+
+  const range = req.headers.get("range");
+  if (fs.existsSync(donePath)) {
+    let size = 0; try { size = fs.statSync(file).size; } catch {}
+    if (size > 0) return serveCompleteRange(file, size, range, filename);
+  }
+  // Not finished yet → stream the growing file from the start (ignore Range; the
+  // client restarts, but ffmpeg keeps caching, so a later resume hits the
+  // finished-file path above and gets a proper 206).
+  return streamFromCache(file, donePath, filename, req);
 }
 
 /** Mode 1-iOS — remux HLS to a real mp4 file with moov-at-front, then serve
