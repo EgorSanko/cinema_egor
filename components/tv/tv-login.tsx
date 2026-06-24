@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { syncFromServer } from "@/lib/storage";
 import { getTvUser, type TvUser } from "@/lib/tv-auth";
+import { LogoSplash } from "./logo-splash";
 
 // ════════════════════════════════════════════════════════════════
 // TV LOGIN — fully D-pad / keyboard driven on-screen keyboard.
@@ -55,11 +56,22 @@ const KEY_LABEL: Record<string, string> = {
 export function TvLogin() {
   const router = useRouter();
 
-  // If already logged in, skip straight to the home screen.
+  // Launch splash (animated logo) — plays once per session over a black screen,
+  // then fades and lets the rest proceed.
+  const [splash, setSplash] = useState(true);
   useEffect(() => {
+    try {
+      if (sessionStorage.getItem("tv_splash_shown")) setSplash(false);
+      else sessionStorage.setItem("tv_splash_shown", "1"); // play once per session
+    } catch {}
+  }, []);
+
+  // If already logged in, skip straight to the home screen (after the splash).
+  useEffect(() => {
+    if (splash) return;
     const u = getTvUser();
     if (u) router.replace("/tv-home");
-  }, [router]);
+  }, [splash, router]);
 
   // ── Form state ──
   const [email, setEmail] = useState("");
@@ -325,6 +337,7 @@ export function TvLogin() {
       className="h-screen overflow-hidden bg-background text-foreground select-none flex flex-col items-center justify-center px-[3vw] py-[3vh]"
       style={{ background: "var(--background)" }}
     >
+      {splash && <LogoSplash onDone={() => setSplash(false)} />}
       {/* Logo */}
       <header className="pb-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
