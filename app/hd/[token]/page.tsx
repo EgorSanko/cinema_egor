@@ -1,5 +1,7 @@
 import { Navbar } from "@/components/navbar";
 import { HdDetail, type HdDetails } from "@/components/hd-detail";
+import { isBlockedHd } from "@/lib/blocked-content";
+import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
 const BACKEND = "https://kino.lead-seek.ru/hdrezka/api";
@@ -42,7 +44,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function HdPage({ params }: PageProps) {
   const { token } = await params;
   const url = decodeToken(token);
+  if (isBlockedHd(url)) notFound(); // legal takedown — un-viewable
   const details = url ? await getDetails(url) : null;
+  if (details && isBlockedHd(url, details.title)) notFound();
 
   if (!details) {
     return (

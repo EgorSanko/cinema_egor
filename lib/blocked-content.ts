@@ -24,9 +24,35 @@ export const BLOCKED_MOVIE_IDS = new Set<number>([
   1083381,
   // 2026-06-09 — RKN notice via Timeweb ticket #12080021: movie/128 «Принцесса Мононоке» (1997)
   128,
+  // 2026-06-25 — copyright claim via Beget (ООО "Исола Динамикс" for ООО "РВВ Филм"):
+  // movie/1020047 «Кодекс Данте» / In the Hand of Dante (2025)
+  1020047,
 ]);
 
 export const BLOCKED_TV_IDS = new Set<number>([]);
+
+/**
+ * HDRezka-native blocks. Titles reachable via /hd/[token] resolve by HDRezka URL,
+ * not a TMDB id, so the id sets above don't cover them. Match by URL slug (the
+ * mirror HOST changes, but the numeric-id + slug are stable) and by normalized
+ * title as a backstop.
+ */
+export const BLOCKED_HD_SLUGS: string[] = [
+  // 2026-06-25 — copyright claim via Beget (ООО "Исола Динамикс" / ООО "РВВ Филм"):
+  // «Кодекс Данте» / In the Hand of Dante (2025)
+  "kodeks-dante-2025",
+];
+const BLOCKED_HD_TITLES: string[] = [
+  "кодексданте",
+];
+
+export function isBlockedHd(url?: string | null, title?: string | null): boolean {
+  const u = (url || "").toLowerCase();
+  if (BLOCKED_HD_SLUGS.some((s) => u.includes(s))) return true;
+  const t = (title || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
+  if (t && BLOCKED_HD_TITLES.some((b) => t === b || t.includes(b))) return true;
+  return false;
+}
 
 export function isBlockedMovie(id: number): boolean {
   return BLOCKED_MOVIE_IDS.has(id);

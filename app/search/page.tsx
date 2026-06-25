@@ -3,6 +3,7 @@ import { MovieCard } from "@/components/movie-card";
 import { TVCard } from "@/components/tv-card";
 import { HdCard } from "@/components/hd-card";
 import { searchMovies, searchTV, searchPeople, profileUrl } from "@/lib/tmdb";
+import { isBlockedHd } from "@/lib/blocked-content";
 import Image from "next/image";
 import Link from "next/link";
 import { User } from "lucide-react";
@@ -119,6 +120,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     for (const hit of hdHits) {
       if (!hit.url || seenUrl.has(hit.url)) continue;
       seenUrl.add(hit.url);
+      if (isBlockedHd(hit.url, hit.name)) continue; // legal takedown
+
       const match = matchTmdb(hit, pool);
       const key = match ? match.mt + ":" + match.obj.id : "";
       if (match && !usedTmdb.has(key)) {

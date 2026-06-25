@@ -289,6 +289,17 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
         _inflight.pop(cache_key, None)
 
 
+# Legal takedowns — block HDRezka titles by URL slug (mirror host varies; the
+# numeric id + slug are stable). Mirrors lib/blocked-content.ts BLOCKED_HD_SLUGS.
+_BLOCKED_HD_SLUGS = [
+    "kodeks-dante-2025",  # 2026-06-25 Beget claim (ООО Исола Динамикс / РВВ Филм)
+]
+
+def _is_blocked_hd(url) -> bool:
+    u = str(url or "").lower()
+    return any(s in u for s in _BLOCKED_HD_SLUGS)
+
+
 @app.get("/api/find")
 async def find(q: str):
     # Lightweight HDRezka search: returns the result LIST only (NO stream resolve),
@@ -314,6 +325,8 @@ async def find(q: str):
         out = []
         for r in results[:60]:
             url = str(getattr(r, 'url', '') or '')
+            if _is_blocked_hd(url):
+                continue
             info = getattr(r, 'info', None)
             year = getattr(info, 'year', None) if info else None
             info_l = str(info or '').lower()
@@ -445,6 +458,8 @@ async def _resolve_post(player, name, url, season, episode, translator_id, cache
 async def resolve_by_url(url: str, season: str = None, episode: str = None, translator_id: int = None):
     # Resolve a stream DIRECTLY by HDRezka post URL (no title search) — for the
     # HDRezka-native pages (titles with no TMDB match).
+    if _is_blocked_hd(url):
+        return {"error": "Not found", "results": []}
     await ensure_login()
     cache_key = ("resolve", url, season, episode, translator_id)
     _hit = _search_cache.get(cache_key)
@@ -618,6 +633,8 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                 return {"error": "Not found", "results": []}
 
         post = best
+        if _is_blocked_hd(getattr(post, 'url', '')):
+            return {"error": "Not found", "results": []}
         player = await post.player
 
         translators = []
