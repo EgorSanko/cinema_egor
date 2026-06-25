@@ -288,24 +288,33 @@ export function TVPlayer({ show }: TVPlayerProps) {
     if (!effectiveTr) setStreamData(null);
     try {
       const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
-      // HDRezka indexes Russian titles primarily — see the matching block in
-      // movie-player.tsx for full context. Use localized first, fallback to
-      // English original_name only if no result.
+      // HDRezka indexes most titles under their RUSSIAN name, but some resolve
+      // ONLY by the ORIGINAL name (e.g. TMNT 2012: "Черепашки-ниндзя" returns
+      // Not found, "Teenage Mutant Ninja Turtles" resolves). Try the localized
+      // name first, then fall back to the original if nothing resolves.
       const origName = ((show as any).original_name || "").replace(/["«»""]/g, "").trim();
       const ruName = (show.name || "").replace(/["«»""]/g, "").trim();
-      const searchName = ruName || origName;
-      const q = encodeURIComponent(searchName);
+      const candidates = [ruName, origName].filter((n, i, a) => n && a.indexOf(n) === i);
       const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
-      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam;
-      // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
+      let q = "";
+      let url = "";
       let data: any = null;
-      if (prefetchRef.current && prefetchRef.current.url === url) {
-        data = await prefetchRef.current.promise;
-        prefetchRef.current = null;
-      }
-      if (!data) {
-        const res = await fetch(url);
-        data = await res.json();
+      for (const name of candidates) {
+        q = encodeURIComponent(name);
+        url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam;
+        // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
+        let di: any = null;
+        if (prefetchRef.current && prefetchRef.current.url === url) {
+          di = await prefetchRef.current.promise;
+          prefetchRef.current = null;
+        }
+        if (!di) {
+          const res = await fetch(url);
+          di = await res.json();
+        }
+        data = di;
+        // Stop at the first name that yields a stream or candidate results.
+        if (data && (data.stream || (data.results && data.results.length > 0))) break;
       }
       if (data.stream) {
         // What translator is ACTUALLY playing? Trust the backend's
