@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, ArrowLeft, Film, Tv, Star, Loader2 } from "lucide-react";
+import { Search, ArrowLeft, Film, Tv, Star, Loader2, X } from "lucide-react";
 import Link from "next/link";
 import { connectSocket } from "@/lib/socket";
 
@@ -36,6 +36,13 @@ function CreateWatchPage() {
   const autoCreated = useRef(false);
   const [trending, setTrending] = useState<SearchResult[]>([]);
   const searchTimer = useRef<any>(null);
+
+  // Series episode picker — clicking a series opens this instead of creating S1E1.
+  const [pendingSeries, setPendingSeries] = useState<SearchResult | null>(null);
+  const [seasonsCount, setSeasonsCount] = useState(1);
+  const [pickSeason, setPickSeason] = useState(1);
+  const [episodes, setEpisodes] = useState<{ episode_number: number; name: string }[]>([]);
+  const [epLoading, setEpLoading] = useState(false);
 
   // Auto-create room if coming from movie player with params
   useEffect(() => {
@@ -112,13 +119,36 @@ function CreateWatchPage() {
     });
   };
 
+  // Clicking a series opens a season/episode picker (instead of defaulting to S1E1).
+  const openSeriesPicker = async (item: SearchResult) => {
+    setPendingSeries(item);
+    setPickSeason(1);
+    setEpisodes([]);
+    try {
+      const r = await fetch(`${TMDB_BASE}/tv/${item.id}?api_key=${TMDB_KEY}&language=ru-RU`);
+      const d = await r.json();
+      setSeasonsCount(Math.max(1, d.number_of_seasons || 1));
+    } catch { setSeasonsCount(1); }
+    loadPickerEpisodes(item.id, 1);
+  };
+
+  const loadPickerEpisodes = async (id: number, season: number) => {
+    setEpLoading(true);
+    try {
+      const r = await fetch(`/api/tv-episodes?id=${id}&season=${season}`);
+      const eps = await r.json();
+      setEpisodes(Array.isArray(eps) ? eps : []);
+    } catch { setEpisodes([]); }
+    setEpLoading(false);
+  };
+
   const renderItem = (item: SearchResult, i: number) => {
     const title = item.title || item.name || "";
     const year = (item.release_date || item.first_air_date || "").split("-")[0];
     const type = item.media_type === "tv" ? "tv" : "movie";
 
     return (
-      <button key={`${type}-${item.id}-${i}`} onClick={() => selectMovie(item)} disabled={creating}
+      <button key={`${type}-${item.id}-${i}`} onClick={() => type === "tv" ? openSeriesPicker(item) : selectMovie(item)} disabled={creating}
         className="flex gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors text-left group w-full disabled:opacity-50">
         <div className="w-16 h-24 rounded-lg overflow-hidden bg-gray-800 shrink-0">
           {item.poster_path ? (
@@ -202,6 +232,68 @@ function CreateWatchPage() {
           </div>
         )}
       </div>
+
+      {/* Series episode picker */}
+      {pendingSeries && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
+          onClick={() => setPendingSeries(null)}
+        >
+          <div
+            className="bg-gray-950 border border-white/10 rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 p-4 border-b border-white/10">
+              <Tv size={18} className="text-purple-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold truncate">{pendingSeries.name || pendingSeries.title}</p>
+                <p className="text-gray-500 text-xs">Выберите серию для совместного просмотра</p>
+              </div>
+              <button onClick={() => setPendingSeries(null)} className="text-gray-400 hover:text-white transition-colors shrink-0">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex gap-2 p-4 overflow-x-auto border-b border-white/10">
+              {Array.from({ length: seasonsCount }, (_, i) => i + 1).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => { setPickSeason(s); loadPickerEpisodes(pendingSeries.id, s); }}
+                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    pickSeason === s ? "bg-purple-500 text-white" : "bg-white/5 text-gray-300 hover:bg-white/10"
+                  }`}
+                >
+                  Сезон {s}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+              {epLoading && (
+                <div className="flex justify-center py-8">
+                  <Loader2 size={24} className="animate-spin text-purple-500" />
+                </div>
+              )}
+              {!epLoading && episodes.length === 0 && (
+                <p className="text-gray-500 text-center py-8 text-sm">Серии не найдены</p>
+              )}
+              {!epLoading && episodes.map((ep) => (
+                <button
+                  key={ep.episode_number}
+                  disabled={creating}
+                  onClick={() => { const it = pendingSeries; setPendingSeries(null); selectMovie(it, pickSeason, ep.episode_number); }}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-left disabled:opacity-50 transition-colors"
+                >
+                  <span className="w-8 h-8 shrink-0 rounded-lg bg-purple-500/15 text-purple-300 text-sm font-bold flex items-center justify-center">
+                    {ep.episode_number}
+                  </span>
+                  <span className="text-white text-sm truncate flex-1">{ep.name || `Серия ${ep.episode_number}`}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
