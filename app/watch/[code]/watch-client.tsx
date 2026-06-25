@@ -8,7 +8,7 @@ import type { WatchRoomState, ChatMessage, WatchMember } from "@/lib/watch-types
 import Hls from "hls.js";
 import {
   Users, Copy, Check, ArrowLeft, Send, Play, Pause, Loader2,
-  MessageSquare, X, Share2, Mic, ChevronDown, Maximize, Minimize,
+  MessageSquare, X, Share2, Mic, ChevronDown, Maximize, Minimize, List,
 } from "lucide-react";
 
 interface Props { code: string; }
@@ -44,6 +44,15 @@ export default function WatchClient({ code }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [cssFullscreen, setCssFullscreen] = useState(false);
   const [streamError, setStreamError] = useState("");
+
+  // Series episode switching (in-room)
+  const [season, setSeason] = useState(1);
+  const [episode, setEpisode] = useState(1);
+  const [showEpisodePanel, setShowEpisodePanel] = useState(false);
+  const [epSeasonsCount, setEpSeasonsCount] = useState(1);
+  const [epPanelSeason, setEpPanelSeason] = useState(1);
+  const [epList, setEpList] = useState<{ episode_number: number; name: string }[]>([]);
+  const [epListLoading, setEpListLoading] = useState(false);
 
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -202,6 +211,8 @@ export default function WatchClient({ code }: Props) {
         setRoom(r);
         setMembers(r.members);
         setMessages(r.messages || []);
+        setSeason(r.season || 1);
+        setEpisode(r.episode || 1);
         const me = r.members.find((m) => m.id === socket.id);
         const amHost = me?.isHost || false;
         setIsHost(amHost);
@@ -329,8 +340,12 @@ export default function WatchClient({ code }: Props) {
       setTranslatorId(id);
       notify(`${by} сменил озвучку: ${translatorName}`);
     });
-    socket.on("episode-changed", ({ season, episode, by }) => {
-      notify(`${by} переключил на S${season}E${episode}`);
+    socket.on("episode-changed", ({ season: s, episode: e, by }) => {
+      setSeason(s);
+      setEpisode(e);
+      notify(`${by} переключил на S${s}E${e}`);
+      // New stream URL arrives via stream-changed (host's set-stream); reload it from 0.
+      setTimeout(() => { if (streamUrlRef.current) loadStream(streamUrlRef.current, 0); }, 500);
     });
 
     // Chat
@@ -519,6 +534,57 @@ export default function WatchClient({ code }: Props) {
       const ct = videoRef.current?.currentTime || 0;
       loadStream(data.stream, ct);
       socketRef.current?.emit("change-translator", { translatorId: trId, translatorName: t?.name || "" });
+    }
+  };
+
+  // ── In-room episode switching (series, host only) ──
+  const openEpisodePanel = async () => {
+    if (!room) return;
+    setShowEpisodePanel(true);
+    setEpPanelSeason(season);
+    try {
+      const key = process.env.NEXT_PUBLIC_TMDB_API_KEY || "275c9d09780aadb4b13ff57a731eda00";
+      const d = await fetch(`/tmdb-api/tv/${room.movieId}?api_key=${key}&language=ru-RU`).then((r) => r.json());
+      setEpSeasonsCount(Math.max(1, d.number_of_seasons || 1));
+    } catch { setEpSeasonsCount(1); }
+    loadEpPanel(season);
+  };
+  const loadEpPanel = async (s: number) => {
+    if (!room) return;
+    setEpListLoading(true);
+    try {
+      const eps = await fetch(`/api/tv-episodes?id=${room.movieId}&season=${s}`).then((r) => r.json());
+      setEpList(Array.isArray(eps) ? eps : []);
+    } catch { setEpList([]); }
+    setEpListLoading(false);
+  };
+  const changeEpisode = async (s: number, e: number) => {
+    if (!room || !isHost) return;
+    setShowEpisodePanel(false);
+    if (s === season && e === episode) return;
+    setSeason(s);
+    setEpisode(e);
+    notify(`Переключаю на S${s}E${e}...`);
+    // Resolve the new episode with the same ru→original title fallback as initial load.
+    let data = await fetchStream(room.movieTitle, room.movieYear, "tv", translatorId || undefined, s, e);
+    if (!data) {
+      try {
+        const key = process.env.NEXT_PUBLIC_TMDB_API_KEY || "275c9d09780aadb4b13ff57a731eda00";
+        const t = await fetch(`/tmdb-api/tv/${room.movieId}?api_key=${key}`).then((r) => r.json());
+        const orig = (t.original_name || t.original_title || "").trim();
+        if (orig && orig !== room.movieTitle) {
+          data = await fetchStream(orig, room.movieYear, "tv", translatorId || undefined, s, e);
+        }
+      } catch {}
+    }
+    if (data) {
+      streamUrlRef.current = data.stream;
+      loadStream(data.stream, 0);
+      // processResult already emitted set-stream → guests get stream-changed; now tell
+      // them which episode so they reload + relabel.
+      socketRef.current?.emit("change-episode", { season: s, episode: e });
+    } else {
+      notify("Эта серия недоступна");
     }
   };
   const toggleFullscreen = () => {
@@ -916,6 +982,43 @@ export default function WatchClient({ code }: Props) {
                     </div>
                   )}
                 </div>
+
+                {/* Episodes — series, host only */}
+                {isHost && room?.movieType === "tv" && (
+                  <div className="relative">
+                    <button onClick={() => { showEpisodePanel ? setShowEpisodePanel(false) : openEpisodePanel(); setShowTranslatorPanel(false); setShowQualityPanel(false); setShowReactions(false); }}
+                      className={`flex items-center gap-1 px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors min-h-[44px] ${showEpisodePanel ? "bg-purple-500 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}>
+                      <List size={12} />
+                      <span className="hidden md:inline">S{season}·E{episode}</span>
+                      <ChevronDown size={12} className={showEpisodePanel ? "rotate-180" : ""} />
+                    </button>
+                    {showEpisodePanel && (
+                      <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 backdrop-blur border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 w-[260px]">
+                        <div className="flex gap-1.5 p-2 overflow-x-auto border-b border-white/10">
+                          {Array.from({ length: epSeasonsCount }, (_, i) => i + 1).map((s) => (
+                            <button key={s} onClick={() => { setEpPanelSeason(s); loadEpPanel(s); }}
+                              className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${epPanelSeason === s ? "bg-purple-500 text-white" : "bg-white/5 text-gray-300 hover:bg-white/10"}`}>
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="max-h-[240px] overflow-y-auto">
+                          {epListLoading && <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-purple-500" /></div>}
+                          {!epListLoading && epList.map((ep) => {
+                            const isCur = epPanelSeason === season && ep.episode_number === episode;
+                            return (
+                              <button key={ep.episode_number} onClick={() => changeEpisode(epPanelSeason, ep.episode_number)}
+                                className={`w-full text-left px-3 py-2.5 text-xs hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 flex items-center gap-2 ${isCur ? "text-purple-400 bg-purple-500/5" : "text-gray-300"}`}>
+                                <span className="w-5 shrink-0 text-center font-bold">{ep.episode_number}</span>
+                                <span className="truncate">{ep.name || `Серия ${ep.episode_number}`}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Translator — host only */}
                 {isHost && translators.length > 1 && (
