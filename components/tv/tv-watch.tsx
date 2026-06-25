@@ -88,6 +88,8 @@ const ringStyle = (focused: boolean, primary?: boolean): React.CSSProperties => 
   outline: "none",
 });
 
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
 export function TvWatch({ media }: { media: TvWatchMedia }) {
   const router = useRouter();
 
@@ -134,8 +136,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   const [ctrlIdx, setCtrlIdx] = useState(1); // default focus on Play/Pause
   // Which zone of the controls overlay has the D-pad: timeline bar or buttons.
   const [ctrlZone, setCtrlZone] = useState<CtrlZone>("bar");
-  const [settingsTab, setSettingsTab] = useState<0 | 1 | 2>(0); // 0 quality 1 dub 2 episodes
+  const [settingsTab, setSettingsTab] = useState<0 | 1 | 2 | 3>(0); // 0 quality 1 dub 2 episodes 3 speed
   const [settingsIdx, setSettingsIdx] = useState(0);
+  const [speed, setSpeed] = useState(1);
   const [toast, setToast] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -478,6 +481,18 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     flash(`Качество: ${q}`);
   }, [data, quality, flash]);
 
+  // Playback speed — applied to the <video> element (reapplied after each source
+  // switch via the effect below, since a new manifest resets playbackRate to 1).
+  const changeSpeed = useCallback((v: number) => {
+    setSpeed(v);
+    if (videoRef.current) videoRef.current.playbackRate = v;
+    flash(`Скорость: ${v}×`);
+  }, [flash]);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = speed;
+  }, [speed, data?.stream]);
+
   // Dub switch — re-resolve with translator_id, preserve position.
   const changeTranslator = useCallback(async (tid: number) => {
     if (tid === translatorId) return;
@@ -587,10 +602,11 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // ════════ overlay === "settings" ════════
       // Panel with tabs Качество / Озвучка / Серии and a scrollable list.
       if (overlay === "settings") {
-        const tabs: Array<0 | 1 | 2> = isSeries ? [0, 1, 2] : [0, 1];
+        const tabs: Array<0 | 1 | 2 | 3> = isSeries ? [0, 1, 2, 3] : [0, 1, 3];
         const list =
           settingsTab === 0 ? (data?.streams ? Object.keys(data.streams) : [])
           : settingsTab === 1 ? translators.map((t) => t.name)
+          : settingsTab === 3 ? SPEEDS.map((s) => `${s}×`)
           : episodes.map((ep) => `${ep.episode_number}`);
 
         // Back → close settings → controls (NOT exit the player).
@@ -613,6 +629,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
           if (settingsTab === 0 && qualities[settingsIdx]) changeQuality(qualities[settingsIdx]);
           else if (settingsTab === 1 && translators[settingsIdx]) changeTranslator(translators[settingsIdx].id);
           else if (settingsTab === 2 && episodes[settingsIdx]) playEpisode(season, episodes[settingsIdx].episode_number);
+          else if (settingsTab === 3 && SPEEDS[settingsIdx] !== undefined) changeSpeed(SPEEDS[settingsIdx]);
         }
         return;
       }
@@ -674,7 +691,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   }, [
     zone, overlay, pickerCol, seasonIdx, episodeIdx, validSeasons, episodes, season, episode,
     isSeries, data, translators, translatorId, settingsTab, settingsIdx, ctrlIdx, ctrlZone,
-    errBtnIdx, router, exit, resolve, playEpisode, changeQuality, changeTranslator, seek, scrub,
+    errBtnIdx, router, exit, resolve, playEpisode, changeQuality, changeTranslator, changeSpeed, seek, scrub,
     togglePlay, revealControls, bumpHideTimer, flashControls, clearHideTimer,
     retryResolve, errorBack,
   ]);
@@ -933,9 +950,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
               <div className="w-[760px] max-w-[90vw] rounded-2xl border border-white/10 bg-zinc-900/95 p-7">
                 {/* Tabs */}
                 <div className="mb-5 flex gap-3">
-                  {([0, 1, ...(isSeries ? [2 as const] : [])] as Array<0 | 1 | 2>).map((t) => {
+                  {([0, 1, ...(isSeries ? [2 as const] : []), 3 as const] as Array<0 | 1 | 2 | 3>).map((t) => {
                     const f = settingsTab === t;
-                    const label = t === 0 ? "Качество" : t === 1 ? "Озвучка" : "Серии";
+                    const label = t === 0 ? "Качество" : t === 1 ? "Озвучка" : t === 2 ? "Серии" : "Скорость";
                     return (
                       <div key={t} className="rounded-xl px-5 py-2.5 text-base font-bold"
                         style={{ ...ringStyle(f, f), color: f ? "#0a0a0a" : "#a1a1aa" }}>
@@ -995,6 +1012,23 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                             <span className="text-lg font-bold tabular-nums" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>{ep.episode_number}</span>
                             <span className="truncate text-base font-medium">{ep.name || `Серия ${ep.episode_number}`}</span>
                             {cur && <span className="ml-auto text-xs" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>▶</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {settingsTab === 3 && (
+                    <div className="flex flex-col gap-2">
+                      {SPEEDS.map((s, i) => {
+                        const f = settingsIdx === i;
+                        const cur = s === speed;
+                        return (
+                          <button key={s} onClick={() => changeSpeed(s)}
+                            ref={(node) => { if (f && node) node.scrollIntoView({ block: "nearest" }); }}
+                            className="flex items-center justify-between rounded-xl px-5 py-3.5 text-left text-lg font-semibold"
+                            style={ringStyle(f)}>
+                            <span>{s === 1 ? "Обычная (1×)" : `${s}×`}</span>
+                            {cur && <span className="text-sm" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>текущая</span>}
                           </button>
                         );
                       })}
