@@ -7,10 +7,10 @@ import { Smartphone, Download, ShieldCheck, Zap, Settings as SettingsIcon, Play,
 
 export const metadata: Metadata = {
   title: "Скачать приложение — sapkeflykino",
-  description: "Sapkefly Kino для Android — фильмы и сериалы в одном приложении. Бесплатно, без рекламы, прямо на телефон.",
+  description: "Sapkefly Kino для Android и Android TV — фильмы и сериалы в одном приложении. Бесплатно, без рекламы, на телефон и телевизор.",
   openGraph: {
-    title: "Sapkefly Kino — приложение для Android",
-    description: "Бесплатно, без рекламы. Фильмы, сериалы, синхронизация с сайтом.",
+    title: "Sapkefly Kino — приложение для Android и Android TV",
+    description: "Бесплатно, без рекламы. Фильмы, сериалы, синхронизация с сайтом. На телефон и ТВ.",
     images: ["/logo-512.png"],
   },
 };
@@ -18,6 +18,10 @@ export const metadata: Metadata = {
 const APK_URL = "/download/sapkefly.apk";
 const APK_SIZE_MB = 93;
 const APP_VERSION = "2.0.27";
+
+const TV_APK_URL = "/download/sapkeflykino-tv.apk";
+const TV_APK_SIZE_MB = 2.5;
+const TV_APP_VERSION = "2.2";
 
 const FEATURES: { Icon: any; title: string; sub: string }[] = [
   { Icon: TvIcon, title: "Фильмы и сериалы", sub: "Огромная база с переводом и оригиналом" },
@@ -50,21 +54,34 @@ export default function DownloadPage() {
             </div>
 
             <div className="text-center md:text-left">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[11px] font-bold uppercase tracking-[0.18em]">
-                <Smartphone size={12} /> Android
-              </span>
+              <div className="flex items-center gap-2 justify-center md:justify-start flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[11px] font-bold uppercase tracking-[0.18em]">
+                  <Smartphone size={12} /> Android
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[11px] font-bold uppercase tracking-[0.18em]">
+                  <TvIcon size={12} /> Android TV
+                </span>
+              </div>
               <h1 className="mt-3 text-4xl sm:text-5xl md:text-6xl font-black text-foreground tracking-tight leading-[1.02]">
                 Sapkefly Kino<br />
-                <span className="text-primary">прямо на телефоне</span>
+                <span className="text-primary">на телефоне и ТВ</span>
               </h1>
               <p className="mt-3 text-foreground/65 text-[14px] sm:text-[15px] max-w-xl mx-auto md:mx-0">
                 Фильмы и сериалы в одном приложении. Без рекламы, с синхронизацией истории и избранного с сайтом.
               </p>
 
-              <div className="mt-6 flex flex-col sm:flex-row items-center md:items-start gap-3">
-                <DownloadButton href={APK_URL} sizeMb={APK_SIZE_MB} version={APP_VERSION} />
-                <div className="text-[11px] text-foreground/45 text-center md:text-left">
-                  Версия {APP_VERSION} · {APK_SIZE_MB} МБ · Android 7.0+
+              <div className="mt-6 flex flex-col gap-3 items-center md:items-start">
+                <div className="flex flex-col sm:flex-row items-center md:items-start gap-3">
+                  <DownloadButton href={APK_URL} sizeMb={APK_SIZE_MB} version={APP_VERSION} label="Скачать на телефон" downloadName="sapkefly.apk" icon="phone" />
+                  <div className="text-[11px] text-foreground/45 text-center md:text-left sm:self-center">
+                    Версия {APP_VERSION} · {APK_SIZE_MB} МБ · Android 7.0+
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row items-center md:items-start gap-3">
+                  <DownloadButton href={TV_APK_URL} sizeMb={TV_APK_SIZE_MB} version={TV_APP_VERSION} label="Скачать на ТВ" downloadName="sapkeflykino-tv.apk" variant="secondary" icon="tv" />
+                  <div className="text-[11px] text-foreground/45 text-center md:text-left sm:self-center">
+                    Android TV · {TV_APK_SIZE_MB} МБ · для телевизора
+                  </div>
                 </div>
               </div>
             </div>
