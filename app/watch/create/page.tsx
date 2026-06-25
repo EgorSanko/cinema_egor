@@ -45,6 +45,8 @@ function CreateWatchPage() {
     const typeParam = searchParams.get("type");
     const yearParam = searchParams.get("year");
     const posterParam = searchParams.get("poster");
+    const seasonParam = searchParams.get("season");
+    const episodeParam = searchParams.get("episode");
     if (qParam && idParam) {
       autoCreated.current = true;
       selectMovie({
@@ -55,7 +57,7 @@ function CreateWatchPage() {
         release_date: yearParam ? `${yearParam}-01-01` : undefined,
         media_type: typeParam || "movie",
         overview: "",
-      });
+      }, seasonParam ? parseInt(seasonParam) : undefined, episodeParam ? parseInt(episodeParam) : undefined);
     }
   }, [searchParams]);
 
@@ -82,7 +84,7 @@ function CreateWatchPage() {
     }, 400);
   }, [query]);
 
-  const selectMovie = (item: SearchResult) => {
+  const selectMovie = (item: SearchResult, season?: number, episode?: number) => {
     const name = typeof window !== "undefined" ? localStorage.getItem("watch_name") || "Host" : "Host";
     const type = item.media_type === "tv" ? "tv" : "movie";
     const title = item.title || item.name || "";
@@ -99,6 +101,8 @@ function CreateWatchPage() {
       movieType: type,
       movieYear: year,
       isSeries: type === "tv",
+      season: type === "tv" ? (season || 1) : undefined,
+      episode: type === "tv" ? (episode || 1) : undefined,
     }, (res) => {
       setCreating(false);
       if (res.error) { alert(res.error); return; }

@@ -61,6 +61,8 @@ export interface ClientToServerEvents {
     movieType: "movie" | "tv";
     movieYear: string;
     isSeries: boolean;
+    season?: number;
+    episode?: number;
   }, callback: (response: { code?: string; error?: string }) => void) => void;
 
   "join-room": (data: {

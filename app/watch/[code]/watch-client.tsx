@@ -357,14 +357,32 @@ export default function WatchClient({ code }: Props) {
     if (!room) return;
     setStreamError("");
     streamUrlRef.current = "";
-    fetchStream(room.movieTitle, room.movieYear, room.movieType).then((data) => {
+    const finish = (data: any) => {
       if (data) {
         socketRef.current?.emit("player-ready");
         setMembers((prev) => prev.map((m) => m.isHost ? { ...m, isReady: true } : m));
       } else {
-        setStreamError("Фильм недоступен для просмотра. Попробуйте другой.");
+        setStreamError(room.movieType === "tv"
+          ? "Серия недоступна для совместного просмотра. Попробуйте другую."
+          : "Фильм недоступен для просмотра. Попробуйте другой.");
       }
-    });
+    };
+    (async () => {
+      let data = await fetchStream(room.movieTitle, room.movieYear, room.movieType, undefined, room.season, room.episode);
+      // HDRezka indexes some titles only under their ORIGINAL name — if the
+      // localized title misses, look it up from TMDB and retry once.
+      if (!data) {
+        try {
+          const key = process.env.NEXT_PUBLIC_TMDB_API_KEY || "275c9d09780aadb4b13ff57a731eda00";
+          const t = await fetch(`/tmdb-api/${room.movieType}/${room.movieId}?api_key=${key}`).then((r) => r.json());
+          const orig = (t.original_title || t.original_name || "").trim();
+          if (orig && orig !== room.movieTitle) {
+            data = await fetchStream(orig, room.movieYear, room.movieType, undefined, room.season, room.episode);
+          }
+        } catch {}
+      }
+      finish(data);
+    })();
   }, [room, fetchStream]);
 
   useEffect(() => {

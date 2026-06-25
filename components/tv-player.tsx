@@ -895,7 +895,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     initialEpisode={selectedEpisode}
                   />
                   <Link
-                    href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "")}
+                    href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "") + "&season=" + selectedSeason + "&episode=" + selectedEpisode}
                     className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
                     title="Смотреть вместе"
                   >
