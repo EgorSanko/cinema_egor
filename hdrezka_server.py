@@ -15,7 +15,7 @@ hdrezka_http.DEFAULT_CLIENT = httpx.AsyncClient(
 from hdrezka.url import Request
 Request.HOST = "https://hdrezka.cm/"
 
-from hdrezka import Search
+from hdrezka import Search, Player, Post
 from hdrezka.stream import PlayerSeries
 
 app = FastAPI()
@@ -323,6 +323,7 @@ async def find(q: str):
                 "year": year,
                 "type": "tv" if is_series else "movie",
                 "url": url,
+                "poster": getattr(r, 'poster', None),
             })
         resp = {"results": out}
         if out:
@@ -330,6 +331,179 @@ async def find(q: str):
         return resp
     except Exception as e:
         return {"results": [], "error": str(e)}
+
+
+async def _resolve_post(player, name, url, season, episode, translator_id, cache_key):
+    # Build the stream response from an already-resolved PlayerMovie/PlayerSeries.
+    # Mirrors the tail of _resolve_search; shared by /search (via best.player) and
+    # /resolve (via Player(url)). NOTE: keep in sync with _resolve_search until that
+    # one is refactored to call this too.
+    import re as _re
+    translators = []
+    premium_ids = set()
+    try:
+        raw_t = []
+        for tname, tid in player.post.translators.name_id.items():
+            raw_t.append({"id": tid, "name": tname, "is_premium": tid in premium_ids})
+        def _is_18(t):
+            n = (t.get("name") or "").lower()
+            return "(18+)" in n or "18+" in n
+        def _demote(t):
+            return _is_18(t) or bool(t.get("is_premium"))
+        translators = [t for t in raw_t if not _demote(t)] + [t for t in raw_t if _demote(t)]
+    except Exception as ex:
+        print(f"Translators error: {ex}")
+    if translator_id is None and translators:
+        translator_id = translators[0]["id"]
+    s = int(season or 1)
+    e = int(episode or 1)
+    tv_match = _re.search(r'\[ТВ-(\d+)\]', str(name or ''))
+    if tv_match and int(tv_match.group(1)) > 1:
+        s = 1
+    async def try_series(tid):
+        return await player.get_stream(s, e, tid)
+    async def try_movie(tid):
+        return await player.get_stream(tid)
+    is_series = isinstance(player, PlayerSeries)
+    try_fn = try_series if is_series else try_movie
+    stream = None
+    last_err = None
+    active_translator_id = translator_id
+    try:
+        stream = await try_fn(translator_id)
+    except Exception as ex:
+        last_err = ex
+    if stream is None:
+        for _, tid in list(player.post.translators.name_id.items())[:8]:
+            try:
+                stream = await try_fn(tid)
+                active_translator_id = tid
+                break
+            except Exception as ex:
+                last_err = ex
+    if stream is None:
+        try:
+            page_resp = await hdrezka_http.get_response('GET', url)
+            page_html = page_resp.text
+            streams_match = _re.search(r'"streams"\s*:\s*"((?:\[\d+p?\]https?:[^"]*)+)"', page_html)
+            if streams_match:
+                streams_str = streams_match.group(1).replace("\\/", "/")
+                raw_fallback = _re.findall(r'\[(\d+p)\](https?://[^\[,\s]+)', streams_str)
+                if raw_fallback:
+                    streams = {}
+                    for q2, u in raw_fallback:
+                        streams[q2] = u.replace("http://", "https://").strip()
+                    best_quality = list(streams.keys())[-1] if streams else ""
+                    best_url = streams.get(best_quality, "")
+                    return _cache_store(cache_key, {
+                        "title": name, "stream": best_url, "quality": best_quality,
+                        "streams": streams, "qualities": list(streams.keys()),
+                        "translators": translators, "active_translator_id": translator_id,
+                        "is_series": is_series, "url": url,
+                    })
+        except Exception as fb_err:
+            print(f"HTML fallback failed: {fb_err}")
+        raise last_err or Exception("No working translator")
+    raw = stream.video.raw_data
+    streams = {}
+    def _relabel(q):
+        s2 = str(q).strip().lower()
+        if s2 in ("4k", "4к"): return "2160p (4K)"
+        if s2 in ("2k", "2к"): return "1440p (2K)"
+        return str(q)
+    for quality, urls in raw.items():
+        q_name = _relabel(quality)
+        u = urls[0] if isinstance(urls, tuple) else str(urls)
+        if u.startswith("http"):
+            streams[q_name] = u.replace("http://", "https://")
+    def _qnum(q):
+        s2 = str(q).lower()
+        m = _re.search(r"(\d{3,4})", s2)
+        n = int(m.group(1)) if m else 0
+        if "ultra" in s2:
+            n += 1
+        return n
+    ordered = sorted(streams.keys(), key=_qnum)
+    streams = {k: streams[k] for k in ordered}
+    le1080 = [q for q in ordered if _qnum(q) <= 1080]
+    best_quality = le1080[-1] if le1080 else (ordered[0] if ordered else "")
+    best_url = streams.get(best_quality, "")
+    return _cache_store(cache_key, {
+        "title": name,
+        "stream": best_url,
+        "quality": best_quality,
+        "streams": streams,
+        "qualities": list(streams.keys()),
+        "translators": translators,
+        "active_translator_id": active_translator_id,
+        "is_series": is_series,
+        "url": url,
+    })
+
+
+@app.get("/api/resolve")
+async def resolve_by_url(url: str, season: str = None, episode: str = None, translator_id: int = None):
+    # Resolve a stream DIRECTLY by HDRezka post URL (no title search) — for the
+    # HDRezka-native pages (titles with no TMDB match).
+    await ensure_login()
+    cache_key = ("resolve", url, season, episode, translator_id)
+    _hit = _search_cache.get(cache_key)
+    if _hit and _time.monotonic() - _hit[0] < _SEARCH_CACHE_TTL:
+        return _hit[1]
+    try:
+        player = await Player(url)
+        name = str(getattr(player.post, 'name', '') or '')
+        return await _resolve_post(player, name, url, season, episode, translator_id, cache_key)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+_details_cache: dict = {}
+
+@app.get("/api/details")
+async def details(url: str):
+    # HDRezka title card (poster/desc/year/genres + seasons) by URL — for the
+    # HDRezka-native detail page. Cached longer than streams (metadata is stable).
+    _hit = _details_cache.get(url)
+    if _hit and _time.monotonic() - _hit[0] < 6 * 3600:
+        return _hit[1]
+    await ensure_login()
+    try:
+        player = await Player(url)
+        info = player.post.info
+        is_series = isinstance(player, PlayerSeries)
+        pst = getattr(info, 'poster', None)
+        poster = (getattr(pst, 'full', None) or getattr(pst, 'preview', None)) if pst else None
+        rel = getattr(info, 'release', None)
+        year = getattr(rel, 'year', None) if rel else None
+        def _names(seq):
+            out = []
+            for x in (seq or ()):
+                n = getattr(x, 'name', None)
+                out.append(str(n if n is not None else x))
+            return out
+        resp = {
+            "title": str(getattr(info, 'title', '') or getattr(player.post, 'name', '') or ''),
+            "orig_title": str(getattr(info, 'orig_title', '') or ''),
+            "year": year,
+            "poster": poster,
+            "description": str(getattr(info, 'description', '') or ''),
+            "type": "tv" if is_series else "movie",
+            "url": url,
+            "genres": _names(getattr(info, 'genre', None))[:6],
+            "countries": _names(getattr(info, 'country', None))[:3],
+            "duration": str(getattr(info, 'duration', '') or ''),
+        }
+        if is_series:
+            try:
+                eps = await player.get_episodes()
+                resp["seasons"] = {str(k): [int(n) for n in v] for k, v in eps.items()}
+            except Exception:
+                resp["seasons"] = {}
+        _details_cache[url] = (_time.monotonic(), resp)
+        return resp
+    except Exception as e:
+        return {"error": str(e)}
 
 
 async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key):
