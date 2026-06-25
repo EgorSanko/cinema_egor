@@ -289,6 +289,39 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
         _inflight.pop(cache_key, None)
 
 
+@app.get("/api/find")
+async def find(q: str):
+    # Lightweight HDRezka search: returns the result LIST only (NO stream resolve),
+    # so the site can show/keep only titles that actually exist on HDRezka. ~300ms
+    # vs the ~2-3s full resolve. Used to filter TMDB search results by availability.
+    await ensure_login()
+    cache_key = ("find", q)
+    _hit = _search_cache.get(cache_key)
+    if _hit and _time.monotonic() - _hit[0] < _SEARCH_CACHE_TTL:
+        return _hit[1]
+    try:
+        results = await Search(q).get_page(1)
+        out = []
+        for r in (results or [])[:30]:
+            url = str(getattr(r, 'url', '') or '')
+            info = getattr(r, 'info', None)
+            year = getattr(info, 'year', None) if info else None
+            info_l = str(info or '').lower()
+            is_series = ('/series/' in url) or ('сезон' in info_l) or ('серия' in info_l)
+            out.append({
+                "name": str(getattr(r, 'name', '') or ''),
+                "year": year,
+                "type": "tv" if is_series else "movie",
+                "url": url,
+            })
+        resp = {"results": out}
+        if out:
+            _search_cache[cache_key] = (_time.monotonic(), resp)
+        return resp
+    except Exception as e:
+        return {"results": [], "error": str(e)}
+
+
 async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key):
     try:
         results = await Search(q).get_page(1)
