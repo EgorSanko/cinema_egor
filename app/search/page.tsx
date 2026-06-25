@@ -54,6 +54,23 @@ function isAvailable(
   });
 }
 
+function dedupeById<T extends { id: number }>(items: T[]): T[] {
+  const seen = new Set<number>();
+  return items.filter((it) => (seen.has(it.id) ? false : (seen.add(it.id), true)));
+}
+
+// TMDB caps search at 20/page; HDRezka has long tails (e.g. "шерлок" → 100+ films
+// across many TMDB pages). Pull several pages so the availability intersection
+// isn't starved by page-1-only recall.
+async function searchMoviesPaged(query: string, pages: number) {
+  const res = await Promise.all(Array.from({ length: pages }, (_, i) => searchMovies(query, i + 1)));
+  return dedupeById(res.flat());
+}
+async function searchTVPaged(query: string, pages: number) {
+  const res = await Promise.all(Array.from({ length: pages }, (_, i) => searchTV(query, i + 1)));
+  return dedupeById(res.flat());
+}
+
 export async function generateMetadata({ searchParams }: SearchPageProps): Promise<Metadata> {
   const params = await searchParams;
   const query = params.q || "";
@@ -67,7 +84,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const params = await searchParams;
   const query = params.q || "";
   const [movieResults, tvResults, peopleResults, hdHits] = query
-    ? await Promise.all([searchMovies(query), searchTV(query), searchPeople(query), getHdrezkaHits(query)])
+    ? await Promise.all([
+        searchMoviesPaged(query, 5),
+        searchTVPaged(query, 3),
+        searchPeople(query),
+        getHdrezkaHits(query),
+      ])
     : [[], [], [], []];
 
   // Keep only TMDB titles that exist on HDRezka. If the availability backend is

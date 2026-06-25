@@ -300,9 +300,19 @@ async def find(q: str):
     if _hit and _time.monotonic() - _hit[0] < _SEARCH_CACHE_TTL:
         return _hit[1]
     try:
-        results = await Search(q).get_page(1)
+        results = []
+        for _pg in (1, 2):
+            try:
+                page_res = await Search(q).get_page(_pg)
+            except Exception:
+                page_res = None
+            if not page_res:
+                break
+            results.extend(page_res)
+            if len(results) >= 60:
+                break
         out = []
-        for r in (results or [])[:30]:
+        for r in results[:60]:
             url = str(getattr(r, 'url', '') or '')
             info = getattr(r, 'info', None)
             year = getattr(info, 'year', None) if info else None
