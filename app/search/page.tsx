@@ -1,6 +1,7 @@
 import { Navbar } from "@/components/navbar";
 import { MovieCard } from "@/components/movie-card";
 import { TVCard } from "@/components/tv-card";
+import { HdCard } from "@/components/hd-card";
 import { searchMovies, searchTV, searchPeople, profileUrl } from "@/lib/tmdb";
 import Image from "next/image";
 import Link from "next/link";
@@ -11,12 +12,19 @@ interface SearchPageProps {
   searchParams: Promise<{ q?: string }>;
 }
 
-// ── HDRezka availability filter ──
-// We search TMDB (rich metadata/posters), then keep only the titles that ALSO
-// exist on HDRezka — so search never shows something that can't actually play.
+// ── HDRezka-driven search ──
+// HDRezka is the source of truth (everything shown is actually available). Each
+// HDRezka hit is matched to a TMDB entry for a rich card + the existing detail
+// page; hits with no TMDB match get an HDRezka-native card → /hd/[token].
 const HDREZKA_FIND = "https://kino.lead-seek.ru/hdrezka/api/find";
 
-interface HdHit { name: string; year: number | null }
+interface HdHit {
+  name: string;
+  year: number | null;
+  type: "movie" | "tv";
+  url: string;
+  poster: string | null;
+}
 
 function normTitle(s?: string): string {
   return (s || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
@@ -34,34 +42,12 @@ async function getHdrezkaHits(query: string): Promise<HdHit[]> {
   }
 }
 
-// A TMDB item is "available" if some HDRezka hit matches its title (ru OR original,
-// either side containing the other) and the year is within ±1.
-function isAvailable(
-  item: { title?: string; name?: string; original_title?: string; original_name?: string; release_date?: string; first_air_date?: string },
-  hits: HdHit[],
-): boolean {
-  const titles = [item.title, item.name, item.original_title, item.original_name]
-    .map(normTitle)
-    .filter(Boolean);
-  const yr = parseInt((item.release_date || item.first_air_date || "").slice(0, 4), 10) || null;
-  return hits.some((h) => {
-    const hn = normTitle(h.name);
-    if (!hn) return false;
-    const titleMatch = titles.some((t) => t === hn || t.includes(hn) || hn.includes(t));
-    if (!titleMatch) return false;
-    if (yr && h.year) return Math.abs(yr - h.year) <= 1;
-    return true; // title matches, one side has no year — accept
-  });
-}
-
 function dedupeById<T extends { id: number }>(items: T[]): T[] {
   const seen = new Set<number>();
   return items.filter((it) => (seen.has(it.id) ? false : (seen.add(it.id), true)));
 }
 
-// TMDB caps search at 20/page; HDRezka has long tails (e.g. "шерлок" → 100+ films
-// across many TMDB pages). Pull several pages so the availability intersection
-// isn't starved by page-1-only recall.
+// TMDB caps search at 20/page; pull several pages so matching isn't starved.
 async function searchMoviesPaged(query: string, pages: number) {
   const res = await Promise.all(Array.from({ length: pages }, (_, i) => searchMovies(query, i + 1)));
   return dedupeById(res.flat());
@@ -69,6 +55,30 @@ async function searchMoviesPaged(query: string, pages: number) {
 async function searchTVPaged(query: string, pages: number) {
   const res = await Promise.all(Array.from({ length: pages }, (_, i) => searchTV(query, i + 1)));
   return dedupeById(res.flat());
+}
+
+type TmdbCand = { obj: any; mt: "movie" | "tv" };
+
+// Find a TMDB entry whose title (ru/original, either side containing the other)
+// and year (±1) match the HDRezka hit.
+function matchTmdb(hit: HdHit, pool: TmdbCand[]): TmdbCand | null {
+  const hn = normTitle(hit.name);
+  if (!hn) return null;
+  const hy = hit.year;
+  for (const cand of pool) {
+    const t = cand.obj;
+    const titles = [t.title, t.name, t.original_title, t.original_name].map(normTitle).filter(Boolean);
+    const titleMatch = titles.some((x: string) => x === hn || x.includes(hn) || hn.includes(x));
+    if (!titleMatch) continue;
+    const ty = parseInt((t.release_date || t.first_air_date || "").slice(0, 4), 10) || null;
+    if (hy && ty && Math.abs(hy - ty) > 1) continue;
+    return cand;
+  }
+  return null;
+}
+
+function tokenFor(url: string): string {
+  return Buffer.from(url).toString("base64url");
 }
 
 export async function generateMetadata({ searchParams }: SearchPageProps): Promise<Metadata> {
@@ -80,9 +90,12 @@ export async function generateMetadata({ searchParams }: SearchPageProps): Promi
   };
 }
 
+type Item = { kind: "tmdb"; mt: "movie" | "tv"; obj: any } | { kind: "hd"; hit: HdHit; href: string };
+
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const params = await searchParams;
   const query = params.q || "";
+
   const [movieResults, tvResults, peopleResults, hdHits] = query
     ? await Promise.all([
         searchMoviesPaged(query, 5),
@@ -90,21 +103,65 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         searchPeople(query),
         getHdrezkaHits(query),
       ])
-    : [[], [], [], []];
+    : [[], [], [], [] as HdHit[]];
 
-  // Keep only TMDB titles that exist on HDRezka. If the availability backend is
-  // unreachable (no hits at all), fall back to showing everything rather than an
-  // empty page.
-  const filterAvail = hdHits.length > 0;
-  const finalMovies = filterAvail ? movieResults.filter((m) => isAvailable(m, hdHits)) : movieResults;
-  const finalTV = filterAvail ? tvResults.filter((t) => isAvailable(t, hdHits)) : tvResults;
+  const movieItems: Item[] = [];
+  const tvItems: Item[] = [];
 
-  // Filter out "people" with no profile photo and no known_for entries (low-signal noise)
-  const filteredPeople = peopleResults.filter(
-    p => p.profile_path || (p.known_for && p.known_for.length > 0)
-  ).slice(0, 12);
+  if (hdHits.length > 0) {
+    // HDRezka drives the result set.
+    const pool: TmdbCand[] = [
+      ...movieResults.map((m: any) => ({ obj: m, mt: "movie" as const })),
+      ...tvResults.map((t: any) => ({ obj: t, mt: "tv" as const })),
+    ];
+    const usedTmdb = new Set<string>();
+    const seenUrl = new Set<string>();
+    for (const hit of hdHits) {
+      if (!hit.url || seenUrl.has(hit.url)) continue;
+      seenUrl.add(hit.url);
+      const match = matchTmdb(hit, pool);
+      const key = match ? match.mt + ":" + match.obj.id : "";
+      if (match && !usedTmdb.has(key)) {
+        // First HDRezka hit for this TMDB title → rich card.
+        usedTmdb.add(key);
+        (match.mt === "tv" ? tvItems : movieItems).push({ kind: "tmdb", mt: match.mt, obj: match.obj });
+      } else {
+        // No TMDB match, OR a DISTINCT HDRezka title that fuzzy-collided with an
+        // already-shown TMDB entry (e.g. the separate Soviet Holmes films) — keep
+        // it as its own HDRezka-native card so nothing available is dropped.
+        const item: Item = { kind: "hd", hit, href: `/hd/${tokenFor(hit.url)}` };
+        (hit.type === "tv" ? tvItems : movieItems).push(item);
+      }
+    }
+  } else {
+    // Availability backend unreachable — degrade to plain TMDB so search still works.
+    movieResults.forEach((m: any) => movieItems.push({ kind: "tmdb", mt: "movie", obj: m }));
+    tvResults.forEach((t: any) => tvItems.push({ kind: "tmdb", mt: "tv", obj: t }));
+  }
 
-  const totalResults = finalMovies.length + finalTV.length + filteredPeople.length;
+  const filteredPeople = peopleResults
+    .filter((p) => p.profile_path || (p.known_for && p.known_for.length > 0))
+    .slice(0, 12);
+
+  const totalResults = movieItems.length + tvItems.length + filteredPeople.length;
+
+  const renderItem = (item: Item) =>
+    item.kind === "tmdb" ? (
+      item.mt === "tv" ? (
+        <TVCard key={"tv-" + item.obj.id} show={item.obj} />
+      ) : (
+        <MovieCard key={"mv-" + item.obj.id} movie={item.obj} />
+      )
+    ) : (
+      <HdCard
+        key={"hd-" + item.href}
+        name={item.hit.name}
+        year={item.hit.year}
+        poster={item.hit.poster}
+        type={item.hit.type}
+        href={item.href}
+      />
+    );
 
   return (
     <>
@@ -126,7 +183,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             <section className="mb-12">
               <h2 className="text-2xl font-bold text-foreground mb-4">👤 Люди</h2>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
-                {filteredPeople.map(p => (
+                {filteredPeople.map((p) => (
                   <Link key={p.id} href={`/person/${p.id}`} className="group">
                     <div className="aspect-[2/3] rounded-lg overflow-hidden bg-card relative">
                       {p.profile_path ? (
@@ -153,24 +210,20 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             </section>
           )}
 
-          {finalMovies.length > 0 && (
+          {movieItems.length > 0 && (
             <section className="mb-12">
               <h2 className="text-2xl font-bold text-foreground mb-4">🎬 Фильмы</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {finalMovies.map((movie) => (
-                  <MovieCard key={movie.id} movie={movie} />
-                ))}
+                {movieItems.map(renderItem)}
               </div>
             </section>
           )}
 
-          {finalTV.length > 0 && (
+          {tvItems.length > 0 && (
             <section className="mb-12">
               <h2 className="text-2xl font-bold text-foreground mb-4">📺 Сериалы</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {finalTV.map((show) => (
-                  <TVCard key={show.id} show={show} />
-                ))}
+                {tvItems.map(renderItem)}
               </div>
             </section>
           )}
