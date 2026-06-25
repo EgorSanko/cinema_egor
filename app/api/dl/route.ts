@@ -300,7 +300,23 @@ function streamFromCache(file: string, donePath: string, filename: string, req: 
     async pull(controller) {
       try {
         if (stopped) { controller.close(); return; }
-        if (!fh) fh = await fs.promises.open(file, "r");
+        if (!fh) {
+          // ffmpeg (started async in ensureRemux) may not have created the file
+          // yet, or a /tmp reaper deleted it mid-flight. Wait for it instead of
+          // letting open() throw ENOENT — that error, raised after the 200 is
+          // already sent, resets the upstream connection and nginx returns its
+          // own 502 (the iOS-download bug). Give up gracefully if it never shows.
+          let waited = 0;
+          while (!stopped && !fs.existsSync(file)) {
+            if (fs.existsSync(donePath)) { controller.close(); return; }
+            if (waited >= 30000) { controller.close(); return; }
+            await new Promise((r) => setTimeout(r, 250));
+            waited += 250;
+          }
+          if (stopped) { controller.close(); return; }
+          try { fh = await fs.promises.open(file, "r"); }
+          catch { controller.close(); return; }
+        }
         while (!stopped) {
           let size = 0;
           try { size = (await fh.stat()).size; } catch {}
@@ -323,7 +339,11 @@ function streamFromCache(file: string, donePath: string, filename: string, req: 
         }
         controller.close();
       } catch (e) {
-        try { controller.error(e as Error); } catch {}
+        // Close (truncate) rather than error: erroring after the 200 is sent
+        // resets the upstream connection → nginx 502 and can crash the worker.
+        // iOS resumes via Range once `<file>.done` exists, so truncation is safe.
+        console.error("[dl cache]", (e as Error)?.message || e);
+        try { controller.close(); } catch {}
         await close();
       }
     },
