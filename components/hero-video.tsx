@@ -21,10 +21,10 @@ export function HeroVideo() {
   }, []);
 
   return (
-    <div className="relative w-full h-[78vh] min-h-[560px] md:h-[86vh] md:min-h-[700px] overflow-hidden -mt-16">
+    <div className="relative w-full aspect-video max-h-[64vh] overflow-hidden bg-background">
       <video
         ref={ref}
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover object-[50%_60%]"
         autoPlay
         muted
         loop
@@ -34,8 +34,6 @@ export function HeroVideo() {
       >
         <source src="/hero.mp4" type="video/mp4" />
       </video>
-      {/* soft fade into the page background so it blends seamlessly */}
-      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/10 to-transparent pointer-events-none" />
     </div>
   );
 }
