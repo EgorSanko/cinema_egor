@@ -232,7 +232,7 @@ function cleanupCache(): void {
 /** Spawn ffmpeg to remux url → cache file, marking `<file>.done` on success.
  *  Deliberately NOT tied to req.signal — it keeps running after the client
  *  leaves, so a backgrounded iOS download can resume from the finished file. */
-function ensureRemux(url: string, file: string, donePath: string, key: string): void {
+function ensureRemux(url: string, file: string, donePath: string, key: string, faststart: boolean): void {
   if (remuxing.has(key) || fs.existsSync(donePath)) return;
   remuxing.add(key);
   try { fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch {}
@@ -241,9 +241,16 @@ function ensureRemux(url: string, file: string, donePath: string, key: string): 
     "-nostdin", "-loglevel", "error",
     "-user_agent", UA, "-headers", `Referer: ${REFERER}\r\n`,
     "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc",
-    // fragmented mp4: valid at every prefix (so the growing file streams + Range
-    // works), and modern iOS still reads its duration.
-    "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+    // iOS (faststart): a NON-fragmented mp4 with the moov atom moved to the front
+    //   and a real mvhd duration. A fragmented mp4 (empty_moov) makes iOS/QuickTime
+    //   read only the first ~2s fragment → the "downloads but plays 2 seconds" bug.
+    //   Cost: moov is relocated only when ffmpeg closes, so the file is valid only
+    //   once complete — we serve it from the finished cache, not while it grows.
+    // Everyone else (fragmented): valid at every prefix, so the growing file can be
+    //   streamed with Range as it's written. Plays fine in browsers/Android.
+    ...(faststart
+      ? ["-movflags", "+faststart"]
+      : ["-movflags", "frag_keyframe+empty_moov+default_base_moof"]),
     "-f", "mp4", "-y", file,
   ];
   const ff = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -363,9 +370,14 @@ function streamFromCache(file: string, donePath: string, filename: string, req: 
 
 async function remuxHls(url: string, filename: string, req: NextRequest): Promise<Response> {
   cleanupCache();
-  const key = cacheKey(url);
+  // iOS needs a faststart (moov-front) file, which can only be served complete;
+  // everyone else gets the streamable fragmented file. Key them separately so the
+  // two formats never collide in the cache.
+  const ios = isIOS(req);
+  const key = cacheKey(url) + (ios ? ".ios" : "");
   const file = path.join(CACHE_DIR, key + ".mp4");
   const donePath = file + ".done";
+  const range = req.headers.get("range");
 
   // Low on disk and nothing cached yet → fall back to a plain ffmpeg pipe
   // (no caching) so a download still works without risking the disk.
@@ -374,17 +386,47 @@ async function remuxHls(url: string, filename: string, req: NextRequest): Promis
     return streamHlsAsMp4(url, filename, req);
   }
 
-  ensureRemux(url, file, donePath, key);
+  ensureRemux(url, file, donePath, key, ios);
 
-  const range = req.headers.get("range");
   if (fs.existsSync(donePath)) {
     let size = 0; try { size = fs.statSync(file).size; } catch {}
     if (size > 0) return serveCompleteRange(file, size, range, filename);
   }
+
+  if (ios) {
+    // faststart file is valid only once complete → wait for it, then serve with a
+    // real duration so iOS plays the whole episode (not just the first ~2s). ffmpeg
+    // runs detached and nginx /api/dl allows a 3600s read, so a slow/backgrounded
+    // download still finishes and a resume gets the same file.
+    return waitForDoneThenServe(url, file, donePath, key, filename, range, req);
+  }
+
   // Not finished yet → stream the growing file from the start (ignore Range; the
   // client restarts, but ffmpeg keeps caching, so a later resume hits the
   // finished-file path above and gets a proper 206).
   return streamFromCache(file, donePath, filename, req);
+}
+
+/** iOS path: block until the faststart cache file is finished, then serve it
+ *  (with Range). Returns 499 if the client leaves; on ffmpeg failure falls back
+ *  to a live fragmented pipe so the user still gets *something*. */
+async function waitForDoneThenServe(
+  url: string, file: string, donePath: string, key: string,
+  filename: string, range: string | null, req: NextRequest,
+): Promise<Response> {
+  while (!req.signal.aborted) {
+    if (fs.existsSync(donePath)) {
+      let size = 0; try { size = fs.statSync(file).size; } catch {}
+      if (size > 0) return serveCompleteRange(file, size, range, filename);
+      break; // marked done but no bytes → treat as failure
+    }
+    // ffmpeg exited without marking done (deleted from `remuxing`, no .done) → it
+    // failed; stop waiting and fall back below.
+    if (!remuxing.has(key) && !fs.existsSync(donePath)) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (req.signal.aborted) return new Response(null, { status: 499 });
+  return streamHlsAsMp4(url, filename, req);
 }
 
 /** Mode 1-iOS — remux HLS to a real mp4 file with moov-at-front, then serve
