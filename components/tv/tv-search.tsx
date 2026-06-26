@@ -43,8 +43,8 @@ function rowsFor(mode: Mode): KeyDef[][] {
 }
 
 const KEY = 46; // px — compact key size
-const CARD_W = 190;
-const RESULTS_PER_ROW = 4;
+const CARD_W = 180;
+const RESULTS_PER_ROW = 6; // results sit BELOW the keyboard now → use the full width
 
 /**
  * TV "10-foot UI" search. Fully D-pad / remote driven, no mouse, no TextInput.
@@ -198,13 +198,17 @@ export function TvSearch() {
             col = Math.max(0, col - 1);
           } else if (isRight) {
             if (col < rowLen - 1) col = col + 1;
-            else if (results.length > 0) return { zone: "results", row: 0, col: 0 };
           } else if (isUp) {
             row = Math.max(0, row - 1);
             col = Math.min(col, rows[row].length - 1);
           } else if (isDown) {
-            row = Math.min(rows.length - 1, row + 1);
-            col = Math.min(col, rows[row].length - 1);
+            if (row < rows.length - 1) {
+              row = row + 1;
+              col = Math.min(col, rows[row].length - 1);
+            } else if (results.length > 0) {
+              // Past the last keyboard row → cross DOWN into the results grid.
+              return { zone: "results", row: 0, col: 0 };
+            }
           }
           return { zone: "keyboard", row, col };
         }
@@ -220,16 +224,18 @@ export function TvSearch() {
           return prev;
         }
         if (isLeft) {
-          if (col > 0) col = col - 1;
-          else {
-            const kbRow = Math.min(prev.row, rows.length - 1);
-            return { zone: "keyboard", row: kbRow, col: rows[kbRow].length - 1 };
-          }
+          col = Math.max(0, col - 1);
         } else if (isRight) {
           const idx = row * RESULTS_PER_ROW + col;
           if (idx < count - 1 && col < RESULTS_PER_ROW - 1) col = col + 1;
         } else if (isUp) {
-          row = Math.max(0, row - 1);
+          if (row > 0) {
+            row = row - 1;
+          } else {
+            // Top row of results → cross UP back into the keyboard above.
+            const kbRow = rows.length - 1;
+            return { zone: "keyboard", row: kbRow, col: Math.min(col, rows[kbRow].length - 1) };
+          }
         } else if (isDown) {
           row = Math.min(lastRow, row + 1);
           const idx = row * RESULTS_PER_ROW + col;
@@ -270,8 +276,8 @@ export function TvSearch() {
         </div>
       </header>
 
-      <div className="flex gap-10 px-12 pb-24">
-        {/* ---------------- On-screen keyboard ---------------- */}
+      <div className="flex flex-col gap-8 px-12 pb-24">
+        {/* ---------------- On-screen keyboard (top) ---------------- */}
         <section className="shrink-0" aria-label="Экранная клавиатура">
           <div className="flex flex-col gap-2.5">
             {rows.map((row, rIdx) => (

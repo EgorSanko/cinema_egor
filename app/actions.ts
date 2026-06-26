@@ -31,7 +31,9 @@ function unifiedToTvCard(it: UnifiedItem): TvSearchCard {
     mt: it.hit.type,
     title: it.hit.name,
     year: it.hit.year ? String(it.hit.year) : "",
-    poster: it.hit.poster || "",
+    // HDRezka poster domains (statichdrezka.ac …) are blocked from RU clients —
+    // route through the same-origin /hd-img/ proxy (nginx → wsrv), like /tmdb-img/.
+    poster: it.hit.poster ? `/hd-img/${it.hit.poster.replace(/^https?:\/\//, "")}` : "",
     href: `/tv-hd/${it.token}`,
   };
 }
