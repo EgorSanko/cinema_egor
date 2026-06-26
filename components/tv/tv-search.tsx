@@ -43,8 +43,7 @@ function rowsFor(mode: Mode): KeyDef[][] {
 }
 
 const KEY = 46; // px — compact key size
-const CARD_W = 128; // smaller posters — fit many per row below the keyboard
-const RESULTS_PER_ROW = 8;
+const RESULTS_PER_ROW = 6; // fluid columns (1fr) so they always fit the TV width
 
 /**
  * TV "10-foot UI" search. Fully D-pad / remote driven, no mouse, no TextInput.
@@ -333,8 +332,8 @@ export function TvSearch() {
             </div>
           ) : results.length > 0 ? (
             <div
-              className="grid gap-x-6 gap-y-7"
-              style={{ gridTemplateColumns: `repeat(${RESULTS_PER_ROW}, ${CARD_W}px)` }}
+              className="grid gap-x-5 gap-y-6 pr-4"
+              style={{ gridTemplateColumns: `repeat(${RESULTS_PER_ROW}, minmax(0, 1fr))` }}
             >
               {results.map((card, idx) => {
                 const row = Math.floor(idx / RESULTS_PER_ROW);
@@ -353,8 +352,8 @@ export function TvSearch() {
                       open(card);
                     }}
                     onFocus={() => setFocus({ zone: "results", row, col })}
-                    className="group rounded-xl text-left outline-none transition-transform duration-150 ease-out"
-                    style={{ width: CARD_W, transform: focused ? "scale(1.08)" : "scale(1)" }}
+                    className="group w-full rounded-xl text-left outline-none transition-transform duration-150 ease-out"
+                    style={{ transform: focused ? "scale(1.08)" : "scale(1)" }}
                   >
                     <div
                       className="relative overflow-hidden rounded-xl bg-card"
