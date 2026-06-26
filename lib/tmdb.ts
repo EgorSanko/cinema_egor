@@ -26,6 +26,12 @@ async function fetchWithRetry(
 	try {
 		const response = await fetch(url, {
 			...options,
+			// Bound every TMDB call: from a RU host the connection to api.themoviedb.org
+			// periodically stalls, and without a timeout undici keeps a dead socket and
+			// the request hangs ~indefinitely → the whole /feed route times out. A hard
+			// 7s abort makes a stalled call fail fast so the retry below opens a fresh
+			// connection and the feed self-heals instead of dying until a manual restart.
+			signal: options.signal ?? AbortSignal.timeout(7000),
 			headers: {
 				...options.headers,
 				"Content-Type": "application/json",

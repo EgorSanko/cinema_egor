@@ -19,7 +19,7 @@ const decadeOf = (date?: string): number => {
 
 // Top genres the user currently likes (positive taste weight), best first.
 function topGenres(taste: TasteVector | null, k: number): number[] {
-  if (!taste) return [];
+  if (!taste || !taste.genres) return [];
   return Object.entries(taste.genres)
     .filter(([, w]) => w > 0.05)
     .sort((a, b) => b[1] - a[1])
@@ -40,8 +40,19 @@ export async function POST(req: NextRequest) {
   }
   // Effective taste = long-term blended with the short-term session intent
   // (Phase 3): the feed leans into what you're into right now without losing
-  // your overall taste.
-  const taste = blendTaste(body.taste ?? null, body.session ?? null);
+  // your overall taste. Normalise first: a client with stale/partial localStorage
+  // can send a taste object missing `genres`/`decades`, and a bare Object.entries
+  // on that threw → the whole feed 500'd. Coerce to a valid vector (or null).
+  const norm = (t: unknown): TasteVector | null => {
+    if (!t || typeof t !== "object") return null;
+    const o = t as Partial<TasteVector>;
+    return {
+      genres: o.genres && typeof o.genres === "object" ? o.genres : {},
+      decades: o.decades && typeof o.decades === "object" ? o.decades : {},
+      n: typeof o.n === "number" ? o.n : 0,
+    };
+  };
+  const taste = blendTaste(norm(body.taste), norm(body.session));
   const seen = new Set<number>(body.seen || []);
   const positives = (body.positives || []).map(Number).filter(Boolean);
   const n = Math.min(Math.max(body.n || 8, 1), 12);
