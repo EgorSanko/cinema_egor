@@ -43,8 +43,8 @@ function rowsFor(mode: Mode): KeyDef[][] {
 }
 
 const KEY = 46; // px — compact key size
-const CARD_W = 180;
-const RESULTS_PER_ROW = 6; // results sit BELOW the keyboard now → use the full width
+const CARD_W = 128; // smaller posters — fit many per row below the keyboard
+const RESULTS_PER_ROW = 8;
 
 /**
  * TV "10-foot UI" search. Fully D-pad / remote driven, no mouse, no TextInput.
@@ -382,7 +382,7 @@ export function TvSearch() {
 
                       {/* Type badge — distinguishes Фильм vs Сериал at a glance */}
                       <span
-                        className="absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-bold uppercase tracking-wide"
+                        className="absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
                         style={{
                           background: isTv ? "rgba(56,189,248,0.92)" : "rgba(0,0,0,0.72)",
                           color: isTv ? "#06283d" : "#fff",
@@ -394,20 +394,20 @@ export function TvSearch() {
 
                       {/* Title overlay — always legible, strongest on focus */}
                       <div
-                        className="absolute inset-x-0 bottom-0 px-3 pb-2 pt-8"
+                        className="absolute inset-x-0 bottom-0 px-2 pb-1.5 pt-6"
                         style={{
                           background: "linear-gradient(to top, rgba(0,0,0,0.92), rgba(0,0,0,0))",
                         }}
                       >
                         <p
-                          className="line-clamp-2 text-sm font-bold leading-tight"
+                          className="line-clamp-2 text-xs font-bold leading-tight"
                           style={{ color: focused ? "var(--primary)" : "#fff" }}
                           title={card.title}
                         >
                           {card.title}
                         </p>
                         {card.year && (
-                          <p className="mt-0.5 text-xs text-white/70">{card.year}</p>
+                          <p className="text-[11px] text-white/70">{card.year}</p>
                         )}
                       </div>
                     </div>
