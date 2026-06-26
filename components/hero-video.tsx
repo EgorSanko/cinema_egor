@@ -21,13 +21,12 @@ export function HeroVideo() {
   }, []);
 
   return (
-    <div className="relative w-full aspect-video max-h-[64vh] overflow-hidden bg-background">
+    <div className="relative w-full aspect-video overflow-hidden bg-background md:max-w-[1280px] md:mx-auto md:mt-4 md:rounded-2xl md:ring-1 md:ring-white/[0.06]">
       <video
         ref={ref}
-        className="absolute inset-0 w-full h-full object-cover object-[50%_60%]"
+        className="absolute inset-0 w-full h-full object-cover"
         autoPlay
         muted
-        loop
         playsInline
         preload="auto"
         poster="/hero-poster.jpg"
