@@ -1,6 +1,49 @@
 "use server";
 
-import { getMoviesByGenre, getPopularMovies, searchMovies, searchTV, getPopularTV, getTVByGenre } from "@/lib/tmdb";
+import { getMoviesByGenre, getPopularMovies, searchMovies, searchTV, getPopularTV, getTVByGenre, getImageUrl } from "@/lib/tmdb";
+import { searchUnified, type UnifiedItem } from "@/lib/search/unified";
+
+// Card shape consumed by the TV search UI. `href` is the ready-to-open route:
+// TMDB-matched → /tv-watch/{type}/{id}; HDRezka-native → /tv-hd/{token}.
+export type TvSearchCard = {
+  key: string;
+  mt: "movie" | "tv";
+  title: string;
+  year: string;
+  poster: string;
+  href: string;
+};
+
+function unifiedToTvCard(it: UnifiedItem): TvSearchCard {
+  if (it.kind === "tmdb") {
+    const o = it.obj;
+    return {
+      key: `${it.mt}:${o.id}`,
+      mt: it.mt,
+      title: o.title || o.name || "",
+      year: String(o.release_date || o.first_air_date || "").slice(0, 4),
+      poster: getImageUrl(o.poster_path, "w500"),
+      href: `/tv-watch/${it.mt}/${o.id}`,
+    };
+  }
+  return {
+    key: `hd:${it.token}`,
+    mt: it.hit.type,
+    title: it.hit.name,
+    year: it.hit.year ? String(it.hit.year) : "",
+    poster: it.hit.poster || "",
+    href: `/tv-hd/${it.token}`,
+  };
+}
+
+// HDRezka-driven TV search — same result set as the website /search (availability
+// from HDRezka + TMDB enrichment + HDRezka-native titles). Lighter TMDB depth
+// (3 movie / 2 TV pages) since this runs live on every keystroke. Movies first,
+// then series, so the two groups stay visually separable in the rail.
+export async function searchTvUnifiedAction(query: string): Promise<TvSearchCard[]> {
+  const { movies, tv } = await searchUnified(query, 3, 2);
+  return [...movies.map(unifiedToTvCard), ...tv.map(unifiedToTvCard)];
+}
 
 export async function fetchMoreRelatedMovies(genreId: number, page: number) {
   return await getMoviesByGenre(genreId, page);

@@ -42,6 +42,9 @@ export type TvWatchMedia = {
   backdrop: string | null;
   overview: string;
   seasons: TvWatchSeason[]; // empty for movies
+  // HDRezka-native titles (no TMDB id): resolve the stream DIRECTLY by this
+  // HDRezka page URL via /hdrezka/api/resolve instead of the title search chain.
+  hdUrl?: string;
 };
 
 type Translator = { id: number; name: string; is_premium?: boolean };
@@ -207,6 +210,15 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // The actual resolve work — fetch chain that yields a playable ResolveData
       // or null. Raced against a timeout below so it can never hang forever.
       const doResolve = async (): Promise<ResolveData | null> => {
+        // HDRezka-native title → resolve DIRECTLY by URL (the same endpoint the
+        // website's HdDetail uses), bypassing the title-search chain below.
+        if (media.hdUrl) {
+          const rr = await fetch(
+            `/hdrezka/api/resolve?url=${encodeURIComponent(media.hdUrl)}${seriesParam}${trParam}`
+          );
+          const dd: ResolveData = await rr.json();
+          return dd?.stream ? dd : null;
+        }
         let d: ResolveData | null = null;
         const r = await fetch(build(searchTitle));
         d = await r.json();
@@ -285,6 +297,21 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // ── Load episode list whenever a season is focused/selected (series). ──
   useEffect(() => {
     if (!isSeries) return;
+    // HDRezka-native series have no TMDB metadata — synthesize a numbered episode
+    // list from the season's episode_count (the player still resolves each one).
+    if (media.hdUrl) {
+      const sea = validSeasons.find((s) => s.season_number === season);
+      const count = sea?.episode_count || 0;
+      setEpisodes(
+        Array.from({ length: count }, (_, i) => ({
+          episode_number: i + 1,
+          name: `Серия ${i + 1}`,
+          still_path: null,
+          air_date: "",
+        }))
+      );
+      return;
+    }
     let alive = true;
     (async () => {
       try {
