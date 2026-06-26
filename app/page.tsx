@@ -1,4 +1,4 @@
-import { HeroSection } from "@/components/hero-section";
+import { HeroVideo } from "@/components/hero-video";
 import { InfiniteScrollMovies } from "@/components/infinite-scroll-movies";
 import { MovieSection } from "@/components/movie-section";
 import { TVSection } from "@/components/tv-section";
@@ -24,20 +24,12 @@ export default async function Home() {
     getPopularTV(),
   ]);
 
-  // Mix top trending TV + Movies for the hero carousel (cinematic backdrops for both)
-  const heroItems: any[] = [];
-  for (let i = 0; i < 6; i++) {
-    if (trendingTV[i]) heroItems.push(trendingTV[i]);
-    if (trendingMovies[i]) heroItems.push(trendingMovies[i]);
-  }
-  const heroSlice = heroItems.filter(x => x?.backdrop_path).slice(0, 8);
-
   return (
     <>
       <Navbar />
       <TermsModal />
       <main className="bg-background pb-20 sm:pb-0">
-        {heroSlice.length > 0 && <HeroSection movies={heroSlice} />}
+        <HeroVideo />
         <div className="space-y-16 px-4 sm:px-6 lg:px-8 py-14 max-w-[1600px] mx-auto">
           <ContinueWatching />
           <Recommendations />
