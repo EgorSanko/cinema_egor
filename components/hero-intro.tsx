@@ -57,28 +57,37 @@ export function HeroIntro({ movies }: { movies: HeroMovies }) {
   if (phase === "cards") return <HeroSection movies={movies} />;
 
   return (
-    <div
-      onClick={finish}
-      className="relative w-full aspect-video cursor-pointer overflow-hidden bg-black md:mx-auto md:mt-4 md:max-w-[1280px] md:rounded-2xl md:ring-1 md:ring-white/[0.06]"
-      style={{ opacity: fading ? 0 : 1, transition: `opacity ${FADE_MS}ms ease-out` }}
-      aria-hidden="true"
-    >
-      <video
-        ref={videoRef}
-        className="absolute inset-0 h-full w-full object-contain"
-        autoPlay
-        muted
-        playsInline
-        preload="auto"
-        poster="/intro-logo-poster.jpg"
-        onEnded={onEnded}
-        onError={finish}
+    // Span the same content width as the navbar/rows: left edge under the logo,
+    // right edge under the profile/Войти. The inner box uses the video's native
+    // aspect ratio so it's never squished or letterboxed.
+    <div className="mx-auto mt-4 max-w-[1600px] px-4 sm:px-6 lg:px-8">
+      <div
+        onClick={finish}
+        className="relative w-full cursor-pointer overflow-hidden rounded-2xl bg-black ring-1 ring-white/[0.06]"
+        style={{
+          aspectRatio: "1280 / 660",
+          opacity: fading ? 0 : 1,
+          transition: `opacity ${FADE_MS}ms ease-out`,
+        }}
+        aria-hidden="true"
       >
-        <source src="/intro-logo.mp4" type="video/mp4" />
-      </video>
-      <span className="pointer-events-none absolute bottom-3 right-4 text-xs text-white/40 select-none">
-        нажмите, чтобы пропустить
-      </span>
+        <video
+          ref={videoRef}
+          className="absolute inset-0 h-full w-full object-cover"
+          autoPlay
+          muted
+          playsInline
+          preload="auto"
+          poster="/intro-logo-poster.jpg"
+          onEnded={onEnded}
+          onError={finish}
+        >
+          <source src="/intro-logo.mp4" type="video/mp4" />
+        </video>
+        <span className="pointer-events-none absolute bottom-3 right-4 text-xs text-white/40 select-none">
+          нажмите, чтобы пропустить
+        </span>
+      </div>
     </div>
   );
 }
