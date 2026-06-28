@@ -521,6 +521,48 @@ async def details(url: str):
         return {"error": str(e)}
 
 
+_episodes_cache: dict = {}
+
+@app.get("/api/episodes")
+async def episodes(url: str, translator_id: int = None):
+    # Per-translator season/episode tree (HDRezka-style). Pick a translator and
+    # get exactly the seasons/episodes IT has — so the UI can scope its season/
+    # episode selectors to the chosen dub and never offer an invalid combo.
+    #   GET /api/episodes?url=...&translator_id=110   ->
+    #     {"type":"tv","translator_id":110,
+    #      "translators":[{"id":56,"name":"Дубляж"},...],
+    #      "seasons":{"21":[1123,...],"22":[...]}}
+    ck = (url, translator_id)
+    _hit = _episodes_cache.get(ck)
+    if _hit and _time.monotonic() - _hit[0] < 3 * 3600:
+        return _hit[1]
+    await ensure_login()
+    try:
+        player = await Player(url)
+        if not isinstance(player, PlayerSeries):
+            resp = {"type": "movie", "translators": [], "seasons": {}}
+            _episodes_cache[ck] = (_time.monotonic(), resp)
+            return resp
+        translators = []
+        try:
+            for tname, tid in player.post.translators.name_id.items():
+                translators.append({"id": int(tid), "name": str(tname)})
+        except Exception:
+            pass
+        eps = await player.get_episodes(translator_id)
+        resp = {
+            "type": "tv",
+            "translator_id": int(translator_id) if translator_id is not None
+                else (translators[0]["id"] if translators else None),
+            "translators": translators,
+            "seasons": {str(k): [int(n) for n in v] for k, v in eps.items()},
+        }
+        _episodes_cache[ck] = (_time.monotonic(), resp)
+        return resp
+    except Exception as e:
+        return {"error": str(e)}
+
+
 async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key):
     try:
         results = await Search(q).get_page(1)
