@@ -83,12 +83,17 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // to the chosen dub so an invalid (dub, season) combo can't be picked. null =
   // not loaded yet → fall back to showing the full TMDB structure.
   const [availTree, setAvailTree] = useState<Record<number, number[]> | null>(null);
+  // Which dubs have the CURRENTLY-selected (season, episode). Used to filter the
+  // IN-PLAYER dub switcher so it only offers voiceovers that translated this
+  // episode. null = not loaded → show all dubs.
+  const [episodeDubIds, setEpisodeDubIds] = useState<number[] | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
   const availKeyRef = useRef<string>("");
+  const eptrKeyRef = useRef<string>("");
   const autoplayTriggeredRef = useRef(false);
   // Wall-clock of the last auto-advance. A real episode can't end within
   // seconds of the previous one starting, so any "episode ended" signal that
@@ -563,6 +568,28 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamData?.url, selectedTranslator]);
 
+  // Which dubs have the current (season, episode) — for filtering the in-player
+  // dub switcher. Keyed by (url, season, episode); reloads when the user moves
+  // to another episode.
+  useEffect(() => {
+    const url = streamData?.url;
+    if (!url) return;
+    const key = url + "|" + selectedSeason + "|" + selectedEpisode;
+    if (eptrKeyRef.current === key) return;
+    eptrKeyRef.current = key;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/hdrezka/api/episode-translators?url=" + encodeURIComponent(url) +
+          "&season=" + selectedSeason + "&episode=" + selectedEpisode);
+        const d = await res.json();
+        if (!alive) return;
+        setEpisodeDubIds(Array.isArray(d?.ids) ? d.ids : null);
+      } catch { if (alive) setEpisodeDubIds(null); }
+    })();
+    return () => { alive = false; };
+  }, [streamData?.url, selectedSeason, selectedEpisode]);
+
   // Seasons the selected dub actually has (null tree → all). Episode numbering
   // can diverge from TMDB on long anime (cumulative numbering), so only gate
   // episodes when the dub's numbers actually overlap TMDB's — otherwise show all
@@ -573,6 +600,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const _treeEps = availTree?.[selectedSeason];
   const _epOverlap = !!_treeEps && episodes.some(e => _treeEps.includes(e.episode_number));
   const gatedEpisodes = _epOverlap ? episodes.filter(e => _treeEps!.includes(e.episode_number)) : episodes;
+
+  // Dubs offered IN THE PLAYER = only those that have the current episode (always
+  // keep the active one so it never vanishes). Falls back to all when unknown.
+  const playerDubs = (() => {
+    if (!episodeDubIds || episodeDubIds.length === 0) return translators;
+    const allow = new Set(episodeDubIds);
+    if (selectedTranslator != null) allow.add(selectedTranslator);
+    const f = translators.filter(t => allow.has(t.id));
+    return f.length ? f : translators;
+  })();
 
   const hasNextEpisode = (() => {
     const idx = releasedEpisodes.findIndex(e => e.episode_number === selectedEpisode);
@@ -758,7 +795,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
               qualities={streamData.streams}
               selectedQuality={selectedQuality}
               onQualityChange={changeQuality}
-              translators={translators}
+              translators={playerDubs}
               selectedTranslator={selectedTranslator}
               onTranslatorChange={changeTranslator}
               subtitles={subtitles}
@@ -1011,7 +1048,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                         <span className="inline-block h-3 w-3 rounded-full border-2 border-primary/40 border-t-primary animate-spin" />
                       )}
                     </div>
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                    <div className="flex flex-wrap items-center gap-2">
                       {Array.from(new Map(translators.map(t => [t.id, t])).values()).map((t) => (
                         <button
                           key={t.id}
@@ -1033,7 +1070,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 )}
 
                 {/* Season tabs (scoped to the selected озвучка) */}
-                <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
+                <div className="flex flex-wrap items-center gap-2 mb-4">
                   {gatedSeasons.map((s) => (
                     <button
                       key={s.season_number}

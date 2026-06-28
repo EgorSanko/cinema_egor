@@ -563,6 +563,41 @@ async def episodes(url: str, translator_id: int = None):
         return {"error": str(e)}
 
 
+_eptr_cache: dict = {}
+
+@app.get("/api/episode-translators")
+async def episode_translators(url: str, season: int = None, episode: int = None):
+    # Which dubs actually have THIS (season, episode). For the in-player dub
+    # switcher: only offer voiceovers that translated the episode being watched,
+    # so the user can't pick a dub that lacks the current episode.
+    #   GET /api/episode-translators?url=...&season=4&episode=7 -> {"ids":[56,101]}
+    ck = (url, season, episode)
+    _hit = _eptr_cache.get(ck)
+    if _hit and _time.monotonic() - _hit[0] < 3 * 3600:
+        return _hit[1]
+    await ensure_login()
+    try:
+        player = await Player(url)
+        if not isinstance(player, PlayerSeries) or season is None or episode is None:
+            resp = {"ids": []}
+            _eptr_cache[ck] = (_time.monotonic(), resp)
+            return resp
+        s, e = int(season), int(episode)
+        ids = []
+        for _tname, tid in player.post.translators.name_id.items():
+            try:
+                tree = await player.get_episodes(tid)
+                if s in tree and e in tuple(tree[s]):
+                    ids.append(int(tid))
+            except Exception:
+                pass
+        resp = {"ids": ids}
+        _eptr_cache[ck] = (_time.monotonic(), resp)
+        return resp
+    except Exception as ex:
+        return {"error": str(ex)}
+
+
 async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key):
     try:
         results = await Search(q).get_page(1)
