@@ -123,10 +123,18 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   const [season, setSeason] = useState(1);
   const [episode, setEpisode] = useState(1);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
-  // picker focus: column 0 = season list, column 1 = episode list
-  const [pickerCol, setPickerCol] = useState<0 | 1>(0);
+  // picker focus columns: 0 = озвучка, 1 = сезоны, 2 = серии (HDRezka-style).
+  // The dub column only exists once dubs load — until then focus starts on seasons.
+  const [pickerCol, setPickerCol] = useState<0 | 1 | 2>(1);
+  const [dubIdx, setDubIdx] = useState(0);
   const [seasonIdx, setSeasonIdx] = useState(0);
   const [episodeIdx, setEpisodeIdx] = useState(0);
+  // HDRezka scopes seasons/episodes to the selected dub. availTree[season] = the
+  // episode numbers that dub has. episodeDubIds = dubs that have the CURRENT
+  // (season, episode). hdUrlState = resolved HDRezka page URL (for /api/episodes).
+  const [availTree, setAvailTree] = useState<Record<number, number[]> | null>(null);
+  const [episodeDubIds, setEpisodeDubIds] = useState<number[] | null>(null);
+  const [hdUrlState, setHdUrlState] = useState<string | null>(media.hdUrl ?? null);
 
   // ── Playback / overlay state ──
   const [zone, setZone] = useState<Zone>(isSeries ? "picker" : "loading");
@@ -149,6 +157,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   const saveInt = useRef<ReturnType<typeof setInterval> | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekOnNext = useRef<number | undefined>(undefined); // preserve pos across source switch
+  const treeKeyRef = useRef<string>("");   // last (url,dub) loaded into availTree
+  const eptrKeyRef = useRef<string>("");   // last (season,episode) loaded for dub filter
+  const pickerInitRef = useRef(false);     // ran the picker dub/tree load once
 
   // Resolve timeout — a title that never resolves (not on HDRezka / not yet
   // released / hung network) must NOT spin forever. 25s → hard failure.
@@ -325,6 +336,131 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, isSeries]);
+
+  // ── HDRezka-style per-dub gating ─────────────────────────────────
+  // Load the season/episode tree for a dub. With no dub given, first discover the
+  // default dub (the no-translator response is the page union of ALL seasons, not
+  // what the default dub really has), then fetch that dub's real tree.
+  const loadTree = useCallback(async (url: string, trId?: number | null): Promise<Record<number, number[]> | null> => {
+    try {
+      let tid = trId ?? null;
+      if (tid == null) {
+        const r0 = await fetch(`/hdrezka/api/episodes?url=${encodeURIComponent(url)}`);
+        const d0 = await r0.json();
+        if (d0?.translators?.length) {
+          setTranslators(d0.translators);
+          tid = d0.active_translator_id ?? d0.translators[0].id;
+          setTranslatorId((prev) => prev ?? tid);
+        }
+      }
+      const p = new URLSearchParams({ url });
+      if (tid) p.set("translator_id", String(tid));
+      const r = await fetch(`/hdrezka/api/episodes?${p.toString()}`);
+      const d = await r.json();
+      if (d?.translators?.length) {
+        setTranslators((prev) => (prev.length ? prev : d.translators));
+        setTranslatorId((prev) => prev ?? d.active_translator_id ?? d.translators[0].id);
+      }
+      if (d?.seasons) {
+        const tree: Record<number, number[]> = {};
+        for (const [s, eps] of Object.entries(d.seasons)) tree[parseInt(s, 10)] = (eps as number[]) || [];
+        setAvailTree(tree);
+        return tree;
+      }
+    } catch { /* keep default seasons on failure */ }
+    return null;
+  }, []);
+
+  // Discover the HDRezka page URL for a TMDB title (hd-native already has it),
+  // surfacing its dub list along the way. Returns the url or null.
+  const fetchMeta = useCallback(async (): Promise<string | null> => {
+    if (media.hdUrl) return media.hdUrl;
+    const year = media.year || "";
+    const ru = (media.title || "").replace(/["«»“”]/g, "").trim();
+    const orig = (media.originalTitle || "").replace(/["«»“”]/g, "").trim();
+    const names = [ru, orig].filter((n, i, a) => n && a.indexOf(n) === i);
+    const grab = (d: any): string | null => {
+      if (!d?.url) return null;
+      if (d.translators?.length) {
+        setTranslators(d.translators);
+        setTranslatorId((prev) => prev ?? d.active_translator_id ?? d.translators[0].id);
+      }
+      return d.url as string;
+    };
+    for (const name of names) {
+      try {
+        const r = await fetch(`/hdrezka/api/search?q=${encodeURIComponent(name)}&year=${year}&type=${media.type}&season=${season}&episode=${episode}`);
+        const u = grab(await r.json());
+        if (u) return u;
+        const rr = await fetch(`/hdrezka/api/search?q=${encodeURIComponent(name)}&year=${year}&type=${media.type}&season=${season}&episode=${episode}`);
+        const dd = await rr.json();
+        if (dd?.results?.length) {
+          for (let i = 0; i < Math.min(dd.results.length, 3); i++) {
+            const r2 = await fetch(`/hdrezka/api/search?q=${encodeURIComponent(name)}&year=${year}&type=${media.type}&index=${i}&season=${season}&episode=${episode}`);
+            const u2 = grab(await r2.json());
+            if (u2) return u2;
+          }
+        }
+      } catch { /* try next name */ }
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media, season, episode]);
+
+  // On entering the series picker: discover URL + dubs, load the default dub's
+  // tree so seasons/episodes scope to it. Runs once.
+  useEffect(() => {
+    if (!isSeries || pickerInitRef.current) return;
+    pickerInitRef.current = true;
+    let alive = true;
+    (async () => {
+      const url = media.hdUrl || (await fetchMeta());
+      if (!alive || !url) return;
+      setHdUrlState(url);
+      const lastTr = getLastTranslator(media.id, media.type)?.id ?? null;
+      const tree = await loadTree(url, lastTr);
+      if (alive && tree) {
+        const ss = Object.keys(tree).map(Number).sort((a, b) => a - b);
+        if (ss.length && !tree[season]) { setSeason(ss[0]); setSeasonIdx(0); }
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSeries]);
+
+  // Which dubs have the current (season, episode) — for the in-player dub filter.
+  useEffect(() => {
+    if (!isSeries || !hdUrlState) return;
+    const key = season + "|" + episode;
+    if (eptrKeyRef.current === key) return;
+    eptrKeyRef.current = key;
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(`/hdrezka/api/episode-translators?url=${encodeURIComponent(hdUrlState)}&season=${season}&episode=${episode}`);
+        const d = await r.json();
+        if (alive) setEpisodeDubIds(Array.isArray(d?.ids) ? d.ids : null);
+      } catch { if (alive) setEpisodeDubIds(null); }
+    })();
+    return () => { alive = false; };
+  }, [hdUrlState, isSeries, season, episode]);
+
+  // Dub-scoped lists used by the picker + settings.
+  const gatedSeasons = availTree
+    ? validSeasons.filter((s) => (availTree[s.season_number]?.length ?? 0) > 0)
+    : validSeasons;
+  const _treeEps = availTree?.[season];
+  const pickerEpisodes: Episode[] = (_treeEps && _treeEps.length)
+    ? _treeEps.map((n) => episodes.find((e) => e.episode_number === n) || { episode_number: n, name: `Серия ${n}`, still_path: null, air_date: "" })
+    : episodes;
+  const playerDubs = (() => {
+    if (!episodeDubIds || episodeDubIds.length === 0) return translators;
+    const allow = new Set(episodeDubIds);
+    if (translatorId != null) allow.add(translatorId);
+    const f = translators.filter((t) => allow.has(t.id));
+    return f.length ? f : translators;
+  })();
+  const hasDubCol = translators.length > 0;
 
   // ════════════════════════════════════════════════════════════════
   // HLS load — direct hls.js wrapper (no site chrome). Resumes to seekOnNext
@@ -527,9 +663,31 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     setTranslatorId(tid);
     saveLastTranslator(media.id, media.type, tid, name);
     flash(`Озвучка: ${name}`);
+    if (hdUrlState) loadTree(hdUrlState, tid); // re-scope seasons/episodes to the new dub
     await resolve({ trId: tid, preservePos: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [translatorId, translators, media, resolve, flash]);
+  }, [translatorId, translators, media, resolve, flash, hdUrlState, loadTree]);
+
+  // Pick a dub IN THE PICKER (no playback yet): remember it, re-scope the season/
+  // episode lists to it, and move focus to the season column.
+  const pickDub = useCallback(async (tid: number) => {
+    const name = translators.find((t) => t.id === tid)?.name || "";
+    setTranslatorId(tid);
+    setDubIdx(translators.findIndex((t) => t.id === tid));
+    saveLastTranslator(media.id, media.type, tid, name);
+    if (hdUrlState) {
+      const tree = await loadTree(hdUrlState, tid);
+      if (tree) {
+        const ss = Object.keys(tree).map(Number).filter((n) => (tree[n] || []).length).sort((a, b) => a - b);
+        const s0 = ss[0] ?? season;
+        setSeason(s0);
+      }
+    }
+    setSeasonIdx(0);
+    setEpisodeIdx(0);
+    setPickerCol(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translators, media, hdUrlState, loadTree, season]);
 
   // Play a series episode: remember it, resolve, enter the player.
   const playEpisode = useCallback(async (s: number, e: number) => {
@@ -578,25 +736,35 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       if (!isLeft && !isUp && !isRight && !isDown && !isEnter && !isSpace && !isPlayPause && !isBack) return;
       e.preventDefault();
 
-      // ────────── SERIES PICKER ──────────
+      // ────────── SERIES PICKER (Озвучка | Сезоны | Серии) ──────────
       if (zone === "picker") {
         if (isBack) { router.push("/tv-home"); return; }
+        // ── Озвучка column (0) ──
         if (pickerCol === 0) {
-          // Season column
-          if (isUp) setSeasonIdx((i) => Math.max(0, i - 1));
-          else if (isDown) setSeasonIdx((i) => Math.min(validSeasons.length - 1, i + 1));
-          else if (isRight) { setPickerCol(1); setEpisodeIdx(0); }
+          if (isUp) setDubIdx((i) => Math.max(0, i - 1));
+          else if (isDown) setDubIdx((i) => Math.min(translators.length - 1, i + 1));
+          else if (isRight) setPickerCol(1);
           else if (isEnter || isSpace) {
-            const sn = validSeasons[seasonIdx]?.season_number;
-            if (sn != null) { setSeason(sn); setPickerCol(1); setEpisodeIdx(0); }
+            const t = translators[dubIdx];
+            if (t) pickDub(t.id);
           }
+        // ── Сезоны column (1) ──
+        } else if (pickerCol === 1) {
+          if (isUp) setSeasonIdx((i) => Math.max(0, i - 1));
+          else if (isDown) setSeasonIdx((i) => Math.min(gatedSeasons.length - 1, i + 1));
+          else if (isLeft) { if (hasDubCol) setPickerCol(0); }
+          else if (isRight) { setPickerCol(2); setEpisodeIdx(0); }
+          else if (isEnter || isSpace) {
+            const sn = gatedSeasons[seasonIdx]?.season_number;
+            if (sn != null) { setSeason(sn); setPickerCol(2); setEpisodeIdx(0); }
+          }
+        // ── Серии column (2) ──
         } else {
-          // Episode column
-          if (isLeft) setPickerCol(0);
+          if (isLeft) setPickerCol(1);
           else if (isUp) setEpisodeIdx((i) => Math.max(0, i - 1));
-          else if (isDown) setEpisodeIdx((i) => Math.min(Math.max(0, episodes.length - 1), i + 1));
+          else if (isDown) setEpisodeIdx((i) => Math.min(Math.max(0, pickerEpisodes.length - 1), i + 1));
           else if (isEnter || isSpace || isPlayPause) {
-            const ep = episodes[episodeIdx];
+            const ep = pickerEpisodes[episodeIdx];
             if (ep) playEpisode(season, ep.episode_number);
           }
         }
@@ -632,9 +800,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         const tabs: Array<0 | 1 | 2 | 3> = isSeries ? [0, 1, 2, 3] : [0, 1, 3];
         const list =
           settingsTab === 0 ? (data?.streams ? Object.keys(data.streams) : [])
-          : settingsTab === 1 ? translators.map((t) => t.name)
+          : settingsTab === 1 ? playerDubs.map((t) => t.name)
           : settingsTab === 3 ? SPEEDS.map((s) => `${s}×`)
-          : episodes.map((ep) => `${ep.episode_number}`);
+          : pickerEpisodes.map((ep) => `${ep.episode_number}`);
 
         // Back → close settings → controls (NOT exit the player).
         if (isBack) { setOverlay("controls"); revealControls(); return; }
@@ -654,8 +822,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         } else if (isEnter || isSpace || isPlayPause) {
           const qualities = data?.streams ? Object.keys(data.streams) : [];
           if (settingsTab === 0 && qualities[settingsIdx]) changeQuality(qualities[settingsIdx]);
-          else if (settingsTab === 1 && translators[settingsIdx]) changeTranslator(translators[settingsIdx].id);
-          else if (settingsTab === 2 && episodes[settingsIdx]) playEpisode(season, episodes[settingsIdx].episode_number);
+          else if (settingsTab === 1 && playerDubs[settingsIdx]) changeTranslator(playerDubs[settingsIdx].id);
+          else if (settingsTab === 2 && pickerEpisodes[settingsIdx]) playEpisode(season, pickerEpisodes[settingsIdx].episode_number);
           else if (settingsTab === 3 && SPEEDS[settingsIdx] !== undefined) changeSpeed(SPEEDS[settingsIdx]);
         }
         return;
@@ -716,9 +884,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [
-    zone, overlay, pickerCol, seasonIdx, episodeIdx, validSeasons, episodes, season, episode,
+    zone, overlay, pickerCol, dubIdx, seasonIdx, episodeIdx, validSeasons, gatedSeasons,
+    episodes, pickerEpisodes, playerDubs, hasDubCol, season, episode,
     isSeries, data, translators, translatorId, settingsTab, settingsIdx, ctrlIdx, ctrlZone,
-    errBtnIdx, router, exit, resolve, playEpisode, changeQuality, changeTranslator, changeSpeed, seek, scrub,
+    errBtnIdx, router, exit, resolve, playEpisode, pickDub, changeQuality, changeTranslator, changeSpeed, seek, scrub,
     togglePlay, revealControls, bumpHideTimer, flashControls, clearHideTimer,
     retryResolve, errorBack,
   ]);
@@ -742,18 +911,47 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
             <h1 className="text-4xl font-extrabold tracking-tight">{media.title}</h1>
             <p className="mt-2 text-lg text-muted-foreground">{media.year} · Сериал · Выберите серию</p>
           </header>
-          <div className="flex flex-1 gap-8 px-12 pb-10 overflow-hidden">
-            {/* Seasons */}
-            <div className="w-[260px] shrink-0 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+          <div className="flex flex-1 gap-6 px-12 pb-10 overflow-hidden">
+            {/* Озвучка — pick a dub; seasons/episodes below scope to it (HDRezka). */}
+            {hasDubCol && (
+              <div className="w-[220px] shrink-0 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+                <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Озвучка</p>
+                <div className="flex flex-col gap-2">
+                  {translators.map((t, i) => {
+                    const f = pickerCol === 0 && dubIdx === i;
+                    const active = t.id === translatorId;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => pickDub(t.id)}
+                        ref={(node) => { if (f && node) node.scrollIntoView({ block: "nearest" }); }}
+                        className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold"
+                        style={{
+                          ...ringStyle(f),
+                          background: f ? "var(--primary)" : active ? "color-mix(in srgb, var(--primary) 18%, transparent)" : "rgba(255,255,255,0.05)",
+                          color: f ? "#0a0a0a" : active ? "var(--primary)" : "#d4d4d8",
+                        }}
+                      >
+                        <span className="truncate">{t.name}</span>
+                        {t.is_premium && <span className="shrink-0 text-[9px] font-bold px-1 rounded bg-amber-400/25 text-amber-300">PRO</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {/* Сезоны (scoped to the dub) */}
+            <div className="w-[240px] shrink-0 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
               <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Сезоны</p>
               <div className="flex flex-col gap-2">
-                {validSeasons.map((s, i) => {
-                  const f = pickerCol === 0 && seasonIdx === i;
+                {gatedSeasons.map((s, i) => {
+                  const f = pickerCol === 1 && seasonIdx === i;
                   const active = s.season_number === season;
                   return (
                     <button
                       key={s.season_number}
-                      onClick={() => { setSeason(s.season_number); setSeasonIdx(i); setPickerCol(1); setEpisodeIdx(0); }}
+                      onClick={() => { setSeason(s.season_number); setSeasonIdx(i); setPickerCol(2); setEpisodeIdx(0); }}
+                      ref={(node) => { if (f && node) node.scrollIntoView({ block: "nearest" }); }}
                       className="rounded-xl px-5 py-4 text-left text-lg font-semibold"
                       style={{
                         ...ringStyle(f),
@@ -762,21 +960,21 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                       }}
                     >
                       {s.name || `Сезон ${s.season_number}`}
-                      <span className="ml-2 text-sm opacity-70">{s.episode_count} сер.</span>
+                      <span className="ml-2 text-sm opacity-70">{(availTree?.[s.season_number]?.length ?? s.episode_count)} сер.</span>
                     </button>
                   );
                 })}
               </div>
             </div>
-            {/* Episodes */}
+            {/* Серии (scoped to the dub) */}
             <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
               <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Серии · Сезон {season}</p>
-              {episodes.length === 0 ? (
+              {pickerEpisodes.length === 0 ? (
                 <p className="text-muted-foreground">Загрузка серий…</p>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
-                  {episodes.map((ep, i) => {
-                    const f = pickerCol === 1 && episodeIdx === i;
+                  {pickerEpisodes.map((ep, i) => {
+                    const f = pickerCol === 2 && episodeIdx === i;
                     return (
                       <button
                         key={ep.episode_number}
@@ -796,7 +994,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
               )}
             </div>
           </div>
-          <div className="px-12 pb-5 text-sm text-muted-foreground/60">◀▶ колонка · ▲▼ выбор · OK смотреть · ↩ назад</div>
+          <div className="px-12 pb-5 text-sm text-muted-foreground/60">◀▶ колонка · ▲▼ выбор · OK выбрать/смотреть · ↩ назад</div>
         </div>
       )}
 
@@ -1010,8 +1208,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                   )}
                   {settingsTab === 1 && (
                     <div className="flex flex-col gap-2">
-                      {translators.length === 0 && <p className="text-muted-foreground">Одна озвучка</p>}
-                      {translators.map((t, i) => {
+                      {playerDubs.length === 0 && <p className="text-muted-foreground">Одна озвучка</p>}
+                      {playerDubs.map((t, i) => {
                         const f = settingsIdx === i;
                         const cur = t.id === translatorId;
                         return (
@@ -1028,7 +1226,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                   )}
                   {settingsTab === 2 && isSeries && (
                     <div className="grid grid-cols-2 gap-2">
-                      {episodes.map((ep, i) => {
+                      {pickerEpisodes.map((ep, i) => {
                         const f = settingsIdx === i;
                         const cur = ep.episode_number === episode;
                         return (
