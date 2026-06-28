@@ -415,6 +415,14 @@ export async function getTVGenres() {
 export function getImageUrl(path: string | null, size = "w500") {
 	if (!path) return "/abstract-movie-poster.png";
 
+	// Already a full or already-proxied URL (e.g. a poster_path saved to
+	// localStorage in proxied form) — don't prefix again, or it becomes
+	// /tmdb-img/w500/tmdb-img/w500/… → 404. (Raw TMDB paths like "/abc.jpg"
+	// don't start with /tmdb-img/, so they still get prefixed below.)
+	if (/^https?:\/\//.test(path) || path.startsWith("/tmdb-img/")) {
+		return path;
+	}
+
 	const envBase =
 		process.env.NEXT_PUBLIC_TMDB_IMAGE_BASE_URL ||
 		"/tmdb-img/w500";
