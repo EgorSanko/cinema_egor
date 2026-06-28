@@ -49,7 +49,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: "dark",
   themeColor: "#0a0a0b",
-  userScalable: true,
+  // App-like: lock zoom so the layout can't drift/“unfix” on a stray pinch or
+  // double-tap while swiping season/episode strips on phones.
+  userScalable: false,
+  maximumScale: 1,
   width: "device-width",
   initialScale: 1,
 };
