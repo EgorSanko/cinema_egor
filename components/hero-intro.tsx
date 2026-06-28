@@ -8,7 +8,6 @@ import { HeroSection } from "@/components/hero-section";
 // runs once, freezes on its last frame (the logo) for 5s, then fades to reveal
 // the swipeable hero cards underneath. Shown once per session; tap/Esc skips.
 
-const SEEN_KEY = "home_intro_seen";
 const HOLD_MS = 5000; // hold the frozen logo for 5s after the video ends
 const FADE_MS = 750; // crossfade-out duration
 const HARD_CAP_MS = 20000; // safety: never get stuck if onEnded never fires
@@ -31,19 +30,8 @@ export function HeroIntro({ movies }: { movies: HeroMovies }) {
     timers.current.push(setTimeout(() => setIntro(false), FADE_MS + 50));
   }, []);
 
-  // Decide once (client-only) whether to play the intro this session.
+  // Play the intro on every homepage load (client-only).
   React.useEffect(() => {
-    let seen = false;
-    try {
-      seen = sessionStorage.getItem(SEEN_KEY) === "1";
-    } catch {}
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (seen || reduce) return;
-    try {
-      sessionStorage.setItem(SEEN_KEY, "1");
-    } catch {}
     setIntro(true);
     return clearTimers;
   }, []);
