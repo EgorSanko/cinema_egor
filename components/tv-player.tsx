@@ -239,6 +239,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
       prefetchRef.current = { url, promise: p };
       p.then((d: any) => {
         if (!alive || !d?.stream) return;
+        // Surface the dub list + resolved URL on the page BEFORE play, so the
+        // visible "Озвучка" selector shows and the per-dub season/episode gating
+        // works straight away (not only after the player opens).
+        if (d.translators?.length) {
+          setTranslators((prev) => (prev.length ? prev : d.translators));
+          setSelectedTranslator((prev) => prev ?? d.active_translator_id ?? d.translators[0].id);
+        }
         // Warm the CDN connection + manifest on open so play starts fast.
         warmStream(d.stream);
         // Pre-buffer the episode (mounts hidden) on a fast connection — skip on
@@ -248,6 +255,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
         const fast = !c || (!c.saveData && c.type !== "cellular" &&
           c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
         if (fast && !startedRef.current) applyStream(d);
+        // Even on a slow link (no pre-buffer), expose the resolved URL so the
+        // season/episode gating effect can scope selectors to the dub pre-play.
+        else setStreamData((prev: any) => prev ?? { url: d.url, translators: d.translators, active_translator_id: d.active_translator_id });
       });
     } catch {}
     return () => { alive = false; };
@@ -990,7 +1000,39 @@ export function TVPlayer({ show }: TVPlayerProps) {
               <section className="mt-10">
                 <h2 className="text-2xl font-bold text-foreground tracking-tight mb-4">{"Эпизоды"}</h2>
 
-                {/* Season tabs */}
+                {/* Озвучка selector — prominent, like HDRezka: pick a dub and the
+                    season/episode lists below update to exactly what THAT dub has,
+                    so it's obvious why some seasons appear/disappear. */}
+                {translators.length > 0 && (
+                  <div className="mb-5">
+                    <div className="text-[13px] font-semibold text-foreground/50 mb-2 flex items-center gap-2">
+                      {"Озвучка"}
+                      {translatorLoading && (
+                        <span className="inline-block h-3 w-3 rounded-full border-2 border-primary/40 border-t-primary animate-spin" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                      {Array.from(new Map(translators.map(t => [t.id, t])).values()).map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => changeTranslator(t.id)}
+                          className={"flex-shrink-0 inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-[13px] transition-colors " + (
+                            selectedTranslator === t.id
+                              ? "bg-primary/15 text-primary ring-1 ring-primary/30 font-semibold"
+                              : "bg-foreground/[0.04] text-foreground/65 ring-1 ring-white/[0.06] hover:bg-foreground/[0.07] hover:text-foreground"
+                          )}
+                        >
+                          {t.name}
+                          {t.is_premium && (
+                            <span className="text-[9px] font-bold px-1 rounded bg-amber-400/20 text-amber-300 leading-none py-0.5">PRO</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Season tabs (scoped to the selected озвучка) */}
                 <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
                   {gatedSeasons.map((s) => (
                     <button
