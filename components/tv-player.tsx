@@ -78,11 +78,17 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [translatorLoading, setTranslatorLoading] = useState(false);
   const [subtitles, setSubtitles] = useState<ArtSubtitle[]>([]);
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(null);
+  // HDRezka-style availability: which seasons/episodes the SELECTED dub actually
+  // has ({season: [episodeNumbers]}). Lets us scope the season/episode selectors
+  // to the chosen dub so an invalid (dub, season) combo can't be picked. null =
+  // not loaded yet → fall back to showing the full TMDB structure.
+  const [availTree, setAvailTree] = useState<Record<number, number[]> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInterval = useRef<any>(null);
   const translatorRef = useRef<HTMLDivElement>(null);
+  const availKeyRef = useRef<string>("");
   const autoplayTriggeredRef = useRef(false);
   // Wall-clock of the last auto-advance. A real episode can't end within
   // seconds of the previous one starting, so any "episode ended" signal that
@@ -515,6 +521,49 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // which HDRezka cannot resolve and falls back to episode 1 = duplicate content bug)
   const releasedEpisodes = episodes.filter(e => !e.air_date || new Date(e.air_date) <= new Date());
 
+  // HDRezka-style: once a dub is active (and we know the resolved HDRezka URL),
+  // load exactly the seasons/episodes THAT dub has and scope the selectors to it.
+  // Keyed by (url, translator) so it loads once per combo; auto-corrects the
+  // season if the current one isn't dubbed in the chosen voiceover.
+  useEffect(() => {
+    const url = streamData?.url;
+    const tr = selectedTranslator;
+    if (!url || !tr) return;
+    const key = url + "|" + tr;
+    if (availKeyRef.current === key) return;
+    availKeyRef.current = key;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/hdrezka/api/episodes?url=" + encodeURIComponent(url) + "&translator_id=" + tr);
+        const d = await res.json();
+        if (!alive || !d?.seasons) return;
+        const tree: Record<number, number[]> = {};
+        for (const [s, eps] of Object.entries(d.seasons)) tree[parseInt(s, 10)] = (eps as number[]) || [];
+        setAvailTree(tree);
+        const seasonsAvail = Object.keys(tree).map(Number).sort((a, b) => a - b);
+        // Current season not in this dub → jump to its first available season.
+        if (seasonsAvail.length && !tree[selectedSeason]) {
+          const s0 = seasonsAvail[0];
+          selectEpisode(s0, (tree[s0] && tree[s0][0]) || 1);
+        }
+      } catch { /* keep showing full TMDB structure on failure */ }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamData?.url, selectedTranslator]);
+
+  // Seasons the selected dub actually has (null tree → all). Episode numbering
+  // can diverge from TMDB on long anime (cumulative numbering), so only gate
+  // episodes when the dub's numbers actually overlap TMDB's — otherwise show all
+  // TMDB episodes so nothing vanishes on a numbering mismatch.
+  const gatedSeasons = availTree
+    ? validSeasons.filter(s => (availTree[s.season_number]?.length ?? 0) > 0)
+    : validSeasons;
+  const _treeEps = availTree?.[selectedSeason];
+  const _epOverlap = !!_treeEps && episodes.some(e => _treeEps.includes(e.episode_number));
+  const gatedEpisodes = _epOverlap ? episodes.filter(e => _treeEps!.includes(e.episode_number)) : episodes;
+
   const hasNextEpisode = (() => {
     const idx = releasedEpisodes.findIndex(e => e.episode_number === selectedEpisode);
     if (idx >= 0 && idx < releasedEpisodes.length - 1) return true;
@@ -943,7 +992,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
 
                 {/* Season tabs */}
                 <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
-                  {validSeasons.map((s) => (
+                  {gatedSeasons.map((s) => (
                     <button
                       key={s.season_number}
                       onClick={() => selectEpisode(s.season_number, 1)}
@@ -969,7 +1018,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                       Array.from({ length: 6 }).map((_, i) => (
                         <div key={i} className="snap-start flex-shrink-0 w-[200px] aspect-[16/10] rounded-xl bg-foreground/[0.04] animate-pulse" />
                       ))
-                    ) : episodes.map((ep) => {
+                    ) : gatedEpisodes.map((ep) => {
                       const released = !ep.air_date || new Date(ep.air_date) <= new Date();
                       const active = ep.episode_number === selectedEpisode;
                       const stillUrl = ep.still_path ? getImageUrl(ep.still_path, "w300") : null;
