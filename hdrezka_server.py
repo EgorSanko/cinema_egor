@@ -539,7 +539,13 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                 url = str(getattr(r, 'url', ''))
                 info = str(getattr(r, 'info', '') or '')
                 if type in ('tv', 'series'):
-                    if '/series/' in url or '/animation/' in url or 'сезон' in info.lower() or 'серия' in info.lower():
+                    # Cartoon SERIES (Rick and Morty, etc.) live under /cartoons/
+                    # and anime series under /animation/ — keep both, plus /series/
+                    # and anything whose info mentions seasons/episodes. Otherwise a
+                    # TMDB "tv" request finds nothing for cartoons (the page exists
+                    # but was filtered out as a "movie").
+                    if ('/series/' in url or '/animation/' in url or '/cartoons/' in url
+                            or 'сезон' in info.lower() or 'серия' in info.lower()):
                         type_filtered.append(r)
                 elif type == 'movie':
                     # Anime FEATURE FILMS live under /animation/ too (e.g.
