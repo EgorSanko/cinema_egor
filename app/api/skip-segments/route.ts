@@ -20,7 +20,10 @@ const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY!;
 const TMDB_BASE = process.env.NEXT_PUBLIC_TMDB_BASE_URL || "https://api.themoviedb.org/3";
 const INTROHATER_API_KEY = process.env.INTROHATER_API_KEY; // optional; if unset, IntroHater leg is skipped
 
-const CACHE_DIR = process.env.SYNC_DATA_DIR || path.join(process.cwd(), "user-data");
+// Dedicated cache dir — NOT user-data (these are global caches, not per-user
+// profiles; writing them into user-data/ polluted the registered-user counts
+// with "skip-cache" / "tmdb-mal-map" phantom profiles).
+const CACHE_DIR = process.env.SKIP_CACHE_DIR || path.join(process.cwd(), "cache");
 const CACHE_FILE = path.join(CACHE_DIR, "skip-cache.json");
 const MAL_MAP_FILE = path.join(CACHE_DIR, "tmdb-mal-map.json");
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days

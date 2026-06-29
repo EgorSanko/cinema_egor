@@ -277,6 +277,13 @@ export function ArtPlayerView(props: ArtPlayerProps) {
       pip: true,
       airplay: true,
       hotkey: true,
+      // Disable ArtPlayer's mobile full-screen swipe-to-seek gesture. It hijacked
+      // ordinary finger swipes (iOS notification shade pull, Android nav gestures)
+      // and scrubbed the timeline / restarted the episode. With this off, the
+      // full-screen touchmove-seek on $video is gone, but the progress-bar drag
+      // ($progress, ungated) AND our custom double-tap ±10s still work. Desktop
+      // is unaffected — the gesture block is mobile-only.
+      gesture: false,
       autoOrientation: true,
       autoSize: false,
       miniProgressBar: true,

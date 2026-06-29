@@ -1,8 +1,17 @@
 ﻿import { withSentryConfig } from "@sentry/nextjs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	output: 'standalone',
+	// Pin the standalone trace root to the project's PARENT so the standalone
+	// output lands at `.next/standalone/movie/` regardless of where the repo
+	// sits in the tree. Prod (web-VPS) runs `…/standalone/movie/server.js`, so
+	// this keeps every build a clean drop-in over the existing deploy.
+	outputFileTracingRoot: path.join(__dirname, ".."),
 	// Prevent cross-origin warnings/errors when accessing dev server from a phone on LAN.
 	// Add your machine's LAN origin here if it changes.
 	allowedDevOrigins: [
