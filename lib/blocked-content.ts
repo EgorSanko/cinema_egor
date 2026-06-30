@@ -27,6 +27,9 @@ export const BLOCKED_MOVIE_IDS = new Set<number>([
   // 2026-06-25 — copyright claim via Beget (ООО "Исола Динамикс" for ООО "РВВ Филм"):
   // movie/1020047 «Кодекс Данте» / In the Hand of Dante (2025)
   1020047,
+  // 2026-06-30 — copyright claim via Beget (ООО "Исола Динамикс" for ООО "Экспонента Фильм"):
+  // movie/1284016 «Это хит!» / Power Ballad (2026) — the only OUR url cited in the notice
+  1284016,
 ]);
 
 export const BLOCKED_TV_IDS = new Set<number>([]);
@@ -41,9 +44,13 @@ export const BLOCKED_HD_SLUGS: string[] = [
   // 2026-06-25 — copyright claim via Beget (ООО "Исола Динамикс" / ООО "РВВ Филм"):
   // «Кодекс Данте» / In the Hand of Dante (2025)
   "kodeks-dante-2025",
+  // 2026-06-30 — copyright claim via Beget (ООО "Исола Динамикс" / ООО "Экспонента Фильм"):
+  // «Это хит!» / Power Ballad (2026) — hdrezka …/90004-eto-hit-2026.html
+  "eto-hit-2026",
 ];
 const BLOCKED_HD_TITLES: string[] = [
   "кодексданте",
+  "этохит",
 ];
 
 export function isBlockedHd(url?: string | null, title?: string | null): boolean {
