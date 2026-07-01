@@ -442,6 +442,43 @@ export function ArtPlayerView(props: ArtPlayerProps) {
         };
         playerEl.addEventListener("touchend", onTouch, { passive: false });
       } catch {}
+
+      // Auto-hide the mouse cursor after a few seconds of inactivity while
+      // playing. ArtPlayer's built-in `art-hide-cursor` doesn't reliably fire
+      // with our CSS / Telegram fullscreen + portalled overlays, so we drive it
+      // ourselves on the player element (covers all descendants via the `*`
+      // rule). Any mouse movement brings it straight back.
+      try {
+        const playerEl = (art as any)?.template?.$player as HTMLElement | undefined;
+        if (playerEl) {
+          if (!document.getElementById("kino-hide-cursor-style")) {
+            const st = document.createElement("style");
+            st.id = "kino-hide-cursor-style";
+            st.textContent = ".kino-cursor-idle, .kino-cursor-idle * { cursor: none !important; }";
+            document.head.appendChild(st);
+          }
+          let idleTimer: ReturnType<typeof setTimeout> | null = null;
+          const hide = () => {
+            if (!art.video.paused) playerEl.classList.add("kino-cursor-idle");
+          };
+          const show = () => {
+            playerEl.classList.remove("kino-cursor-idle");
+            if (idleTimer) clearTimeout(idleTimer);
+            if (!art.video.paused) idleTimer = setTimeout(hide, 2500);
+          };
+          playerEl.addEventListener("mousemove", show);
+          playerEl.addEventListener("mouseleave", () => {
+            if (idleTimer) clearTimeout(idleTimer);
+            hide();
+          });
+          art.on("play", show);
+          art.on("pause", () => {
+            if (idleTimer) clearTimeout(idleTimer);
+            playerEl.classList.remove("kino-cursor-idle");
+          });
+          show();
+        }
+      } catch {}
     });
 
     // Auto-resume position. The seek must happen AFTER MSE parses the
