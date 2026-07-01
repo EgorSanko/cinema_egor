@@ -30,6 +30,9 @@ export const BLOCKED_MOVIE_IDS = new Set<number>([
   // 2026-06-30 — copyright claim via Beget (ООО "Исола Динамикс" for ООО "Экспонента Фильм"):
   // movie/1284016 «Это хит!» / Power Ballad (2026) — the only OUR url cited in the notice
   1284016,
+  // 2026-07-01 — copyright claim via Beget (ООО "Исола Динамикс" / isola-dynamics.com):
+  // movie/1279493 «Ночной бизнес» / The Get Out (2026) — cited OUR url in the notice
+  1279493,
 ]);
 
 export const BLOCKED_TV_IDS = new Set<number>([]);
