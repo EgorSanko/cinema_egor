@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { syncFromServer } from "@/lib/storage";
 import { getTvUser, type TvUser } from "@/lib/tv-auth";
 import { LogoSplash } from "./logo-splash";
+import { StyledQR } from "@/components/styled-qr";
 
 // ════════════════════════════════════════════════════════════════
 // TV LOGIN — fully D-pad / keyboard driven on-screen keyboard.
@@ -90,6 +91,10 @@ export function TvLogin() {
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // ── QR device-link login (scan with phone → TV logs in) ──
+  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [linkUrl, setLinkUrl] = useState<string>("");
+
   // ── D-pad focus ──
   const grid = buildGrid();
   const [focus, setFocus] = useState({ row: 0, col: 0 });
@@ -168,6 +173,55 @@ export function TvLogin() {
     try { await syncFromServer(u.email); } catch {}
     router.push("/tv-home");
   }
+
+  // Create a QR link-code once the splash is gone, then poll until the phone
+  // confirms. Codes expire in 5 min → refresh the code when that happens.
+  useEffect(() => {
+    if (splash) return;
+    let alive = true;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = (code: string) => {
+      pollTimer = setInterval(async () => {
+        try {
+          const res = await fetch("/api/tv-link", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "status", code }),
+          });
+          const data = await res.json();
+          if (!alive) return;
+          if (data.status === "authorized" && data.user?.email) {
+            if (pollTimer) clearInterval(pollTimer);
+            setInfo("Вход подтверждён с телефона…");
+            completeAuth({ email: data.user.email, name: data.user.name || data.user.email.split("@")[0] });
+          } else if (data.status === "expired") {
+            if (pollTimer) clearInterval(pollTimer);
+            create(); // code died → mint a fresh one
+          }
+        } catch {}
+      }, 2000);
+    };
+
+    const create = async () => {
+      try {
+        const res = await fetch("/api/tv-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "create", intent: "tv" }),
+        });
+        const data = await res.json();
+        if (!alive || !data.code) return;
+        setLinkCode(data.code);
+        setLinkUrl(`${window.location.origin}/link/${data.code}`);
+        startPolling(data.code);
+      } catch {}
+    };
+
+    create();
+    return () => { alive = false; if (pollTimer) clearInterval(pollTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splash]);
 
   const doLogin = useCallback(async () => {
     if (busy) return;
@@ -334,10 +388,34 @@ export function TvLogin() {
 
   return (
     <main
-      className="h-screen overflow-hidden bg-background text-foreground select-none flex flex-col items-center justify-center px-[3vw] py-[3vh]"
+      className="h-screen overflow-hidden bg-background text-foreground select-none flex flex-row items-center justify-center gap-[4vw] px-[3vw] py-[3vh]"
       style={{ background: "var(--background)" }}
     >
       {splash && <LogoSplash onDone={() => setSplash(false)} />}
+
+      {/* QR column — scan with phone to sign in without the on-screen keyboard */}
+      {!splash && (
+        <aside className="hidden md:flex flex-col items-center shrink-0">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[var(--primary)] text-xs font-black tracking-widest uppercase">Быстрый вход</span>
+          </div>
+          {linkUrl ? (
+            <StyledQR value={linkUrl} size={288} />
+          ) : (
+            <div style={{ width: 288, height: 288, borderRadius: 20, background: "#fff" }} className="opacity-20" />
+          )}
+          <p className="mt-4 text-lg font-bold text-center max-w-[300px]">Отсканируйте телефоном</p>
+          <p className="mt-1 text-sm text-muted-foreground text-center max-w-[300px]">
+            Наведите камеру — и подтвердите вход в приложении. Без ввода почты и пароля пультом.
+          </p>
+          <div className="mt-5 flex items-center gap-2 text-muted-foreground text-sm">
+            <span className="h-px w-10 bg-white/10" /> или введите вручную <span className="text-[var(--primary)]">→</span>
+          </div>
+        </aside>
+      )}
+
+      {/* Login column — the classic D-pad keyboard */}
+      <div className="flex flex-col items-center">
       {/* Logo */}
       <header className="pb-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -434,6 +512,7 @@ export function TvLogin() {
             </div>
           );
         })}
+      </div>
       </div>
     </main>
   );

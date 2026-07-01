@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "./auth-context";
-import { X, Eye, EyeOff, LogIn, UserPlus, ShieldCheck, KeyRound, ArrowLeft } from "lucide-react";
+import { X, Eye, EyeOff, LogIn, UserPlus, ShieldCheck, KeyRound, ArrowLeft, QrCode, Smartphone } from "lucide-react";
+import { StyledQR } from "./styled-qr";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -12,7 +13,7 @@ interface AuthModalProps {
   reason?: string;
 }
 
-type Step = "login" | "register" | "verify" | "forgot" | "reset";
+type Step = "login" | "register" | "verify" | "forgot" | "reset" | "qr";
 
 const inputCls =
   "w-full px-4 py-3 bg-background border border-border rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary transition-colors";
@@ -29,6 +30,50 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
   const [info, setInfo] = useState("");
   const [devCode, setDevCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+
+  // QR login: mint a link-code while the "qr" step is open and poll until the
+  // phone confirms, then finish by storing the user + reloading (same as a
+  // normal login, which AuthProvider picks up from localStorage on mount).
+  useEffect(() => {
+    if (!isOpen || step !== "qr") { setLinkUrl(""); return; }
+    let alive = true;
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const startPoll = (code: string) => {
+      poll = setInterval(async () => {
+        try {
+          const r = await fetch("/api/tv-link", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "status", code }),
+          });
+          const d = await r.json();
+          if (!alive) return;
+          if (d.status === "authorized" && d.user?.email) {
+            if (poll) clearInterval(poll);
+            localStorage.setItem("user", JSON.stringify({ email: d.user.email, name: d.user.name || d.user.email.split("@")[0] }));
+            window.location.reload();
+          } else if (d.status === "expired") {
+            if (poll) clearInterval(poll); create();
+          }
+        } catch {}
+      }, 2000);
+    };
+    const create = async () => {
+      try {
+        const r = await fetch("/api/tv-link", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "create", intent: "web" }),
+        });
+        const d = await r.json();
+        if (!alive || !d.code) return;
+        setLinkUrl(`${window.location.origin}/link/${d.code}`);
+        startPoll(d.code);
+      } catch {}
+    };
+    create();
+    return () => { alive = false; if (poll) clearInterval(poll); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, step]);
 
   if (!isOpen) return null;
 
@@ -75,7 +120,7 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
 
   const titles: Record<Step, string> = {
     login: "Вход", register: "Регистрация", verify: "Подтверждение почты",
-    forgot: "Восстановление пароля", reset: "Новый пароль",
+    forgot: "Восстановление пароля", reset: "Новый пароль", qr: "Вход по QR-коду",
   };
 
   return (
@@ -83,8 +128,8 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
       <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            {(step === "verify" || step === "reset") && (
-              <button onClick={() => goto(step === "verify" ? "register" : "forgot")} className="text-muted-foreground hover:text-foreground transition-colors">
+            {(step === "verify" || step === "reset" || step === "qr") && (
+              <button onClick={() => goto(step === "verify" ? "register" : step === "qr" ? "login" : "forgot")} className="text-muted-foreground hover:text-foreground transition-colors">
                 <ArrowLeft size={18} />
               </button>
             )}
@@ -105,6 +150,27 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
           </div>
         )}
 
+        {step === "qr" && (
+          <div className="flex flex-col items-center pt-1 pb-2">
+            <div className="min-h-[240px] flex items-center justify-center">
+              {linkUrl ? (
+                <StyledQR value={linkUrl} size={240} />
+              ) : (
+                <div className="w-[240px] h-[240px] rounded-2xl bg-white/[0.04] flex items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+            <div className="mt-5 flex items-start gap-3 text-left w-full px-1">
+              <Smartphone size={20} className="text-primary shrink-0 mt-0.5" />
+              <p className="text-sm text-muted-foreground leading-snug">
+                Откройте камеру телефона, где вы уже вошли в SAPKEFLY, наведите на код и подтвердите вход. Аккаунт перенесётся сюда автоматически.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {step !== "qr" && (
         <form onSubmit={submit} className="space-y-4">
           {step === "register" && (
             <div>
@@ -159,6 +225,7 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
             )}
           </button>
         </form>
+        )}
 
         {(step === "verify" || step === "reset") && (
           <button onClick={onResend} className="mt-3 w-full text-center text-sm text-primary hover:underline">Отправить код повторно</button>
@@ -167,6 +234,9 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
         <div className="mt-4 text-center space-y-1.5">
           {step === "login" && (
             <>
+              <button onClick={() => goto("qr")} className="mb-2 w-full py-2.5 rounded-xl border border-primary/30 bg-primary/[0.06] hover:bg-primary/10 text-primary font-medium text-sm flex items-center justify-center gap-2 transition-colors">
+                <QrCode size={17} /> Войти по QR-коду
+              </button>
               <button onClick={() => goto("forgot")} className="block w-full text-sm text-muted-foreground hover:text-foreground">Забыли пароль?</button>
               <button onClick={() => goto("register")} className="block w-full text-sm text-primary hover:underline">Нет аккаунта? Зарегистрироваться</button>
             </>
