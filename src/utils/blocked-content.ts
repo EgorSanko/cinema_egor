@@ -16,6 +16,8 @@ export const BLOCKED_MOVIE_IDS = new Set<number>([
   1083381,
   // 2026-06-09 — RKN notice via Timeweb ticket #12080021: movie/128 «Принцесса Мононоке» (1997)
   128,
+  // 2026-07-01 — takedown notice #?: movie/1020047
+  1020047,
 ]);
 
 export const BLOCKED_TV_IDS = new Set<number>([]);
