@@ -76,12 +76,15 @@ export async function POST(req: NextRequest) {
       // Merge strategy: server data + incoming, deduplicate
       const existing = getUserData(email);
 
-      // Merge favorites (by id+type, keep newest)
+      // Favorites are a user-curated set: the client sends its FULL current
+      // list, so it's authoritative. Union-merging with the stored copy
+      // resurrected items the user just deleted (delete → reappears on next
+      // sync). Use incoming as the source of truth; fall back to stored only
+      // when the client sent no favorites field at all.
+      const incomingFavs = Array.isArray(data.favorites) ? data.favorites : null;
+      const favSource = incomingFavs ?? (Array.isArray(existing.favorites) ? existing.favorites : []);
       const favMap = new Map<string, any>();
-      const existFavs = Array.isArray(existing.favorites) ? existing.favorites : [];
-      const incomingFavs = Array.isArray(data.favorites) ? data.favorites : [];
-      for (const f of existFavs) favMap.set(`${f.type}-${f.id}`, f);
-      for (const f of incomingFavs) favMap.set(`${f.type}-${f.id}`, f);
+      for (const f of favSource) favMap.set(`${f.type}-${f.id}`, f);
       const mergedFavs = Array.from(favMap.values())
         .sort((a: any, b: any) => (b.addedAt || 0) - (a.addedAt || 0))
         .slice(0, 200);
