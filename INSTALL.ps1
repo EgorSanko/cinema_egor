@@ -1,7 +1,7 @@
 # Run this AFTER extracting the tar.gz archive
 # This script patches layout.tsx to add MobileNav and SW registration
 
-$layoutPath = "C:\Users\egor3\movie\app\layout.tsx"
+$layoutPath = "C:\Users\egor3\Projects\кино\movie\app\layout.tsx"
 $content = Get-Content $layoutPath -Raw
 
 # Add MobileNav import if not present
@@ -70,12 +70,12 @@ $icon512 = @'
 </svg>
 '@
 
-$icon192 | Set-Content "C:\Users\egor3\movie\public\icon-192.svg" -Encoding UTF8
-$icon512 | Set-Content "C:\Users\egor3\movie\public\icon-512.svg" -Encoding UTF8
+$icon192 | Set-Content "C:\Users\egor3\Projects\кино\movie\public\icon-192.svg" -Encoding UTF8
+$icon512 | Set-Content "C:\Users\egor3\Projects\кино\movie\public\icon-512.svg" -Encoding UTF8
 Write-Host "PWA icons created"
 
 # Update manifest to use SVG icons
-$manifestPath = "C:\Users\egor3\movie\app\manifest.ts"
+$manifestPath = "C:\Users\egor3\Projects\кино\movie\app\manifest.ts"
 if (Test-Path $manifestPath) {
     $mc = Get-Content $manifestPath -Raw
     $mc = $mc -replace "icon-192\.png", "icon-192.svg"
