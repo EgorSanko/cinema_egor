@@ -636,6 +636,7 @@ export function PlayerScreen() {
     const savedPos = position;
     try {
       const opts: any = { translator_id: translator.id };
+      if (params.url) opts.url = params.url; // resolve by URL when HDRezka-native
       if (currentSeason) opts.season = currentSeason;
       if (currentEpisode) opts.episode = currentEpisode;
       const searchQ = searchTitle || title.replace(/\sS\d+E\d+$/, '');
@@ -740,6 +741,7 @@ export function PlayerScreen() {
     setShowEpisodesPanel(false);
     try {
       const opts: any = { season, episode };
+      if (params.url) opts.url = params.url; // resolve by URL when HDRezka-native
       if (currentTranslator) opts.translator_id = currentTranslator.id;
       const data = await getStream(searchTitle, year || '', 'tv', opts);
       if (data.stream) {

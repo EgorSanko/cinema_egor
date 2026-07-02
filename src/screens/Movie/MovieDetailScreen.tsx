@@ -151,6 +151,7 @@ export function MovieDetailScreen() {
     try {
       const year = detailDate ? new Date(detailDate).getFullYear().toString() : '';
       const opts: any = {};
+      if ((detail as any).url) opts.url = (detail as any).url;
       if (isTV) { opts.season = selectedSeason; opts.episode = selectedEpisode; }
       // Restore user's preferred translator for this title
       const lastTr = await getLastTranslator(detail.id, isTV ? 'tv' : 'movie');
@@ -191,7 +192,7 @@ export function MovieDetailScreen() {
           type: isTV ? 'tv' : 'movie',
           season: isTV ? selectedSeason : undefined,
           episode: isTV ? selectedEpisode : undefined,
-          searchTitle, year,
+          searchTitle, year, url: (detail as any).url,
           totalSeasons: isTV ? (detail as TVShowDetails).number_of_seasons : undefined,
           baseTitle: detailTitle,
           // Pass the dub that ACTUALLY plays (active_translator_id) so
@@ -212,6 +213,7 @@ export function MovieDetailScreen() {
     try {
       const year = detailDate ? new Date(detailDate).getFullYear().toString() : '';
       const opts: any = {};
+      if ((detail as any).url) opts.url = (detail as any).url;
       if (isTV) { opts.season = selectedSeason; opts.episode = selectedEpisode; }
       const lastTr = await getLastTranslator(detail.id, isTV ? 'tv' : 'movie');
       if (lastTr) opts.translator_id = lastTr.id;
