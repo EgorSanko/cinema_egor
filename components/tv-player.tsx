@@ -785,12 +785,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
-          {/* Player mounts as soon as the episode resolves and pre-buffers
+          {/* Player mounts + pre-buffers as soon as the episode resolves
               (autoStart=false) HIDDEN behind the poster, so pressing play starts
-              instantly. Gated on showPlayer so unregistered users can't reach
-              the prewarmed player's controls and bypass the auth gate. */}
-          {streamData?.stream && showPlayer && (
+              instantly. interactive={showPlayer} keeps the pre-warmed player
+              non-interactive until the auth gate passes, so unregistered users
+              can't tap the hidden player and bypass the gate. */}
+          {streamData?.stream && (
             <ArtPlayerView
+              interactive={showPlayer}
               streamUrl={streamData.stream}
               poster={backdropUrl || undefined}
               qualities={streamData.streams}

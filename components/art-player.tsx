@@ -45,6 +45,9 @@ interface ArtPlayerProps {
   /** When false, mount + buffer the stream but DON'T autoplay (hidden pre-warm).
    *  The parent starts playback via the video ref it gets from onVideoReady. */
   autoStart?: boolean;
+  /** When false, the whole player is non-interactive (pointer-events: none) so a
+   *  hidden pre-warmed player can't be tapped to bypass the auth gate. */
+  interactive?: boolean;
   onVideoReady?: (v: HTMLVideoElement) => void;
   onVideoUnmount?: () => void;
   /** Called once ArtPlayer is mounted. Hands back the ArtPlayer-owned
@@ -228,6 +231,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     resumeTime,
     seekOnSwitch,
     autoStart,
+    interactive = true,
     onVideoReady,
     onVideoUnmount,
     onPlayerContainerReady,
@@ -642,7 +646,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
   return (
     <div
       ref={containerRef}
-      className="art-player-host w-full aspect-video bg-black rounded-2xl overflow-hidden ring-1 ring-white/[0.06]"
+      className={"art-player-host w-full aspect-video bg-black rounded-2xl overflow-hidden ring-1 ring-white/[0.06]" + (interactive ? "" : " pointer-events-none")}
     />
   );
 }

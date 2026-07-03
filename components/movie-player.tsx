@@ -448,12 +448,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
-          {/* Mount the player ONLY after "Смотреть" (showPlayer) — which passes
-              through the auth gate in openPlayer. Mounting the prewarmed player
-              behind the poster let unregistered users reach its controls and
-              bypass the gate. The stream is still resolved on prefetch, so play
-              stays fast. */}
-          {streamData?.stream && showPlayer && (
+          {/* Player mounts + pre-buffers as soon as the stream resolves
+              (autoStart=false) HIDDEN behind the poster, so "Смотреть" plays
+              instantly. interactive={showPlayer} keeps the pre-warmed player
+              non-interactive (pointer-events:none) until the auth gate passes in
+              openPlayer — otherwise unregistered users could tap the hidden
+              player and bypass the gate. */}
+          {streamData?.stream && (
             <ArtPlayerView
               streamUrl={streamData.stream}
               poster={backdropUrl || undefined}
@@ -470,6 +471,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               resumeTime={wantResume ? (resumeTime || undefined) : undefined}
               seekOnSwitch={seekOnSwitch}
               autoStart={showPlayer}
+              interactive={showPlayer}
               onVideoReady={(v) => { videoRef.current = v; startSaving(); }}
               onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
               onPlayerContainerReady={setPlayerContainer}
@@ -540,13 +542,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                       </div>
                     </>
                   ) : (
-                    <>
-                      {!streamData?.stream && (
-                        <div className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl shadow-black/40 transition-transform duration-300 group-hover:scale-110">
-                          <Play size={38} className="text-black ml-1" fill="currentColor" />
-                        </div>
-                      )}
-                    </>
+                    <div className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl shadow-black/40 transition-transform duration-300 group-hover:scale-110">
+                      <Play size={38} className="text-black ml-1" fill="currentColor" />
+                    </div>
                   )}
                 </div>
               </div>
