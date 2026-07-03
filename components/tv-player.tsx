@@ -787,8 +787,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
         }>
           {/* Player mounts as soon as the episode resolves and pre-buffers
               (autoStart=false) HIDDEN behind the poster, so pressing play starts
-              instantly. */}
-          {streamData?.stream && (
+              instantly. Gated on showPlayer so unregistered users can't reach
+              the prewarmed player's controls and bypass the auth gate. */}
+          {streamData?.stream && showPlayer && (
             <ArtPlayerView
               streamUrl={streamData.stream}
               poster={backdropUrl || undefined}
@@ -870,16 +871,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
               player has mounted. */}
           {!showPlayer && (
             <div className="absolute inset-0 z-30 cursor-pointer group/play" onClick={() => openPlayerEp(false)}>
-              {!streamData?.stream && (
-                <>
-                  {backdropUrl && <img src={backdropUrl} alt={show.name} className={"absolute inset-0 w-full h-full " + (show.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl shadow-black/40 transition-transform duration-300 group-hover/play:scale-110">
-                      <Play size={38} className="text-black ml-1" fill="currentColor" />
-                    </div>
-                  </div>
-                </>
-              )}
+              {backdropUrl && <img src={backdropUrl} alt={show.name} className={"absolute inset-0 w-full h-full " + (show.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center shadow-xl shadow-black/40 transition-transform duration-300 group-hover/play:scale-110">
+                  <Play size={38} className="text-black ml-1" fill="currentColor" />
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -448,10 +448,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
-          {/* Player mounts as soon as the stream resolves and pre-buffers
-              (autoStart=false) HIDDEN behind the poster on a fast connection, so
-              pressing "Смотреть" starts instantly. */}
-          {streamData?.stream && (
+          {/* Mount the player ONLY after "Смотреть" (showPlayer) — which passes
+              through the auth gate in openPlayer. Mounting the prewarmed player
+              behind the poster let unregistered users reach its controls and
+              bypass the gate. The stream is still resolved on prefetch, so play
+              stays fast. */}
+          {streamData?.stream && showPlayer && (
             <ArtPlayerView
               streamUrl={streamData.stream}
               poster={backdropUrl || undefined}
@@ -524,8 +526,8 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           {/* Poster overlay — covers the (pre-buffering) player until play. */}
           {!showPlayer && (
             <div className="absolute inset-0 z-30 cursor-pointer group/play" onClick={() => openPlayer(false)}>
-              {!streamData?.stream && backdropUrl && <img src={backdropUrl} alt={movie.title} className={"absolute inset-0 w-full h-full " + (movie.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
-              <div className={"absolute inset-0 flex items-center justify-center " + (streamData?.stream ? "" : "bg-gradient-to-t from-black via-black/30 to-black/10")}>
+              {backdropUrl && <img src={backdropUrl} alt={movie.title} className={"absolute inset-0 w-full h-full " + (movie.backdrop_path ? "object-cover" : "object-contain bg-black/90")} />}
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black via-black/30 to-black/10">
                 <div className="flex flex-col items-center gap-5">
                   {isNotReleased ? (
                     <>
