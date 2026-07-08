@@ -283,7 +283,7 @@ async def ensure_login():
     except Exception as e:
         print(f"all login paths failed: {str(e)[:80]}")
 
-async def _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key):
+async def _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key, orig=None):
     # A transient HDRezka blip (timeout / mirror hiccup / expired session) comes
     # back as an error that ISN'T a genuine "Not found". Re-login once and retry
     # so the user gets the movie WITHOUT having to reload the page (reported:
@@ -300,7 +300,7 @@ async def _resolve_with_retry(q, year, type, season, episode, index, translator_
     for _attempt in range(3):
         try:
             res = await _asyncio.wait_for(
-                _resolve_search(q, year, type, season, episode, index, translator_id, cache_key),
+                _resolve_search(q, year, type, season, episode, index, translator_id, cache_key, orig=orig),
                 timeout=12,
             )
         except Exception as e:
@@ -319,9 +319,9 @@ async def _resolve_with_retry(q, year, type, season, episode, index, translator_
 
 
 @app.get("/api/search")
-async def search(q: str, year: str = None, type: str = None, season: str = None, episode: str = None, index: int = 0, translator_id: int = None):
+async def search(q: str, year: str = None, type: str = None, season: str = None, episode: str = None, index: int = 0, translator_id: int = None, orig: str = None):
     await ensure_login()
-    cache_key = (q, year, type, season, episode, index, translator_id)
+    cache_key = (q, year, type, season, episode, index, translator_id, orig)
     _hit = _search_cache.get(cache_key)
     if _hit and _time.monotonic() - _hit[0] < _SEARCH_CACHE_TTL:
         return _hit[1]
@@ -329,7 +329,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
     if _flight is not None:
         return await _flight
     _flight = _asyncio.ensure_future(
-        _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key)
+        _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key, orig=orig)
     )
     _inflight[cache_key] = _flight
     try:
@@ -823,7 +823,7 @@ def _title_related(qn, nmn):
     return _difflib.SequenceMatcher(None, qn, nmn).ratio() >= 0.6
 
 
-async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key):
+async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key, orig=None):
     try:
         results = await Search(q).get_page(1)
         if not results:
@@ -897,32 +897,68 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
             except (TypeError, ValueError):
                 want_year = None
             q_norm = _norm_title(q)
+            orig_norm = _norm_title(orig) if orig else ""
             # Pass 1 — exact year match, then prefer the closest TITLE among
             # same-year candidates. Without the title tiebreak "Мадагаскар"
             # (2005) lost to "Пингвины из Мадагаскара в рождественских
             # приключениях" (2005) just because the short was listed first.
-            year_cands = []
-            for r in filtered:
+            def _year_ok(r):
                 info = getattr(r, 'info', None)
                 info_year = getattr(info, 'year', None) if info else None
-                if (info_year and str(info_year) == year) \
-                        or year in str(info or '') or year in str(getattr(r, 'url', '')):
-                    year_cands.append(r)
+                return (info_year and str(info_year) == year) \
+                    or year in str(info or '') or year in str(getattr(r, 'url', ''))
+            year_cands = [r for r in filtered if _year_ok(r)]
+            # Original-title rescue: HDRezka's search for a generic RU title can
+            # OMIT the exact film and surface a same-year "contains" match
+            # instead ("Страх" 1996 -> wrongly "Первобытный страх" 1996, which
+            # literally contains "страх"). If NONE of the RU year-candidates is
+            # an EXACT title match, also pull candidates from an original-title
+            # search — the exact title is usually indexed there — so the
+            # exact-title tiebreak below can pick it over the contains match.
+            # Gated on "no exact yet" so the common exact-RU-hit path pays no
+            # extra HDRezka round-trip.
+            if orig_norm and orig_norm != q_norm and not any(
+                    _norm_title(getattr(r, 'name', '')) in (q_norm, orig_norm) for r in year_cands):
+                try:
+                    _more = await Search(orig).get_page(1)
+                except Exception:
+                    _more = []
+                _seen = {str(getattr(r, 'url', '')) for r in filtered}
+                for r in (_more or []):
+                    url = str(getattr(r, 'url', ''))
+                    if url in _seen:
+                        continue
+                    info = str(getattr(r, 'info', '') or '')
+                    if type in ('tv', 'series'):
+                        if not ('/series/' in url or '/animation/' in url or '/cartoons/' in url
+                                or 'сезон' in info.lower() or 'серия' in info.lower()):
+                            continue
+                    elif type == 'movie':
+                        if '/series/' in url or 'сезон' in info.lower() or 'серия' in info.lower():
+                            continue
+                    if _year_ok(r):
+                        year_cands.append(r)
             if year_cands:
                 def _title_score(r):
                     nt = _norm_title(getattr(r, 'name', ''))
-                    if nt == q_norm: return 0       # exact title
-                    if nt.startswith(q_norm): return 1
-                    if q_norm in nt: return 2
-                    return 3
+                    s = 3
+                    for t in (q_norm, orig_norm):
+                        if not t:
+                            continue
+                        if nt == t: s = min(s, 0)          # exact title (ru or orig)
+                        elif nt.startswith(t): s = min(s, 1)
+                        elif t in nt: s = min(s, 2)
+                    return s
                 _cand = min(year_cands, key=_title_score)
-                # Require SOME title relationship (substring or high fuzzy match)
-                # so a pure YEAR match with an unrelated title can't hijack the
-                # resolve ("This Morning" 1988 -> "Это - Англия. Год 1988"),
-                # while STILL allowing sequel-number / punctuation diffs
-                # ("Трансформеры 4: Эпоха истребления" -> HDRezka "Трансформеры:
-                # Эпоха истребления", lone "4" breaks plain substring).
-                if _title_related(q_norm, _norm_title(getattr(_cand, "name", ""))):
+                # Require SOME title relationship (to ru OR orig; substring or
+                # high fuzzy match) so a pure YEAR match with an unrelated title
+                # can't hijack the resolve ("This Morning" 1988 -> "Это -
+                # Англия. Год 1988"), while STILL allowing sequel-number /
+                # punctuation diffs ("Трансформеры 4: Эпоха истребления" ->
+                # HDRezka "Трансформеры: Эпоха истребления", lone "4" breaks
+                # plain substring).
+                _cn = _norm_title(getattr(_cand, "name", ""))
+                if _title_related(q_norm, _cn) or (orig_norm and _title_related(orig_norm, _cn)):
                     best = _cand
             # Pass 2 — ±1 year AND title normalizes the same.
             if not best and want_year is not None:

@@ -124,8 +124,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       if (!searchTitle) return;
       const tr = getLastTranslator(movie.id, "movie")?.id ?? null;
       const q = encodeURIComponent(searchTitle);
+      // Also pass the original title so the backend can disambiguate generic
+      // RU titles that HDRezka mis-resolves ("Страх"/Fear 1996 → wrongly
+      // "Первобытный страх"). Backend only pays the extra search when the RU
+      // hit isn't exact.
+      const origParam = (origTitle && origTitle !== searchTitle) ? "&orig=" + encodeURIComponent(origTitle) : "";
       const trParam = tr ? "&translator_id=" + tr : "";
-      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam;
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + origParam + trParam;
       const p = fetch(url).then((r) => r.json()).catch(() => null);
       prefetchRef.current = { url, promise: p };
       p.then((d: any) => {
@@ -234,8 +239,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       const ruTitle = (movie.title || "").replace(/["«»""]/g, "").trim();
       const searchTitle = ruTitle || origTitle;
       const q = encodeURIComponent(searchTitle);
+      const origParam = (origTitle && origTitle !== searchTitle) ? "&orig=" + encodeURIComponent(origTitle) : "";
       const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
-      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + trParam;
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + origParam + trParam;
       // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
       let data: any = null;
       if (prefetchRef.current && prefetchRef.current.url === url) {

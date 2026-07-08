@@ -240,8 +240,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
       if (!searchName) return;
       const tr = getLastTranslator(show.id, "tv")?.id ?? null;
       const q = encodeURIComponent(searchName);
+      // Pass original name so the backend can disambiguate generic RU titles
+      // HDRezka mis-resolves; it only pays the extra search when the RU hit
+      // isn't exact.
+      const origParam = (origName && origName !== searchName) ? "&orig=" + encodeURIComponent(origName) : "";
       const trParam = tr ? "&translator_id=" + tr : "";
-      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + selectedSeason + "&episode=" + selectedEpisode + trParam;
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + selectedSeason + "&episode=" + selectedEpisode + origParam + trParam;
       const p = fetch(url).then((r) => r.json()).catch(() => null);
       prefetchRef.current = { url, promise: p };
       p.then((d: any) => {
@@ -324,7 +328,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
       let data: any = null;
       for (const name of candidates) {
         q = encodeURIComponent(name);
-        url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + trParam;
+        const origParam = (name === ruName && origName && origName !== ruName) ? "&orig=" + encodeURIComponent(origName) : "";
+        url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=tv&season=" + season + "&episode=" + episode + origParam + trParam;
         // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
         let di: any = null;
         if (prefetchRef.current && prefetchRef.current.url === url) {
