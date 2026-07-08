@@ -253,7 +253,15 @@ html:not(.dark) a[href^="/person/"]:hover {
    fullscreen ArtPlayer. Set from the player settings gear ("Полоска прогресса");
    see components/art-player.tsx. When a viewer turns it off, the container gets
    .hide-mini-bar and the bar is hidden without a reload. Default (no class) =
-   visible, so nothing changes for people who like seeing how much is left. */
-.hide-mini-bar .art-mini-progress-bar {
-	display: none !important;
+   visible, so nothing changes for people who like seeing how much is left.
+
+   IMPORTANT: ArtPlayer draws the mini bar NOT as a child element but by adding
+   the state class `art-mini-progress-bar` to the ROOT .art-video-player (only
+   while controls are hidden) and sliding .art-bottom's progress into a thin
+   sliver. So targeting `.art-mini-progress-bar` directly matched the ROOT and
+   display:none'd the WHOLE player (black screen). Hide only the sliver instead:
+   fade .art-bottom to 0 while in the mini state. The :not() guards make sure the
+   full controls still appear on hover/tap. */
+.hide-mini-bar .art-video-player.art-mini-progress-bar:not(.art-hover):not(.art-control-show) .art-bottom {
+	opacity: 0 !important;
 }
