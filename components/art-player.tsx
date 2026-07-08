@@ -608,7 +608,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     if (!art) return;
 
     // Remove our items if present (id starts with "kino-")
-    ["kino-translator", "kino-subtitle", "kino-quality", "kino-speed"].forEach((name) => {
+    ["kino-translator", "kino-subtitle", "kino-quality", "kino-speed", "kino-miniprogress"].forEach((name) => {
       try { art.setting.remove(name); } catch {}
     });
 
@@ -630,6 +630,29 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     if (qItem) art.setting.add(qItem);
 
     art.setting.add(buildSpeedSetting(art));
+
+    // Per-viewer toggle for the green mini progress bar at the bottom of the
+    // fullscreen player. A channel poll split ~50/50 (some like seeing how much
+    // is left, some feel it spoils the ending), so instead of a global on/off
+    // let each viewer decide. Default ON (unset === visible). Persisted in
+    // localStorage; hidden live via a container class (see globals.css
+    // .hide-mini-bar .art-mini-progress-bar). The bar itself is always built
+    // (miniProgressBar:true) so the toggle can show it again without a reload.
+    const miniOn = (() => { try { return localStorage.getItem("kino_mini_progress") !== "off"; } catch { return true; } })();
+    containerRef.current?.classList.toggle("hide-mini-bar", !miniOn);
+    art.setting.add({
+      name: "kino-miniprogress",
+      html: "Полоска прогресса",
+      tooltip: miniOn ? "Показана" : "Скрыта",
+      switch: miniOn,
+      onSwitch: function (item: any) {
+        const next = !item.switch;
+        item.tooltip = next ? "Показана" : "Скрыта";
+        try { localStorage.setItem("kino_mini_progress", next ? "on" : "off"); } catch {}
+        containerRef.current?.classList.toggle("hide-mini-bar", !next);
+        return next;
+      },
+    });
   }, [
     translators,
     selectedTranslator,

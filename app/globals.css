@@ -248,3 +248,12 @@ html:not(.dark) a[href^="/person/"]:hover {
 		display: none;
 	}
 }
+
+/* Per-viewer toggle for the green mini progress bar at the bottom of the
+   fullscreen ArtPlayer. Set from the player settings gear ("Полоска прогресса");
+   see components/art-player.tsx. When a viewer turns it off, the container gets
+   .hide-mini-bar and the bar is hidden without a reload. Default (no class) =
+   visible, so nothing changes for people who like seeing how much is left. */
+.hide-mini-bar .art-mini-progress-bar {
+	display: none !important;
+}
