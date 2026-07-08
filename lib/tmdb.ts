@@ -12,6 +12,29 @@ if (!API_BASE_URL || !API_KEY) {
 	);
 }
 
+// Persistent disk cache for TMDB responses. TMDB (api.themoviedb.org) blips
+// occasionally take the whole site down because every SSR page fetches it; this
+// serves the LAST-GOOD response from disk when TMDB is unreachable, so the site
+// stays up (slightly stale) instead of going blank/404. Server-only — the
+// require is hidden from the bundler so this file stays client-safe (getImageUrl
+// etc. are imported by client components).
+function tmdbCache(): { read: (u: string) => unknown; write: (u: string, d: unknown) => void } | null {
+	if (typeof window !== "undefined") return null;
+	try {
+		// Direct eval → the module's (Node) require on the server; hidden from the
+		// bundler so "fs" is never pulled into the client bundle.
+		// eslint-disable-next-line no-eval
+		const req = eval("require") as NodeRequire;
+		const fs = req("fs"), path = req("path"), crypto = req("crypto");
+		const DIR = process.env.TMDB_CACHE_DIR || path.join(process.cwd(), "tmdb-cache");
+		const file = (u: string) => path.join(DIR, crypto.createHash("sha1").update(u).digest("hex") + ".json");
+		return {
+			read: (u: string) => { try { return JSON.parse(fs.readFileSync(file(u), "utf-8")); } catch { return null; } },
+			write: (u: string, d: unknown) => { try { fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(file(u), JSON.stringify(d)); } catch { /* ignore */ } },
+		};
+	} catch { return null; }
+}
+
 // Helper for robust fetching with retry logic
 async function fetchWithRetry(
 	url: string,
@@ -52,6 +75,11 @@ async function fetchWithRetry(
 			throw new Error(`HTTP error! status: ${response.status}`);
 		}
 
+		// Cache a fresh copy to disk (from a clone so the caller's body is intact).
+		const okOps = tmdbCache();
+		if (okOps) {
+			try { response.clone().json().then((d) => okOps.write(url, d)).catch(() => {}); } catch { /* ignore */ }
+		}
 		return response;
 	} catch (error) {
 		if (retries > 0) {
@@ -61,7 +89,15 @@ async function fetchWithRetry(
 			await new Promise((resolve) => setTimeout(resolve, 1000));
 			return fetchWithRetry(url, options, retries - 1);
 		}
-		console.error("вќЊ Fetch failed after retries:", error);
+		// TMDB unreachable after retries — serve the last-good disk cache so the
+		// site degrades to slightly-stale instead of blank/404.
+		const failOps = tmdbCache();
+		const stale = failOps?.read(url);
+		if (stale != null) {
+			console.warn("TMDB unreachable — serving stale disk cache for", url.slice(0, 70));
+			return new Response(JSON.stringify(stale), { status: 200, headers: { "content-type": "application/json" } });
+		}
+		console.error("Fetch failed after retries:", error);
 		throw error;
 	}
 }

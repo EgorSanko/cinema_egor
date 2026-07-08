@@ -25,9 +25,26 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// Safe logged-out stub for when useAuth is called outside an AuthProvider —
+// notably the root not-found.tsx / error boundaries, which render <Navbar/>
+// (uses useAuth) OUTSIDE the provider tree. Throwing there turned a soft 404
+// (e.g. a TMDB blip → getMovieDetails null → notFound()) into a hard 500
+// cascade that took the whole site down. Degrade to "logged out" instead.
+const AUTH_STUB: AuthContextType = {
+  user: null,
+  login: async () => null,
+  register: async () => ({ ok: false } as RegisterResult),
+  verifyRegister: async () => null,
+  forgotPassword: async () => ({ ok: false } as CodeResult),
+  resetPassword: async () => null,
+  resendCode: async () => ({ ok: false } as CodeResult),
+  logout: () => {},
+  syncing: false,
+};
+
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  if (!ctx) return AUTH_STUB;
   return ctx;
 }
 
