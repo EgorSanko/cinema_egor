@@ -222,6 +222,7 @@ async def tmdb_img(p: str):
 # would hand out dead links.
 import time as _time
 import asyncio as _asyncio
+import re as _re  # module-level (also imported locally in some funcs — harmless)
 _search_cache: dict = {}
 _SEARCH_CACHE_TTL = 300  # seconds
 # Single-flight: coalesce concurrent identical resolves into ONE upstream call.
@@ -243,30 +244,78 @@ def _cache_store(key, resp):
         _search_cache[key] = (_time.monotonic(), resp)
     return resp
 
+# Reachable mirror(s) for login + content. rhs.to (login_global's default
+# redirector) currently 302s to standby-rezka.tv, which is BLOCKED from this host
+# (TLS internal error / connect refused) -> login_global dies -> whole site shows
+# "нету". We log in DIRECTLY against a reachable mirror: GET it first (sets the
+# session cookie the POST needs), POST /ajax/login/, then pin Request.HOST so
+# Search/Player use the SAME working mirror. Env override: HDREZKA_MIRRORS.
+_HDREZKA_MIRRORS = [m.strip() for m in _os.environ.get(
+    "HDREZKA_MIRRORS",
+    "https://hdrezka.cm/,https://hdrezka.la/,https://hdrezka.club/,https://hdrezka.me/,https://hdrezka.ag/"
+).split(",") if m.strip()]
+
+
 async def ensure_login():
     global logged_in
-    if not logged_in:
+    if logged_in:
+        return
+    for host in _HDREZKA_MIRRORS:
         try:
-            await hdrezka_http.login_global("egorsanko@bk.ru", "Yachmen007")
+            await hdrezka_http.DEFAULT_CLIENT.get(host, timeout=12)  # GET -> session cookie
+            await hdrezka_http.DEFAULT_CLIENT.post(
+                host + "ajax/login/",
+                data={"login_name": "egorsanko@bk.ru", "login_password": "Yachmen007",
+                      "login_not_save": "0", "login": "submit"},
+                timeout=12,
+            )
+            Request.HOST = host
             logged_in = True
-            print(f"Login successful! HOST={Request.HOST}")
+            print(f"Login OK via {host}")
+            return
         except Exception as e:
-            print(f"Login failed: {e}")
+            print(f"login {host} failed: {str(e)[:80]}")
+    # Last resort: the lib's redirector flow (helps if a blocked mirror returns).
+    try:
+        await hdrezka_http.login_global("egorsanko@bk.ru", "Yachmen007")
+        logged_in = True
+        print(f"Login via login_global, HOST={Request.HOST}")
+    except Exception as e:
+        print(f"all login paths failed: {str(e)[:80]}")
 
 async def _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key):
     # A transient HDRezka blip (timeout / mirror hiccup / expired session) comes
     # back as an error that ISN'T a genuine "Not found". Re-login once and retry
     # so the user gets the movie WITHOUT having to reload the page (reported:
     # "иногда фильмы не отдаются, приходится перезагружать, и то не с первого раза").
-    res = await _resolve_search(q, year, type, season, episode, index, translator_id, cache_key)
-    if isinstance(res, dict) and res.get("error") and res.get("error") != "Not found":
-        global logged_in
+    # The client waits patiently (no fetch timeout) and only shows "Series not
+    # found" after we give up, so bound EACH attempt (an httpx ReadTimeout could
+    # otherwise hang the whole 25s) and retry a few times, re-logging in between,
+    # instead of dying on the first slow upstream read. On success attempt 1
+    # returns in ~1-3s (no added latency); only the rare transient blip pays the
+    # retries. Reported: it played for the owner (already cached) but not for
+    # another viewer who hit a transient timeout.
+    global logged_in
+    last = None
+    for _attempt in range(3):
+        try:
+            res = await _asyncio.wait_for(
+                _resolve_search(q, year, type, season, episode, index, translator_id, cache_key),
+                timeout=12,
+            )
+        except Exception as e:
+            res = {"error": "timeout" if isinstance(e, _asyncio.TimeoutError) else str(e)[:80]}
+        last = res
+        # Success OR a genuine "Not found" -> done; retrying would not help.
+        if isinstance(res, dict) and (res.get("stream") or res.get("error") == "Not found"):
+            return res
+        # Transient error (timeout / blip / stale session) -> re-login and retry.
         logged_in = False
-        await ensure_login()
-        res2 = await _resolve_search(q, year, type, season, episode, index, translator_id, cache_key)
-        if isinstance(res2, dict) and (res2.get("stream") or res2.get("error") == "Not found"):
-            return res2
-    return res
+        try:
+            await ensure_login()
+        except Exception:
+            pass
+    return last
 
 
 @app.get("/api/search")
@@ -293,6 +342,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
 # numeric id + slug are stable). Mirrors lib/blocked-content.ts BLOCKED_HD_SLUGS.
 _BLOCKED_HD_SLUGS = [
     "kodeks-dante-2025",  # 2026-06-25 Beget claim (ООО Исола Динамикс / РВВ Филм)
+    "eto-hit-2026",       # 2026-06-30 Beget claim (ООО Исола Динамикс / Экспонента Фильм) - Power Ballad
 ]
 
 def _is_blocked_hd(url) -> bool:
@@ -497,6 +547,59 @@ async def details(url: str):
                 n = getattr(x, 'name', None)
                 out.append(str(n if n is not None else x))
             return out
+        # Hyperlink(name,url) list → [{name,url}]  (genres/collections/countries)
+        def _links(seq):
+            out = []
+            for x in (seq or ()):
+                out.append({"name": str(getattr(x, 'name', '') or ''), "url": str(getattr(x, 'url', '') or '')})
+            return out
+        # Person(name,url,image,...) list → [{name,url,image}]
+        def _persons(seq):
+            out = []
+            for x in (seq or ()):
+                out.append({
+                    "name": str(getattr(x, 'name', '') or ''),
+                    "url": str(getattr(x, 'url', '') or ''),
+                    "image": str(getattr(x, 'image', '') or '') or None,
+                })
+            return out
+        # ratings dict → {imdb:{rating,votes,url}, kp:{...}, hdrezka:{...}} + imdb_id
+        ratings_out = {}
+        imdb_id = None
+        try:
+            for key in ("imdb", "kp", "hdrezka"):
+                r = (getattr(info, 'ratings', {}) or {}).get(key)
+                if not r:
+                    continue
+                svc = getattr(r, 'service', None)
+                rurl = str(getattr(svc, 'url', '') or '')
+                ratings_out[key] = {"rating": getattr(r, 'rating', 0) or 0, "votes": getattr(r, 'votes', 0) or 0, "url": rurl}
+                if key == "imdb":
+                    m = _re.search(r'title/(tt\d+)', rurl)
+                    if m:
+                        imdb_id = m.group(1)
+        except Exception:
+            pass
+        age = None
+        try:
+            ar = getattr(info, 'age_rating', None)
+            if ar is not None:
+                age = {"age": getattr(ar, 'age', None), "description": str(getattr(ar, 'description', '') or '')}
+        except Exception:
+            pass
+        rankings_out = []
+        try:
+            for rk in (getattr(info, 'rankings', None) or ()):
+                nm = getattr(rk, 'name', None)
+                rankings_out.append({"name": str(getattr(nm, 'name', '') or nm or ''), "url": str(getattr(nm, 'url', '') or ''), "rank": getattr(rk, 'rank', None)})
+        except Exception:
+            pass
+        franchise_url = None
+        try:
+            fr = getattr(player.post, 'franchises', None)
+            franchise_url = str(getattr(fr, 'url', '') or '') or None
+        except Exception:
+            pass
         resp = {
             "title": str(getattr(info, 'title', '') or getattr(player.post, 'name', '') or ''),
             "orig_title": str(getattr(info, 'orig_title', '') or ''),
@@ -505,9 +608,20 @@ async def details(url: str):
             "description": str(getattr(info, 'description', '') or ''),
             "type": "tv" if is_series else "movie",
             "url": url,
+            "hdrezka_id": getattr(player.post, 'id', None),
             "genres": _names(getattr(info, 'genre', None))[:6],
+            "genre_links": _links(getattr(info, 'genre', None))[:6],
             "countries": _names(getattr(info, 'country', None))[:3],
             "duration": str(getattr(info, 'duration', '') or ''),
+            "ratings": ratings_out,
+            "imdb_id": imdb_id,
+            "age": age,
+            "persons": _persons(getattr(info, 'persons', None))[:20],
+            "directors": _persons(getattr(info, 'directors', None))[:5],
+            "collections": _links(getattr(info, 'collections', None))[:12],
+            "rankings": rankings_out[:8],
+            "franchise_url": franchise_url,
+            "quality": str(getattr(info, 'quality', '') or ''),
         }
         if is_series:
             try:
@@ -519,6 +633,100 @@ async def details(url: str):
         return resp
     except Exception as e:
         return {"error": str(e)}
+
+
+_browse_cache: dict = {}
+_trailer_cache: dict = {}
+
+def _parse_catalog(html):
+    """Parse an HDRezka catalog/showcase page into card dicts. Tolerant to markup
+    drift: split on the card class, pull data-url/id/poster/title/year per chunk."""
+    items = []
+    # Split on the card class allowing extra classes (e.g. "... is_hidden" for
+    # cards behind HDRezka's "Показать все") — but NOT the sub-element classes
+    # like b-content__inline_item-cover (those have "-" after item).
+    for p in _re.split(r'class="b-content__inline_item[ "]', html)[1:]:
+        urlm = _re.search(r'data-url="([^"]+)"', p)
+        if not urlm:
+            continue
+        curl = urlm.group(1)
+        idm = _re.search(r'data-id="(\d+)"', p)
+        pm = _re.search(r'<img[^>]+src="([^"]+)"', p)
+        tm = _re.search(r'b-content__inline_item-link">\s*<a[^>]*>([^<]+)</a>', p)
+        if not tm:
+            tm = _re.search(r'<a href="[^"]*"[^>]*>([^<]+)</a>', p)
+        ym = _re.search(r'<div>[^<]*?(\d{4})', p)
+        items.append({
+            "id": int(idm.group(1)) if idm else None,
+            "url": curl,
+            "poster": pm.group(1) if pm else None,
+            "title": tm.group(1).strip() if tm else None,
+            "year": ym.group(1) if ym else None,
+            "type": "tv" if "/series/" in curl else "movie",
+            "rating": (lambda m: float(m.group(1).replace(",", ".")) if m else None)(_re.search(r'bestrating[^>]*>\(([\d.,]+)\)', p)),
+        })
+        if len(items) >= 60:
+            break
+    return items
+
+@app.get("/api/browse")
+async def browse(cat: str = "films", sort: str = "last", genre: str = None, year: str = None, page: int = 1):
+    """Showcase/catalog feed for the HDRezka-native homepage & genre browse.
+    cat=films|series|cartoons|animation|new ; sort=last|popular|watching|soon|best."""
+    await ensure_login()
+    if cat not in ("films", "series", "cartoons", "animation", "new"):
+        cat = "films"
+    key = ("browse", cat, sort, genre, year, page)
+    hit = _browse_cache.get(key)
+    if hit and _time.monotonic() - hit[0] < 600:
+        return hit[1]
+    base = Request.HOST.rstrip("/") + "/"
+    if cat == "new":
+        path = "new/"
+    elif sort == "best":
+        path = f"{cat}/best/" + (f"{genre}/" if genre else "") + (f"{year}/" if year else "")
+    elif genre:
+        path = f"{cat}/{genre}/"
+    else:
+        path = f"{cat}/"
+    if page and int(page) > 1:
+        path += f"page/{int(page)}/"
+    qs = f"?filter={sort}" if (sort in ("popular", "watching", "soon") and cat != "new") else ""
+    url = base + path + qs
+    try:
+        r = await hdrezka_http.DEFAULT_CLIENT.get(url, timeout=15)
+        resp = {"items": _parse_catalog(r.text), "page": int(page), "source_url": url}
+        _browse_cache[key] = (_time.monotonic(), resp)
+        return resp
+    except Exception as e:
+        return {"items": [], "error": str(e)[:120]}
+
+@app.get("/api/trailer")
+async def trailer(id: int = None, url: str = None):
+    """YouTube trailer id for a title. Prefer numeric HDRezka id (fast, no resolve);
+    fall back to resolving the url. HDRezka returns an <iframe youtube.com/embed/ID>."""
+    await ensure_login()
+    key = ("trailer", id, url)
+    hit = _trailer_cache.get(key)
+    if hit and _time.monotonic() - hit[0] < 6 * 3600:
+        return hit[1]
+    pid = id
+    try:
+        if not pid and url:
+            player = await Player(url)
+            pid = getattr(player.post, 'id', None)
+        if not pid:
+            return {"youtube_id": None}
+        r = await hdrezka_http.DEFAULT_CLIENT.post(
+            Request.HOST.rstrip("/") + "/engine/ajax/gettrailervideo.php",
+            data={"id": pid}, timeout=12)
+        code = (r.json() or {}).get("code", "") or ""
+        m = _re.search(r'youtube\.com/embed/([A-Za-z0-9_-]{6,})', code)
+        resp = {"youtube_id": m.group(1) if m else None}
+        _trailer_cache[key] = (_time.monotonic(), resp)
+        return resp
+    except Exception as e:
+        return {"youtube_id": None, "error": str(e)[:120]}
 
 
 _episodes_cache: dict = {}
@@ -598,6 +806,23 @@ async def episode_translators(url: str, season: int = None, episode: int = None)
         return {"error": str(ex)}
 
 
+import difflib as _difflib
+
+
+def _title_related(qn, nmn):
+    """True if a normalized query relates to a normalized candidate title:
+    substring either way, OR high fuzzy similarity. Lets sequel-number /
+    punctuation diffs through ("трансформеры4эпохаистребления" vs HDRezka's
+    "трансформерыэпохаистребления" -> the lone "4" breaks plain substring) while
+    still rejecting genuine collisions (English "thismorning" vs a Russian-titled
+    anime/drama)."""
+    if not qn or not nmn:
+        return False
+    if qn in nmn or nmn in qn:
+        return True
+    return _difflib.SequenceMatcher(None, qn, nmn).ratio() >= 0.6
+
+
 async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key):
     try:
         results = await Search(q).get_page(1)
@@ -638,11 +863,23 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
         # SERIES whose name happened to contain the query + "[ТВ-1]" (e.g. movie
         # "Горничная" 2025 → "Кобаяси и её горничная-дракон [ТВ-1]" 2017).
         if type in ('tv', 'series') and s_num >= 1:
+            # Relevance guard: the [ТВ-N] / season tag alone is NOT enough — require the
+            # candidate title to actually relate to the query, else an unrelated
+            # anime whose HDRezka name happens to carry "[ТВ-1]" hijacks the
+            # resolve (e.g. original-name fallback "This Morning" -> KonoSuba
+            # "Богиня благословляет этот прекрасный мир [ТВ-1]"). For real split-season hits
+            # the query (ru or original name) is contained in the candidate name.
+            _qn = _re.sub(r"[^a-z0-9а-я]", "", (q or "").lower())
             for tag in [f"[ТВ-{s_num}]", f"[Сезон {s_num}]", f"ТВ-{s_num}", f"{s_num} сезон"]:
                 for r in filtered:
-                    if tag in str(getattr(r, 'name', '')):
-                        best = r
-                        break
+                    nm = str(getattr(r, 'name', ''))
+                    if tag not in nm:
+                        continue
+                    nmn = _re.sub(r"[^a-z0-9а-я]", "", nm.lower())
+                    if _qn and not _title_related(_qn, nmn):
+                        continue
+                    best = r
+                    break
                 if best:
                     break
 
@@ -678,7 +915,15 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
                     if nt.startswith(q_norm): return 1
                     if q_norm in nt: return 2
                     return 3
-                best = min(year_cands, key=_title_score)
+                _cand = min(year_cands, key=_title_score)
+                # Require SOME title relationship (substring or high fuzzy match)
+                # so a pure YEAR match with an unrelated title can't hijack the
+                # resolve ("This Morning" 1988 -> "Это - Англия. Год 1988"),
+                # while STILL allowing sequel-number / punctuation diffs
+                # ("Трансформеры 4: Эпоха истребления" -> HDRezka "Трансформеры:
+                # Эпоха истребления", lone "4" breaks plain substring).
+                if _title_related(q_norm, _norm_title(getattr(_cand, "name", ""))):
+                    best = _cand
             # Pass 2 — ±1 year AND title normalizes the same.
             if not best and want_year is not None:
                 for r in filtered:
@@ -882,6 +1127,79 @@ async def get_translators(q: str):
         return {"translators": tlist}
     except Exception as e:
         return {"translators": [], "error": str(e)}
+
+@app.get("/api/person")
+async def person(url: str):
+    """HDRezka person page: bio (photo/career/birthday/birthplace/height) +
+    filmography. Person is identified by its URL (hdrezka.cm/person/NNNNN-slug)."""
+    await ensure_login()
+    key = ("person", url)
+    hit = _browse_cache.get(key)
+    if hit and _time.monotonic() - hit[0] < 600:
+        return hit[1]
+    from hdrezka.post.info.person import Person as _Person
+    name = translit = image = birthday = height = birthplace = None
+    career = []
+    try:
+        p = await _Person(url)
+        name, translit = p.name, p.name_transcription
+        img = p.image
+        if isinstance(img, (list, tuple)):
+            img = img[0] if img else None
+        image = img if isinstance(img, str) else (str(img) if img else None)
+        career = list(p.career) if p.career else []
+        birthday = p.birthday.isoformat() if p.birthday else None
+        height = p.height
+        if p.birthplace is not None:
+            try:
+                birthplace = p.birthplace._asdict()
+            except Exception:
+                birthplace = None
+    except Exception:
+        # Bio parse failed — still return filmography + URL-derived name.
+        try:
+            p0 = _Person(url)
+            name, translit = p0.name, p0.name_transcription
+        except Exception:
+            pass
+    filmography = []
+    try:
+        r = await hdrezka_http.DEFAULT_CLIENT.get(url, timeout=15)
+        filmography = _parse_catalog(r.text)
+    except Exception:
+        pass
+    resp = {
+        "url": url, "name": name, "name_transcription": translit,
+        "image": image, "career": career, "birthday": birthday,
+        "height": height, "birthplace": birthplace, "filmography": filmography,
+    }
+    # Don't cache a transient failure (cold login → empty) or it poisons the
+    # actor page for 10 min. Only cache when we actually got data.
+    if filmography or image:
+        _browse_cache[key] = (_time.monotonic(), resp)
+    return resp
+
+
+@app.get("/api/related")
+async def related(url: str):
+    """'С этим смотрят' / similar titles scraped from an HDRezka title page →
+    card dicts. Powers the recommendations row on the /hd/[token] card."""
+    await ensure_login()
+    key = ("related", url)
+    hit = _browse_cache.get(key)
+    if hit and _time.monotonic() - hit[0] < 600:
+        return hit[1]
+    items = []
+    try:
+        r = await hdrezka_http.DEFAULT_CLIENT.get(url, timeout=15)
+        items = [it for it in _parse_catalog(r.text) if it.get("url") != url]
+    except Exception:
+        pass
+    resp = {"items": items, "url": url}
+    if items:
+        _browse_cache[key] = (_time.monotonic(), resp)
+    return resp
+
 
 if __name__ == "__main__":
     import uvicorn
