@@ -129,8 +129,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       // "Первобытный страх"). Backend only pays the extra search when the RU
       // hit isn't exact.
       const origParam = (origTitle && origTitle !== searchTitle) ? "&orig=" + encodeURIComponent(origTitle) : "";
+      // Top cast names — last-resort disambiguator for same-year namesakes the
+      // title can't separate. Backend only uses it when the pick is ambiguous.
+      const castNames = (((movie as any).credits?.cast) || []).slice(0, 6).map((c: any) => c?.name).filter(Boolean).join(",");
+      const castParam = castNames ? "&cast=" + encodeURIComponent(castNames) : "";
       const trParam = tr ? "&translator_id=" + tr : "";
-      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + origParam + trParam;
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + origParam + castParam + trParam;
       const p = fetch(url).then((r) => r.json()).catch(() => null);
       prefetchRef.current = { url, promise: p };
       p.then((d: any) => {
@@ -240,8 +244,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       const searchTitle = ruTitle || origTitle;
       const q = encodeURIComponent(searchTitle);
       const origParam = (origTitle && origTitle !== searchTitle) ? "&orig=" + encodeURIComponent(origTitle) : "";
+      const castNames = (((movie as any).credits?.cast) || []).slice(0, 6).map((c: any) => c?.name).filter(Boolean).join(",");
+      const castParam = castNames ? "&cast=" + encodeURIComponent(castNames) : "";
       const trParam = effectiveTr ? "&translator_id=" + effectiveTr : "";
-      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + origParam + trParam;
+      const url = "/hdrezka/api/search?q=" + q + "&year=" + year + "&type=movie" + origParam + castParam + trParam;
       // Reuse the warmed prefetch when it matches (instant play); otherwise fetch.
       let data: any = null;
       if (prefetchRef.current && prefetchRef.current.url === url) {

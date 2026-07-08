@@ -283,7 +283,7 @@ async def ensure_login():
     except Exception as e:
         print(f"all login paths failed: {str(e)[:80]}")
 
-async def _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key, orig=None):
+async def _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key, orig=None, cast=None):
     # A transient HDRezka blip (timeout / mirror hiccup / expired session) comes
     # back as an error that ISN'T a genuine "Not found". Re-login once and retry
     # so the user gets the movie WITHOUT having to reload the page (reported:
@@ -300,7 +300,7 @@ async def _resolve_with_retry(q, year, type, season, episode, index, translator_
     for _attempt in range(3):
         try:
             res = await _asyncio.wait_for(
-                _resolve_search(q, year, type, season, episode, index, translator_id, cache_key, orig=orig),
+                _resolve_search(q, year, type, season, episode, index, translator_id, cache_key, orig=orig, cast=cast),
                 timeout=12,
             )
         except Exception as e:
@@ -319,9 +319,9 @@ async def _resolve_with_retry(q, year, type, season, episode, index, translator_
 
 
 @app.get("/api/search")
-async def search(q: str, year: str = None, type: str = None, season: str = None, episode: str = None, index: int = 0, translator_id: int = None, orig: str = None):
+async def search(q: str, year: str = None, type: str = None, season: str = None, episode: str = None, index: int = 0, translator_id: int = None, orig: str = None, cast: str = None):
     await ensure_login()
-    cache_key = (q, year, type, season, episode, index, translator_id, orig)
+    cache_key = (q, year, type, season, episode, index, translator_id, orig, cast)
     _hit = _search_cache.get(cache_key)
     if _hit and _time.monotonic() - _hit[0] < _SEARCH_CACHE_TTL:
         return _hit[1]
@@ -329,7 +329,7 @@ async def search(q: str, year: str = None, type: str = None, season: str = None,
     if _flight is not None:
         return await _flight
     _flight = _asyncio.ensure_future(
-        _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key, orig=orig)
+        _resolve_with_retry(q, year, type, season, episode, index, translator_id, cache_key, orig=orig, cast=cast)
     )
     _inflight[cache_key] = _flight
     try:
@@ -823,7 +823,44 @@ def _title_related(qn, nmn):
     return _difflib.SequenceMatcher(None, qn, nmn).ratio() >= 0.6
 
 
-async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key, orig=None):
+def _norm_person(s):
+    # Normalize an actor name for comparison: lowercase, letters only (drops
+    # spaces/punctuation so "Марк Уолберг" == "марк  уолберг").
+    return _re.sub(r"[^a-zа-яё]", "", (s or "").lower()).replace("ё", "е")
+
+
+def _parse_cast(cast):
+    """Comma-separated expected actor names (TMDB, ru) -> set of normalized names."""
+    if not cast:
+        return set()
+    return {n for n in (_norm_person(x) for x in cast.split(",")) if len(n) >= 4}
+
+
+def _cast_names(player):
+    """Normalized actor names from a resolved HDRezka post (post.info.persons)."""
+    try:
+        persons = player.post.info.persons or ()
+    except Exception:
+        return set()
+    return {n for n in (_norm_person(getattr(p, "name", "")) for p in persons) if len(n) >= 4}
+
+
+def _cast_overlap(exp, got):
+    """True if the expected TMDB cast shares at least one actor with HDRezka's.
+    Exact normalized match, or one name contained in the other to absorb minor
+    transliteration/order differences."""
+    if not exp or not got:
+        return False
+    if exp & got:
+        return True
+    for e in exp:
+        for g in got:
+            if e in g or g in e:
+                return True
+    return False
+
+
+async def _resolve_search(q, year, type, season, episode, index, translator_id, cache_key, orig=None, cast=None):
     try:
         results = await Search(q).get_page(1)
         if not results:
@@ -831,6 +868,7 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
 
         import re as _re
         best = None
+        year_cands = []          # same-year candidates (used by cast validation below)
         s_num = int(season or 1)
 
         # Filter by type (movie vs series)
@@ -1000,6 +1038,29 @@ async def _resolve_search(q, year, type, season, episode, index, translator_id, 
         if _is_blocked_hd(getattr(post, 'url', '')):
             return {"error": "Not found", "results": []}
         player = await post.player
+
+        # Cast validation — last-resort disambiguation. When an expected cast is
+        # provided AND there were several same-year candidates, verify the chosen
+        # film's actors overlap ours. HDRezka can hand back a same-year namesake
+        # that title+year+orig can't tell apart ("Страх" vs a different same-year
+        # "страх"); ZERO cast overlap is a strong "wrong film" signal, so fall
+        # through to another same-year candidate that DOES share actors. Extra
+        # page fetch(es) happen ONLY when the first pick's cast fails to match —
+        # the common path (single candidate, or cast already overlaps) is untouched.
+        exp_cast = _parse_cast(cast)
+        if exp_cast and len(year_cands) > 1 and not _cast_overlap(exp_cast, _cast_names(player)):
+            for _alt in year_cands:
+                if _alt is best or _is_blocked_hd(getattr(_alt, 'url', '')):
+                    continue
+                try:
+                    _apl = await _alt.player
+                except Exception:
+                    continue
+                if _cast_overlap(exp_cast, _cast_names(_apl)):
+                    best = _alt
+                    post = _alt
+                    player = _apl
+                    break
 
         translators = []
         # Premium account is PAID — every dub plays and downloads, none are
