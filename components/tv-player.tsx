@@ -18,6 +18,7 @@ import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
+import { watchHeartbeat } from "@/lib/metrika";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -192,6 +193,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         const dur = videoRef.current.duration;
         if (ct > 0 && dur > 0) {
           const ctx = ctxRef.current;
+          watchHeartbeat();
           savePosition(show.id, "tv", ct, dur, ctx.season, ctx.episode);
           saveLastEpisode(show.id, ctx.season, ctx.episode);
           const epName = ctx.episodes.find(e => e.episode_number === ctx.episode)?.name || "";

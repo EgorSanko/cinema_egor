@@ -17,6 +17,7 @@ import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { savePosition, getPosition, addToHistory, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
+import { watchHeartbeat } from "@/lib/metrika";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -162,6 +163,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         const dur = videoRef.current.duration;
         if (ct > 0 && dur > 0) {
           const ctx = ctxRef.current;
+          watchHeartbeat();
           savePosition(movie.id, "movie", ct, dur);
           const trName = ctx.translators.find(t => t.id === ctx.translatorId)?.name || "";
           addToHistory({
