@@ -382,6 +382,16 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     setWantResume(resume);
     if (resume && resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
     setShowPlayer(true);
+    // Start the (pre-warmed) video WITHIN this tap gesture. Relying only on the
+    // async autoStart effect lost the gesture on mobile, so autoplay was blocked
+    // and ArtPlayer showed its OWN poster + play button on top of ours — the
+    // "two play buttons, tap again to dismiss" bug. Playing here (muted fallback)
+    // starts it on the first tap.
+    const v = videoRef.current;
+    if (v && streamData?.stream) {
+      const p = v.play();
+      if (p && typeof p.catch === "function") p.catch(() => { try { v.muted = true; v.play().catch(() => {}); } catch {} });
+    }
     // If the player was already pre-warmed (streamData set on open), revealing it
     // flips autoStart → the player starts the buffered video instantly. Only do a
     // cold resolve when nothing is prewarmed yet.

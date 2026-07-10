@@ -503,6 +503,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setWantResume(resume);
     if (resume && resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
     setShowPlayer(true);
+    // Start the (pre-warmed) video WITHIN this tap gesture — see movie-player:
+    // the async autoStart effect lost the gesture on mobile, so ArtPlayer showed
+    // its own poster + play over ours (the "two play buttons / tap twice" bug).
+    const v = videoRef.current;
+    if (v && streamData?.stream) {
+      const p = v.play();
+      if (p && typeof p.catch === "function") p.catch(() => { try { v.muted = true; v.play().catch(() => {}); } catch {} });
+    }
     // If the episode was pre-warmed (streamData set on open), revealing it flips
     // autoStart → it starts the buffered video instantly. Only cold-resolve when
     // nothing is prewarmed yet.
