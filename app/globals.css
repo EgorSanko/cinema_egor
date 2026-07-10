@@ -265,3 +265,22 @@ html:not(.dark) a[href^="/person/"]:hover {
 .hide-mini-bar .art-video-player.art-mini-progress-bar:not(.art-hover):not(.art-control-show) .art-bottom {
 	opacity: 0 !important;
 }
+
+/* Alloha-style top control bar (Season/Episode/Dub pills) auto-hides with the
+   player controls: shown on hover / when paused (ArtPlayer sets .art-control-show
+   on the root), faded while playing + idle. Stays put while a dropdown is open. */
+/* The bar is portaled INTO .art-video-player, which carries .art-control-show
+   while the controls are visible (hover / paused) and drops it while playing +
+   idle. Plain descendant selectors — NOT :has() (Tailwind's Lightning CSS drops
+   :has(), which silently killed the whole rule). Stays lit while a dropdown is open. */
+.art-video-player .player-ep-bar {
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.18s ease;
+}
+.art-video-player.art-control-show .player-ep-bar,
+.art-video-player.art-hover .player-ep-bar,
+.player-ep-bar.is-open {
+	opacity: 1;
+	pointer-events: auto;
+}

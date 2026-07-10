@@ -17,6 +17,7 @@ import { ExpandableText } from "./expandable-text";
 import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
+import { PlayerEpisodeBar } from "./player-episode-bar";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
@@ -849,6 +850,21 @@ export function TVPlayer({ show }: TVPlayerProps) {
               season={selectedSeason}
               episode={selectedEpisode}
               hasNextEpisode={hasNextEpisode}
+              onNextEpisode={nextEpisode}
+            />
+          )}
+          {streamData?.stream && showPlayer && (
+            <PlayerEpisodeBar
+              container={playerContainer}
+              seasons={gatedSeasons}
+              episodes={gatedEpisodes}
+              dubs={playerDubs}
+              selectedSeason={selectedSeason}
+              selectedEpisode={selectedEpisode}
+              selectedTranslator={selectedTranslator}
+              onSeason={(s) => selectEpisode(s, 1)}
+              onEpisode={(e) => selectEpisode(selectedSeason, e)}
+              onDub={changeTranslator}
               onNextEpisode={nextEpisode}
             />
           )}
