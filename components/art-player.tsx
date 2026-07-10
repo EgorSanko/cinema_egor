@@ -37,6 +37,12 @@ interface ArtPlayerProps {
   /** Called when user opens subtitle menu first time — parent should fetch list */
   onLoadSubtitles?: () => void;
 
+  /** Episode navigation (series only): prev/next buttons in the bottom control
+   *  bar. When present, ArtPlayer gets ‹ › controls next to the play button. */
+  episodeNav?: { hasPrev: boolean; hasNext: boolean };
+  onPrevEpisode?: () => void;
+  onNextEpisode?: () => void;
+
   resumeTime?: number;
   /** Position the NEXT source switch should START at (used for quality switches:
    *  the new stream begins here instead of restarting at 0, so the position is
@@ -66,6 +72,11 @@ const ICON_QUALITY =
   '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 const ICON_SPEED =
   '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>';
+// Prev / next EPISODE (skip-track icons — distinct from seek) for the control bar.
+const ICON_PREV_EP =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><polygon points="19 20 9 12 19 4"/><rect x="4" y="5" width="2.2" height="14" rx="1"/></svg>';
+const ICON_NEXT_EP =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><polygon points="5 4 15 12 5 20"/><rect x="17.8" y="5" width="2.2" height="14" rx="1"/></svg>';
 
 const SPEEDS = [
   { html: "0.5×", value: 0.5 },
@@ -228,6 +239,9 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     selectedSubtitleId,
     onSubtitleChange,
     onLoadSubtitles,
+    episodeNav,
+    onPrevEpisode,
+    onNextEpisode,
     resumeTime,
     seekOnSwitch,
     autoStart,
@@ -265,6 +279,23 @@ export function ArtPlayerView(props: ArtPlayerProps) {
       v.play().catch(() => { try { (art as any).muted = true; v.play().catch(() => {}); } catch {} });
     }
   }, [autoStart]);
+
+  // Episode-nav state + handlers mirrored so the control-bar ‹ › buttons (added
+  // once at ready) always read the LATEST prev/next availability, and reflect
+  // disabled styling when there's no prev/next episode.
+  const navRef = React.useRef<{ hasPrev: boolean; hasNext: boolean; onPrev?: () => void; onNext?: () => void }>(
+    { hasPrev: false, hasNext: false, onPrev: onPrevEpisode, onNext: onNextEpisode });
+  React.useEffect(() => {
+    navRef.current = { hasPrev: !!episodeNav?.hasPrev, hasNext: !!episodeNav?.hasNext, onPrev: onPrevEpisode, onNext: onNextEpisode };
+    const p = (artRef.current as any)?.template?.$player as HTMLElement | undefined;
+    if (!p) return;
+    const set = (sel: string, on: boolean) => {
+      const el = p.querySelector(sel) as HTMLElement | null;
+      if (el) { el.style.opacity = on ? "1" : "0.35"; el.style.pointerEvents = on ? "auto" : "none"; el.style.cursor = on ? "pointer" : "not-allowed"; }
+    };
+    set(".art-control-kino-prev-ep", navRef.current.hasPrev);
+    set(".art-control-kino-next-ep", navRef.current.hasNext);
+  }, [episodeNav, onPrevEpisode, onNextEpisode]);
 
   // Mount ArtPlayer once; switch URL via switchUrl on changes
   React.useEffect(() => {
@@ -350,6 +381,29 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // until loadedmetadata so the seek sticks.
     art.on("ready", () => {
       onVideoReady?.(art.video);
+
+      // Prev/next EPISODE buttons in the bottom control bar (series only) —
+      // Alloha-style. Added once; the click reads the latest availability from
+      // navRef, and the effect above keeps their disabled styling in sync.
+      if (onPrevEpisode || onNextEpisode) {
+        try {
+          art.controls.add({
+            name: "kino-prev-ep", position: "left", html: ICON_PREV_EP, tooltip: "Предыдущая серия",
+            click: () => { const n = navRef.current; if (n.hasPrev) n.onPrev?.(); },
+          });
+          art.controls.add({
+            name: "kino-next-ep", position: "left", html: ICON_NEXT_EP, tooltip: "Следующая серия",
+            click: () => { const n = navRef.current; if (n.hasNext) n.onNext?.(); },
+          });
+          const p = (art as any)?.template?.$player as HTMLElement | undefined;
+          const set = (sel: string, on: boolean) => {
+            const el = p?.querySelector(sel) as HTMLElement | null;
+            if (el) { el.style.opacity = on ? "1" : "0.35"; el.style.pointerEvents = on ? "auto" : "none"; }
+          };
+          set(".art-control-kino-prev-ep", navRef.current.hasPrev);
+          set(".art-control-kino-next-ep", navRef.current.hasNext);
+        } catch {}
+      }
 
       // Autoplay so a single "Смотреть" click starts the video — no second
       // Play press (and no "tap once for controls, tap again for play" on

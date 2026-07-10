@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { ChevronDown, Check } from "lucide-react";
 import type { TVEpisode } from "@/lib/tmdb";
 
 type Dub = { id: number; name: string };
@@ -19,7 +19,6 @@ interface Props {
   onSeason: (season: number) => void;
   onEpisode: (episode: number) => void;
   onDub: (id: number) => void;
-  onNextEpisode: () => void;
 }
 
 /**
@@ -50,14 +49,8 @@ export function PlayerEpisodeBar(props: Props) {
   if (!isSeries) return null;
 
   const released = (ep: TVEpisode) => !ep.air_date || new Date(ep.air_date) <= new Date();
-  const relEps = episodes.filter(released);
-  const curIdx = relEps.findIndex(e => e.episode_number === selectedEpisode);
   const epName = episodes.find(e => e.episode_number === selectedEpisode)?.name;
   const dubName = dubs.find(d => d.id === selectedTranslator)?.name;
-  const hasPrev = curIdx > 0;
-  const hasNext = (curIdx >= 0 && curIdx < relEps.length - 1) || seasons.some(s => s.season_number > selectedSeason);
-
-  const prevEpisode = () => { if (hasPrev) props.onEpisode(relEps[curIdx - 1].episode_number); };
 
   const pill = "inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-black/55 backdrop-blur-md ring-1 ring-white/15 text-white text-[13px] font-semibold hover:bg-black/70 transition-colors cursor-pointer select-none";
   const menu = "absolute top-[110%] left-0 min-w-[150px] max-h-[52vh] overflow-y-auto rounded-xl bg-black/85 backdrop-blur-xl ring-1 ring-white/12 shadow-2xl shadow-black/60 p-1 z-[2]";
@@ -96,42 +89,30 @@ export function PlayerEpisodeBar(props: Props) {
         </div>
       )}
 
-      {/* EPISODE — prev  [Серия N ▾]  next */}
-      <div className="flex items-center gap-1">
-        <button
-          className={"grid place-items-center h-8 w-8 rounded-full bg-black/55 backdrop-blur-md ring-1 ring-white/15 text-white transition-colors " + (hasPrev ? "hover:bg-black/70" : "opacity-35 cursor-not-allowed")}
-          onClick={prevEpisode} disabled={!hasPrev} aria-label="Предыдущая серия">
-          <ChevronLeft size={17} />
+      {/* EPISODE (prev/next arrows live in the bottom control bar) */}
+      <div className="relative">
+        <button className={pill} onClick={() => setOpen(open === "episode" ? null : "episode")}>
+          <span className="max-w-[42vw] sm:max-w-[280px] truncate">
+            {"Серия "}{selectedEpisode}{epName ? " · " + epName : ""}
+          </span>
+          <ChevronDown size={14} className={"transition-transform " + (open === "episode" ? "rotate-180" : "")} />
         </button>
-        <div className="relative">
-          <button className={pill} onClick={() => setOpen(open === "episode" ? null : "episode")}>
-            <span className="max-w-[42vw] sm:max-w-[280px] truncate">
-              {"Серия "}{selectedEpisode}{epName ? " · " + epName : ""}
-            </span>
-            <ChevronDown size={14} className={"transition-transform " + (open === "episode" ? "rotate-180" : "")} />
-          </button>
-          {open === "episode" && (
-            <div className={menu + " min-w-[240px]"}>
-              {episodes.map(ep => {
-                const ok = released(ep);
-                const active = ep.episode_number === selectedEpisode;
-                return (
-                  <button key={ep.episode_number} disabled={!ok}
-                    className={row(active) + (ok ? "" : " opacity-40 cursor-not-allowed")}
-                    onClick={() => { if (ok) { props.onEpisode(ep.episode_number); setOpen(null); } }}>
-                    <span className="truncate"><span className="text-white/50">{ep.episode_number}.</span> {ep.name || ("Серия " + ep.episode_number)}</span>
-                    {active && <Check size={14} className="flex-shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        <button
-          className={"grid place-items-center h-8 w-8 rounded-full bg-black/55 backdrop-blur-md ring-1 ring-white/15 text-white transition-colors " + (hasNext ? "hover:bg-black/70" : "opacity-35 cursor-not-allowed")}
-          onClick={() => hasNext && props.onNextEpisode()} disabled={!hasNext} aria-label="Следующая серия">
-          <ChevronRight size={17} />
-        </button>
+        {open === "episode" && (
+          <div className={menu + " min-w-[240px]"}>
+            {episodes.map(ep => {
+              const ok = released(ep);
+              const active = ep.episode_number === selectedEpisode;
+              return (
+                <button key={ep.episode_number} disabled={!ok}
+                  className={row(active) + (ok ? "" : " opacity-40 cursor-not-allowed")}
+                  onClick={() => { if (ok) { props.onEpisode(ep.episode_number); setOpen(null); } }}>
+                  <span className="truncate"><span className="text-white/50">{ep.episode_number}.</span> {ep.name || ("Серия " + ep.episode_number)}</span>
+                  {active && <Check size={14} className="flex-shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* DUB */}

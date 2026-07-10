@@ -659,6 +659,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }
   };
 
+  // Previous episode (within the current season) — for the control-bar ‹ button.
+  const hasPrevEpisode = (() => {
+    const idx = releasedEpisodes.findIndex(e => e.episode_number === selectedEpisode);
+    return idx > 0;
+  })();
+  const prevEpisode = () => {
+    const idx = releasedEpisodes.findIndex(e => e.episode_number === selectedEpisode);
+    if (idx > 0) selectEpisode(selectedSeason, releasedEpisodes[idx - 1].episode_number);
+  };
+
   // Keep hasNextEpisode in a ref so listeners attached once read the latest value.
   const hasNextEpisodeRef = useRef(hasNextEpisode);
   useEffect(() => { hasNextEpisodeRef.current = hasNextEpisode; }, [hasNextEpisode]);
@@ -836,6 +846,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
               resumeTime={wantResume ? (resumeTime || undefined) : undefined}
               seekOnSwitch={seekOnSwitch}
               autoStart={showPlayer}
+              episodeNav={{ hasPrev: hasPrevEpisode, hasNext: hasNextEpisode }}
+              onPrevEpisode={prevEpisode}
+              onNextEpisode={() => nextEpisode({ manual: true })}
               onVideoReady={(v) => { videoRef.current = v; startSaving(); }}
               onVideoUnmount={() => { videoRef.current = null; if (saveInterval.current) clearInterval(saveInterval.current); }}
               onPlayerContainerReady={setPlayerContainer}
@@ -865,7 +878,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
               onSeason={(s) => selectEpisode(s, 1)}
               onEpisode={(e) => selectEpisode(selectedSeason, e)}
               onDub={changeTranslator}
-              onNextEpisode={nextEpisode}
             />
           )}
           {streamData?.stream && showPlayer && translatorLoading && (
