@@ -1,7 +1,7 @@
 "use client";
 
 import { getHistory, type HistoryItem } from "@/lib/storage";
-import { getImageUrl, getTVSeasonEpisodes } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb";
 import { Play } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -79,19 +79,30 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
 // For items suggested from OLD history (no stored episodeCount), confirm the
 // next episode actually exists via TMDB (cached); correct to next season, or
 // drop the card if the series is over.
+// episode count for (show, season) via our SAME-ORIGIN server route — the client
+// must NOT hit api.themoviedb.org directly (blocked from RU browsers); /api/
+// tv-episodes fetches TMDB server-side and returns the episode list.
+async function seasonEpCount(id: number, season: number): Promise<number> {
+  try {
+    const r = await fetch(`/api/tv-episodes?id=${id}&season=${season}`);
+    const eps = await r.json();
+    return Array.isArray(eps) ? eps.length : 0;
+  } catch { return 0; }
+}
+
 async function verifyNextEpisodes(base: ContinueItem[]): Promise<ContinueItem[]> {
   const toCheck = base.filter(i => i._unverified && i.type === "tv" && i.season && i.episode);
   if (!toCheck.length) return base;
   const fix = new Map<string, NextInfo | "keep">();
   await Promise.all(toCheck.map(async (i) => {
     const season = i.season!, episode = i.episode!;
-    const eps = await getTVSeasonEpisodes(i.id, season);
-    if (!eps.length) { fix.set(`${i.type}-${i.id}`, "keep"); return; } // fetch failed — keep optimistic
+    const count = await seasonEpCount(i.id, season);
+    if (!count) { fix.set(`${i.type}-${i.id}`, "keep"); return; } // fetch failed — keep optimistic
     let next: NextInfo;
-    if (episode < eps.length) next = { launchSeason: season, launchEpisode: episode + 1 };
+    if (episode < count) next = { launchSeason: season, launchEpisode: episode + 1 };
     else {
-      const nextSeason = await getTVSeasonEpisodes(i.id, season + 1);
-      next = nextSeason.length ? { launchSeason: season + 1, launchEpisode: 1 } : null;
+      const nextCount = await seasonEpCount(i.id, season + 1);
+      next = nextCount > 0 ? { launchSeason: season + 1, launchEpisode: 1 } : null;
     }
     fix.set(`${i.type}-${i.id}`, next);
   }));
