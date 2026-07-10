@@ -52,7 +52,7 @@ export function PlayerEpisodeBar(props: Props) {
   const epName = episodes.find(e => e.episode_number === selectedEpisode)?.name;
   const dubName = dubs.find(d => d.id === selectedTranslator)?.name;
 
-  const pill = "inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-black/55 backdrop-blur-md ring-1 ring-white/15 text-white text-[13px] font-semibold hover:bg-black/70 transition-colors cursor-pointer select-none";
+  const pill = "inline-flex items-center gap-1 sm:gap-1.5 h-7 sm:h-8 px-2.5 sm:px-3 rounded-full bg-black/60 backdrop-blur-md ring-1 ring-white/15 text-white text-[12px] sm:text-[13px] font-semibold hover:bg-black/70 transition-colors cursor-pointer select-none min-w-0 max-w-full";
   const menu = "absolute top-[110%] left-0 min-w-[150px] max-h-[52vh] overflow-y-auto rounded-xl bg-black/85 backdrop-blur-xl ring-1 ring-white/12 shadow-2xl shadow-black/60 p-1 z-[2]";
   const row = (active: boolean) =>
     "flex items-center justify-between gap-3 w-full px-3 py-2 rounded-lg text-[13px] text-left transition-colors " +
@@ -64,13 +64,13 @@ export function PlayerEpisodeBar(props: Props) {
       // `player-ep-bar` (+ is-open) drive auto-hide via globals.css: the bar
       // fades with the player controls (shown on hover / pause, hidden while
       // playing + idle) but stays put while a dropdown is open.
-      className={"player-ep-bar absolute top-3 left-3 z-[15] flex flex-wrap items-center gap-2" + (open ? " is-open" : "")}
+      className={"player-ep-bar absolute top-2 left-2 sm:top-3 sm:left-3 z-[15] flex flex-nowrap items-center gap-1.5 sm:gap-2 max-w-[calc(100%-1rem)]" + (open ? " is-open" : "")}
       // don't let clicks reach the video (play/pause) under the bar
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* SEASON */}
       {seasons.length > 1 && (
-        <div className="relative">
+        <div className="relative shrink-0">
           <button className={pill} onClick={() => setOpen(open === "season" ? null : "season")}>
             {"Сезон "}{selectedSeason}
             <ChevronDown size={14} className={"transition-transform " + (open === "season" ? "rotate-180" : "")} />
@@ -90,12 +90,13 @@ export function PlayerEpisodeBar(props: Props) {
       )}
 
       {/* EPISODE (prev/next arrows live in the bottom control bar) */}
-      <div className="relative">
+      <div className="relative min-w-0">
         <button className={pill} onClick={() => setOpen(open === "episode" ? null : "episode")}>
-          <span className="max-w-[42vw] sm:max-w-[280px] truncate">
-            {"Серия "}{selectedEpisode}{epName ? " · " + epName : ""}
+          <span className="truncate">
+            {"Серия "}{selectedEpisode}
+            <span className="hidden sm:inline">{epName ? " · " + epName : ""}</span>
           </span>
-          <ChevronDown size={14} className={"transition-transform " + (open === "episode" ? "rotate-180" : "")} />
+          <ChevronDown size={14} className={"shrink-0 transition-transform " + (open === "episode" ? "rotate-180" : "")} />
         </button>
         {open === "episode" && (
           <div className={menu + " min-w-[240px]"}>
@@ -117,7 +118,7 @@ export function PlayerEpisodeBar(props: Props) {
 
       {/* DUB */}
       {dubs.length > 1 && (
-        <div className="relative">
+        <div className="relative shrink-0">
           <button className={pill} onClick={() => setOpen(open === "dub" ? null : "dub")}>
             <span className="max-w-[38vw] sm:max-w-[200px] truncate">{dubName || "Озвучка"}</span>
             <ChevronDown size={14} className={"transition-transform " + (open === "dub" ? "rotate-180" : "")} />

@@ -385,7 +385,10 @@ export function ArtPlayerView(props: ArtPlayerProps) {
       // Prev/next EPISODE buttons in the bottom control bar (series only) —
       // Alloha-style. Added once; the click reads the latest availability from
       // navRef, and the effect above keeps their disabled styling in sync.
-      if (onPrevEpisode || onNextEpisode) {
+      // NOT on mobile: the narrow control bar can't fit two extra buttons — they
+      // pushed the fullscreen button off-screen. On phones the top Season/Episode
+      // dropdowns cover episode switching.
+      if ((onPrevEpisode || onNextEpisode) && !Artplayer.utils.isMobile) {
         try {
           art.controls.add({
             name: "kino-prev-ep", position: "left", html: ICON_PREV_EP, tooltip: "Предыдущая серия",
