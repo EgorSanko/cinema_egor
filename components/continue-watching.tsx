@@ -44,11 +44,33 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
   const items: ContinueItem[] = [];
   const seenShows = new Set<string>();
 
+  // Counts are per (show, season) / per show — propagate them across a show's
+  // history entries, since an entry may lack its own (old saves) while a sibling
+  // has it (e.g. a phantom e9 entry carries episodeCount=8 that e8 lacks).
+  const epCountByShowSeason = new Map<string, number>();
+  const seasonCountByShow = new Map<number, number>();
+  for (const h of history) {
+    if (h.type !== "tv") continue;
+    if (h.episodeCount != null && h.season != null) epCountByShowSeason.set(`${h.id}|${h.season}`, h.episodeCount);
+    if (h.seasonCount != null) seasonCountByShow.set(h.id, h.seasonCount);
+  }
+  const epCountOf = (h: HistoryItem) => h.episodeCount ?? (h.season != null ? epCountByShowSeason.get(`${h.id}|${h.season}`) : undefined);
+  const seasonCountOf = (h: HistoryItem) => h.seasonCount ?? seasonCountByShow.get(h.id);
+
   // History is ordered by recency (latest first)
   for (const h of history) {
     if (h.duration <= 0) continue;
     const key = `${h.type}-${h.id}`;
     if (seenShows.has(key)) continue;
+
+    const epCount = epCountOf(h);
+    // Phantom-episode guard: a saved episode beyond the season (e.g. episode 9 of
+    // an 8-ep season, created when a bogus "next episode" card played episode 1
+    // under episode=9). Skip WITHOUT marking the show seen, so a valid earlier
+    // entry for the same show can still surface (and if that one is the finished
+    // last episode, the bounds check below drops it too).
+    if (h.type === "tv" && h.episode && epCount != null && h.episode > epCount) continue;
+
     seenShows.add(key);
 
     const ratio = h.progress / h.duration;
@@ -61,14 +83,14 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
       if (!isFinished && h.progress > 30) {
         items.push({ ...h, launchSeason: h.season, launchEpisode: h.episode });
       } else if (isFinished && h.season && h.episode) {
-        const next = nextFromCounts(h.season, h.episode, h.episodeCount, h.seasonCount);
+        const next = nextFromCounts(h.season, h.episode, epCount, seasonCountOf(h));
         if (next === null) continue; // series finished — don't show a bogus next episode
         items.push({
           ...h,
           launchSeason: next.launchSeason,
           launchEpisode: next.launchEpisode,
           isNextEpisode: true,
-          _unverified: h.episodeCount == null,
+          _unverified: epCount == null,
         });
       }
     }
