@@ -1,7 +1,7 @@
 "use client";
 
 import { getHistory, type HistoryItem } from "@/lib/storage";
-import { getImageUrl } from "@/lib/tmdb";
+import { getImageUrl, getTVSeasonEpisodes } from "@/lib/tmdb";
 import { Play } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -15,12 +15,30 @@ function formatTime(s: number) {
 }
 
 type ContinueItem = HistoryItem & {
-  // For TV: when last watched episode is finished, suggest next episode
-  // (we don't fetch TMDB here for performance — just episode+1, plays will resolve at runtime)
   launchSeason?: number;
   launchEpisode?: number;
   isNextEpisode?: boolean;
+  // true when we suggested episode+1 WITHOUT knowing the episode count (old
+  // history, no episodeCount stored) — verified against TMDB after render.
+  _unverified?: boolean;
 };
+
+type NextInfo = { launchSeason: number; launchEpisode: number } | null;
+
+// Where to go after finishing (season, episode), given how many episodes the
+// season has and how many seasons exist. null = the series is over (last
+// episode of the last season) → don't suggest a nonexistent "next episode".
+// Before this bounds check, finishing e.g. episode 8 of 8 suggested episode 9,
+// which the backend then resolved to episode 1 (reported: ЮЗЗЗ / Первая ракетка).
+function nextFromCounts(season: number, episode: number, epCount?: number, seasonCount?: number): NextInfo {
+  if (epCount != null && epCount > 0) {
+    if (episode < epCount) return { launchSeason: season, launchEpisode: episode + 1 };
+    if (seasonCount != null && season < seasonCount) return { launchSeason: season + 1, launchEpisode: 1 };
+    return null;
+  }
+  // Count unknown (old history) — optimistic next, corrected async in verify().
+  return { launchSeason: season, launchEpisode: episode + 1 };
+}
 
 function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
   const items: ContinueItem[] = [];
@@ -43,12 +61,14 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
       if (!isFinished && h.progress > 30) {
         items.push({ ...h, launchSeason: h.season, launchEpisode: h.episode });
       } else if (isFinished && h.season && h.episode) {
-        // Suggest next episode card
+        const next = nextFromCounts(h.season, h.episode, h.episodeCount, h.seasonCount);
+        if (next === null) continue; // series finished — don't show a bogus next episode
         items.push({
           ...h,
-          launchSeason: h.season,
-          launchEpisode: h.episode + 1,
+          launchSeason: next.launchSeason,
+          launchEpisode: next.launchEpisode,
           isNextEpisode: true,
+          _unverified: h.episodeCount == null,
         });
       }
     }
@@ -56,17 +76,49 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
   return items.slice(0, 12);
 }
 
+// For items suggested from OLD history (no stored episodeCount), confirm the
+// next episode actually exists via TMDB (cached); correct to next season, or
+// drop the card if the series is over.
+async function verifyNextEpisodes(base: ContinueItem[]): Promise<ContinueItem[]> {
+  const toCheck = base.filter(i => i._unverified && i.type === "tv" && i.season && i.episode);
+  if (!toCheck.length) return base;
+  const fix = new Map<string, NextInfo | "keep">();
+  await Promise.all(toCheck.map(async (i) => {
+    const season = i.season!, episode = i.episode!;
+    const eps = await getTVSeasonEpisodes(i.id, season);
+    if (!eps.length) { fix.set(`${i.type}-${i.id}`, "keep"); return; } // fetch failed — keep optimistic
+    let next: NextInfo;
+    if (episode < eps.length) next = { launchSeason: season, launchEpisode: episode + 1 };
+    else {
+      const nextSeason = await getTVSeasonEpisodes(i.id, season + 1);
+      next = nextSeason.length ? { launchSeason: season + 1, launchEpisode: 1 } : null;
+    }
+    fix.set(`${i.type}-${i.id}`, next);
+  }));
+  return base
+    .map(it => {
+      if (!it._unverified) return it;
+      const c = fix.get(`${it.type}-${it.id}`);
+      if (c === undefined || c === "keep") return { ...it, _unverified: false };
+      if (c === null) return null; // series over → remove card
+      return { ...it, launchSeason: c.launchSeason, launchEpisode: c.launchEpisode, _unverified: false };
+    })
+    .filter(Boolean) as ContinueItem[];
+}
+
 export function ContinueWatching() {
   const [items, setItems] = useState<ContinueItem[]>([]);
 
   useEffect(() => {
-    setItems(buildContinueItems(getHistory()));
-  }, []);
-
-  useEffect(() => {
-    const onSync = () => setItems(buildContinueItems(getHistory()));
-    window.addEventListener("sync-complete", onSync);
-    return () => window.removeEventListener("sync-complete", onSync);
+    let alive = true;
+    const refresh = () => {
+      const base = buildContinueItems(getHistory());
+      setItems(base);
+      verifyNextEpisodes(base).then(v => { if (alive) setItems(v); }).catch(() => {});
+    };
+    refresh();
+    window.addEventListener("sync-complete", refresh);
+    return () => { alive = false; window.removeEventListener("sync-complete", refresh); };
   }, []);
 
   if (items.length === 0) return null;

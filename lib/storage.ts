@@ -27,6 +27,8 @@ export interface HistoryItem {
   season?: number;
   episode?: number;
   episodeName?: string;
+  episodeCount?: number; // episodes in this season (TMDB) — for the "next episode" bounds check
+  seasonCount?: number;  // number of real seasons (TMDB)
   quality?: string;
   translatorName?: string;
   translatorId?: number;

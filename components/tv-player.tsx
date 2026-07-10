@@ -211,6 +211,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
             episode: ctx.episode, episodeName: epName, quality: ctx.quality,
             translatorName: trName, translatorId: ctx.translatorId || undefined,
             genre_ids: show.genres?.map(g => g.id),
+            episodeCount: show.seasons?.find(s => s.season_number === ctx.season)?.episode_count,
+            seasonCount: show.seasons?.filter(s => s.season_number > 0).length,
           });
         }
       }
@@ -704,6 +706,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
               episode: ctx.episode, episodeName: epName, quality: ctx.quality,
               translatorName: trName, translatorId: ctx.translatorId || undefined,
               genre_ids: show.genres?.map(g => g.id),
+              episodeCount: show.seasons?.find(s => s.season_number === ctx.season)?.episode_count,
+              seasonCount: show.seasons?.filter(s => s.season_number > 0).length,
             });
           }
         } catch {}
