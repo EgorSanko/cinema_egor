@@ -95,6 +95,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const translatorRef = useRef<HTMLDivElement>(null);
   const availKeyRef = useRef<string>("");
   const eptrKeyRef = useRef<string>("");
+  // Sticky set of dub ids shown for the CURRENT (url|season|episode). It only
+  // ever grows within an episode, so switching a dub can never make a
+  // previously-visible one vanish (reported: "поменял озвучку — прежняя
+  // пропала и не возвращается"). Reset when the episode key changes.
+  const dubUnionRef = useRef<{ key: string; ids: Set<number> }>({ key: "", ids: new Set() });
   const autoplayTriggeredRef = useRef(false);
   // Wall-clock of the last auto-advance. A real episode can't end within
   // seconds of the previous one starting, so any "episode ended" signal that
@@ -612,13 +617,20 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const _epOverlap = !!_treeEps && episodes.some(e => _treeEps.includes(e.episode_number));
   const gatedEpisodes = _epOverlap ? episodes.filter(e => _treeEps!.includes(e.episode_number)) : episodes;
 
-  // Dubs offered IN THE PLAYER = only those that have the current episode (always
-  // keep the active one so it never vanishes). Falls back to all when unknown.
+  // Dubs offered IN THE PLAYER = those that have the current episode, kept in a
+  // STICKY per-episode union so the list only grows and never drops a dub when
+  // you switch (episode-translators can come back partial from a flaky HDRezka
+  // scrape; the old code showed episodeDubIds ∪ {active}, so switching away from
+  // a dub that wasn't in the partial set made it vanish). Falls back to all when
+  // nothing is known yet.
   const playerDubs = (() => {
-    if (!episodeDubIds || episodeDubIds.length === 0) return translators;
-    const allow = new Set(episodeDubIds);
-    if (selectedTranslator != null) allow.add(selectedTranslator);
-    const f = translators.filter(t => allow.has(t.id));
+    const epKey = (streamData?.url || "") + "|" + selectedSeason + "|" + selectedEpisode;
+    const u = dubUnionRef.current;
+    if (u.key !== epKey) { u.key = epKey; u.ids = new Set(); }
+    if (episodeDubIds && episodeDubIds.length) episodeDubIds.forEach(id => u.ids.add(id));
+    if (selectedTranslator != null) u.ids.add(selectedTranslator);
+    if (u.ids.size === 0) return translators;
+    const f = translators.filter(t => u.ids.has(t.id));
     return f.length ? f : translators;
   })();
 

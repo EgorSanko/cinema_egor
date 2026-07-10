@@ -792,15 +792,21 @@ async def episode_translators(url: str, season: int = None, episode: int = None)
             return resp
         s, e = int(season), int(episode)
         ids = []
+        had_error = False
         for _tname, tid in player.post.translators.name_id.items():
             try:
                 tree = await player.get_episodes(tid)
                 if s in tree and e in tuple(tree[s]):
                     ids.append(int(tid))
             except Exception:
-                pass
+                # A dub's get_episodes timed out/failed — the result is now
+                # INCOMPLETE. Return best-effort but DON'T cache it, or a single
+                # flaky moment freezes a partial dub list for 3h (reported: only
+                # 2 of 8 dubs shown, and switching made them vanish).
+                had_error = True
         resp = {"ids": ids}
-        _eptr_cache[ck] = (_time.monotonic(), resp)
+        if not had_error:
+            _eptr_cache[ck] = (_time.monotonic(), resp)
         return resp
     except Exception as ex:
         return {"error": str(ex)}
