@@ -343,6 +343,11 @@ export default function WatchClient({ code }: Props) {
     socket.on("translator-changed", ({ translatorId: id, translatorName, by }) => {
       setTranslatorId(id);
       notify(`${by} сменил озвучку: ${translatorName}`);
+      // The new dub's stream URL arrives via stream-changed (host's set-stream)
+      // just before this event — reload it at the current position so guests
+      // actually hear the new voiceover instead of staying on the old one.
+      const ct = videoRef.current?.currentTime || 0;
+      setTimeout(() => { if (streamUrlRef.current) loadStream(streamUrlRef.current, ct); }, 500);
     });
     socket.on("episode-changed", ({ season: s, episode: e, by }) => {
       setSeason(s);
@@ -488,7 +493,9 @@ export default function WatchClient({ code }: Props) {
     navigator.clipboard.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
   const shareRoom = () => {
-    const url = `https://kino.lead-seek.ru/watch?join=${code}`;
+    // Use the domain the user is actually on (sapkeflykino.ru now) instead of a
+    // hardcoded old one — otherwise the invite pointed friends at a stale host.
+    const url = `${window.location.origin}/watch?join=${code}`;
     if (navigator.share) {
       navigator.share({ title: `Смотрим "${room?.movieTitle}" вместе`, text: `Присоединяйся! Код: ${code}`, url }).catch(() => {});
     } else {
@@ -551,7 +558,13 @@ export default function WatchClient({ code }: Props) {
     setTranslatorId(trId);
     const t = translators.find((t) => t.id === trId);
     notify(`Смена озвучки: ${t?.name || ""}...`);
-    const data = await fetchStream(room.movieTitle, room.movieYear, room.movieType, trId);
+    // For series, keep the CURRENT season/episode — without them fetchStream
+    // re-resolved the show from scratch and jumped back to S1E1.
+    const isTv = room.movieType === "tv";
+    const data = await fetchStream(
+      room.movieTitle, room.movieYear, room.movieType, trId,
+      isTv ? season : undefined, isTv ? episode : undefined,
+    );
     if (data) {
       const ct = videoRef.current?.currentTime || 0;
       loadStream(data.stream, ct);
@@ -584,6 +597,7 @@ export default function WatchClient({ code }: Props) {
     if (!room || !isHost) return;
     setShowEpisodePanel(false);
     if (s === season && e === episode) return;
+    const prevS = season, prevE = episode; // restore label if the episode fails to resolve
     setSeason(s);
     setEpisode(e);
     notify(`Переключаю на S${s}E${e}...`);
@@ -606,6 +620,7 @@ export default function WatchClient({ code }: Props) {
       // them which episode so they reload + relabel.
       socketRef.current?.emit("change-episode", { season: s, episode: e });
     } else {
+      setSeason(prevS); setEpisode(prevE);
       notify("Эта серия недоступна");
     }
   };

@@ -11,7 +11,12 @@ export default function CreateWatchWrapper() {
   return <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><Loader2 size={32} className="animate-spin text-purple-500" /></div>}><CreateWatchPage /></Suspense>;
 }
 
-const TMDB_BASE = process.env.NEXT_PUBLIC_TMDB_BASE_URL || "https://api.themoviedb.org/3";
+// Go through the same-origin /tmdb-api nginx proxy — NOT api.themoviedb.org
+// directly. TMDB's origin is RKN-blocked in Russian browsers, so a raw
+// client-side fetch left trending/search/season-count empty for RU users (the
+// whole "Создать комнату" screen looked broken). The rest of the app already
+// uses /tmdb-api for the same reason.
+const TMDB_BASE = "/tmdb-api";
 const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || "";
 
 interface SearchResult {
