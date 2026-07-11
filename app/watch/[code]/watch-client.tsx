@@ -8,7 +8,7 @@ import type { WatchRoomState, ChatMessage, WatchMember } from "@/lib/watch-types
 import Hls from "hls.js";
 import {
   Users, Copy, Check, ArrowLeft, Send, Play, Pause, Loader2,
-  MessageSquare, X, Share2, Mic, ChevronDown, Maximize, Minimize, List,
+  MessageSquare, X, Share2, Mic, ChevronDown, Maximize, Minimize, List, Volume2, VolumeX,
 } from "lucide-react";
 
 interface Props { code: string; }
@@ -33,6 +33,10 @@ export default function WatchClient({ code }: Props) {
   const [paused, setPaused] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  // Volume is LOCAL to each viewer (not synced over the socket) — everyone sets
+  // their own level. The watch-together player had no volume control at all.
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
   const [quality, setQuality] = useState("");
   const [streams, setStreams] = useState<Record<string, string>>({});
   const [translators, setTranslators] = useState<{ id: number; name: string }[]>([]);
@@ -511,6 +515,24 @@ export default function WatchClient({ code }: Props) {
       videoRef.current.pause();
     }
   };
+  // Volume — local to this viewer only (never broadcast). Slider sets the level;
+  // 0 mutes. The speaker button toggles mute, restoring a sensible level.
+  const applyVolume = (val: number) => {
+    const v = videoRef.current;
+    if (v) { v.volume = val; v.muted = val === 0; }
+    setVolume(val);
+    setMuted(val === 0);
+  };
+  const toggleMute = () => {
+    const v = videoRef.current;
+    const next = !(muted || volume === 0);
+    if (v) {
+      v.muted = next;
+      if (!next && v.volume === 0) { v.volume = 0.5; }
+    }
+    setMuted(next);
+    if (!next && volume === 0) setVolume(0.5);
+  };
   const changeQuality = (q: string) => {
     if (!streams[q]) return;
     const ct = videoRef.current?.currentTime || 0;
@@ -962,6 +984,23 @@ export default function WatchClient({ code }: Props) {
                   className="p-2 rounded-lg hover:bg-white/10 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
                   {paused ? <Play size={22} className="text-white" fill="white" /> : <Pause size={22} className="text-white" fill="white" />}
                 </button>
+                {/* Volume — local to each viewer. Speaker toggles mute; the slider
+                    (always shown so mobile has a level control too) sets the level. */}
+                <div className="flex items-center gap-1">
+                  <button onClick={toggleMute} aria-label="Звук"
+                    className="p-2 rounded-lg hover:bg-white/10 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
+                    {muted || volume === 0
+                      ? <VolumeX size={20} className="text-white" />
+                      : <Volume2 size={20} className="text-white" />}
+                  </button>
+                  <input
+                    type="range" min={0} max={1} step={0.05}
+                    value={muted ? 0 : volume}
+                    onChange={(e) => applyVolume(parseFloat(e.target.value))}
+                    aria-label="Громкость"
+                    className="w-14 sm:w-20 h-1 accent-purple-500 cursor-pointer"
+                  />
+                </div>
                 <span className="text-white/60 text-xs md:text-sm font-mono whitespace-nowrap">{fmtT(currentTime)} / {fmtT(duration)}</span>
               </div>
 
