@@ -727,7 +727,15 @@ export function ArtPlayerView(props: ArtPlayerProps) {
   return (
     <div
       ref={containerRef}
-      className={"art-player-host w-full aspect-video bg-black rounded-2xl overflow-hidden ring-1 ring-white/[0.06]" + (interactive ? "" : " pointer-events-none")}
+      // While pre-warming (interactive === false) the player buffers the stream
+      // HIDDEN behind the parent's React poster overlay. It must be visually
+      // invisible too — not just pointer-events:none — otherwise ArtPlayer's own
+      // poster + center play (.art-state) + control bar bleed through and stack
+      // under our overlay's play circle ("play button inside a play button", plus
+      // a stray control bar before the user ever pressed play). opacity:0 keeps it
+      // buffering (HLS + video keep loading) while showing nothing; the parent
+      // flips interactive→true on the play tap, fading the real player in.
+      className={"art-player-host w-full aspect-video bg-black rounded-2xl overflow-hidden ring-1 ring-white/[0.06] transition-opacity duration-200" + (interactive ? " opacity-100" : " opacity-0 pointer-events-none")}
     />
   );
 }
