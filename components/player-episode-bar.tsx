@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react";
 import type { TVEpisode } from "@/lib/tmdb";
 
 type Dub = { id: number; name: string };
@@ -19,6 +19,14 @@ interface Props {
   onSeason: (season: number) => void;
   onEpisode: (episode: number) => void;
   onDub: (id: number) => void;
+  // Prev/next EPISODE (handles season boundaries in the parent). On desktop the
+  // arrows live in the bottom control bar; on mobile that bar is too narrow, so
+  // we surface them here in the top bar (mobile-only) — otherwise phones had no
+  // in-player episode navigation at all.
+  hasPrev?: boolean;
+  hasNext?: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
 }
 
 /**
@@ -53,6 +61,10 @@ export function PlayerEpisodeBar(props: Props) {
   const dubName = dubs.find(d => d.id === selectedTranslator)?.name;
 
   const pill = "inline-flex items-center gap-1 sm:gap-1.5 h-7 sm:h-8 px-2.5 sm:px-3 rounded-full bg-black/60 backdrop-blur-md ring-1 ring-white/15 text-white text-[12px] sm:text-[13px] font-semibold hover:bg-black/70 transition-colors cursor-pointer select-none min-w-0 max-w-full";
+  // Round arrow buttons flanking the Episode pill — MOBILE ONLY (sm:hidden); the
+  // desktop control bar already carries prev/next chevrons.
+  const arrowBtn = "sm:hidden inline-flex items-center justify-center h-7 w-7 rounded-full bg-black/60 backdrop-blur-md ring-1 ring-white/15 text-white hover:bg-black/70 transition-colors shrink-0 disabled:opacity-35 disabled:pointer-events-none";
+  const hasEpNav = props.onPrev != null || props.onNext != null;
   const menu = "absolute top-[110%] left-0 min-w-[150px] max-h-[52vh] overflow-y-auto rounded-xl bg-black/85 backdrop-blur-xl ring-1 ring-white/12 shadow-2xl shadow-black/60 p-1 z-[2]";
   const row = (active: boolean) =>
     "flex items-center justify-between gap-3 w-full px-3 py-2 rounded-lg text-[13px] text-left transition-colors " +
@@ -89,7 +101,14 @@ export function PlayerEpisodeBar(props: Props) {
         </div>
       )}
 
-      {/* EPISODE (prev/next arrows live in the bottom control bar) */}
+      {/* Prev EPISODE — mobile only */}
+      {hasEpNav && (
+        <button className={arrowBtn} disabled={!props.hasPrev} onClick={() => props.onPrev?.()} aria-label="Предыдущая серия">
+          <ChevronLeft size={16} />
+        </button>
+      )}
+
+      {/* EPISODE (desktop prev/next arrows live in the bottom control bar) */}
       <div className="relative min-w-0">
         <button className={pill} onClick={() => setOpen(open === "episode" ? null : "episode")}>
           <span className="truncate">
@@ -115,6 +134,13 @@ export function PlayerEpisodeBar(props: Props) {
           </div>
         )}
       </div>
+
+      {/* Next EPISODE — mobile only */}
+      {hasEpNav && (
+        <button className={arrowBtn} disabled={!props.hasNext} onClick={() => props.onNext?.()} aria-label="Следующая серия">
+          <ChevronRight size={16} />
+        </button>
+      )}
 
       {/* DUB */}
       {dubs.length > 1 && (

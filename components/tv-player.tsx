@@ -886,6 +886,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
               onSeason={(s) => selectEpisode(s, 1)}
               onEpisode={(e) => selectEpisode(selectedSeason, e)}
               onDub={changeTranslator}
+              hasPrev={hasPrevEpisode}
+              hasNext={hasNextEpisode}
+              onPrev={prevEpisode}
+              onNext={() => nextEpisode({ manual: true })}
             />
           )}
           {streamData?.stream && showPlayer && translatorLoading && (
