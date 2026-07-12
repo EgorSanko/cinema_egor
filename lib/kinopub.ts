@@ -19,6 +19,7 @@ export function getSource(): KinoSource {
 export function setSource(s: KinoSource) {
   try {
     localStorage.setItem(SOURCE_KEY, s);
+    window.dispatchEvent(new Event("kino-source-changed"));
   } catch {}
 }
 
@@ -76,5 +77,25 @@ export async function resolveKinopub(a: ResolveArgs): Promise<KinopubStream | nu
     return null;
   } catch {
     return null;
+  }
+}
+
+export interface SportChannel {
+  id: number;
+  name: string;
+  title: string;
+  logo: string;
+  stream: string; // живой HLS (токен эфира выдаётся при каждом запросе)
+}
+
+/** Список живых спорт-каналов (kino.pub /v1/tv). Стрим-токены свежие на момент
+ *  запроса — вызывать при открытии страницы /sport. */
+export async function fetchChannels(): Promise<SportChannel[]> {
+  try {
+    const r = await fetch(`${KINOPUB_WORKER}/channels`);
+    const d = await r.json();
+    return d && d.ok && Array.isArray(d.channels) ? (d.channels as SportChannel[]) : [];
+  } catch {
+    return [];
   }
 }

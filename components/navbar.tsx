@@ -7,7 +7,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
   Home, Tv, Layers, Flame, Users, LayoutGrid,
-  Bookmark, ChevronDown, Heart, Clock, Smartphone, Send,
+  Bookmark, ChevronDown, Heart, Clock, Smartphone, Send, Radio,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -15,6 +15,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth-context";
 import { AuthModal } from "./auth-modal";
+import { getSource } from "@/lib/kinopub";
 
 type IconType = React.ComponentType<{ size?: number; className?: string }>;
 const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
@@ -36,6 +37,16 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [favCount, setFavCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
+  // «Спорт» (прямой эфир kino.pub) в навигации — только когда источник kino.pub.
+  const [kinopubSrc, setKinopubSrc] = useState(false);
+  useEffect(() => {
+    const check = () => setKinopubSrc(getSource() === "kinopub");
+    check();
+    window.addEventListener("storage", check);
+    window.addEventListener("kino-source-changed", check);
+    return () => { window.removeEventListener("storage", check); window.removeEventListener("kino-source-changed", check); };
+  }, []);
+  const navLinks = kinopubSrc ? [...NAV_LINKS, { label: "Спорт", href: "/sport", Icon: Radio }] : NAV_LINKS;
   const searchPanelRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -167,7 +178,7 @@ export function Navbar() {
 
             {/* Nav pill (desktop) */}
             <div className={`hidden lg:flex ${pillContainer}`}>
-              {NAV_LINKS.map(({ label, href, Icon }) => {
+              {navLinks.map(({ label, href, Icon }) => {
                 const active = isActive(href);
                 return (
                   <Link
@@ -381,7 +392,7 @@ export function Navbar() {
                   />
                 </div>
               </form>
-              {NAV_LINKS.map(({ label, href, Icon }) => {
+              {navLinks.map(({ label, href, Icon }) => {
                 const active = isActive(href);
                 return (
                   <Link
