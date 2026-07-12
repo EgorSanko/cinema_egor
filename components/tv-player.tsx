@@ -66,6 +66,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const [showSeasons, setShowSeasons] = useState(false);
   const [showEpisodes, setShowEpisodes] = useState(false);
+  // На zenithjs (не наш плеер) наш список серий прячем — навигация только внутри
+  // их iframe, чтобы не было рассинхрона (мы не видим внутренние смены серии).
+  const [srcIsZenith, setSrcIsZenith] = useState(false);
+  useEffect(() => {
+    const check = () => setSrcIsZenith(getSource() === "zenithjs");
+    check();
+    window.addEventListener("kino-source-changed", check);
+    window.addEventListener("storage", check);
+    return () => { window.removeEventListener("kino-source-changed", check); window.removeEventListener("storage", check); };
+  }, []);
   const [cssFullscreen, setCssFullscreen] = useState(false);
   // ArtPlayer container — once captured, SkipOverlays portals into it so
   // they stay visible in every fullscreen mode (web/native/mobile).
@@ -1135,8 +1145,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   </Link>
                 </div>
 
-                {/* Current episode + progress */}
-                {(() => {
+                {/* Current episode + progress — скрыт на zenithjs (наш стейт не
+                    отражает внутреннюю навигацию их плеера + прогресс не пишется). */}
+                {!srcIsZenith && (() => {
                   const sp = getPosition(show.id, "tv", selectedSeason, selectedEpisode);
                   const epName = episodes.find(e => e.episode_number === selectedEpisode)?.name || "";
                   const progress = sp && sp.duration > 0 ? Math.min(100, (sp.time / sp.duration) * 100) : 0;
@@ -1168,8 +1179,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 settings menu (gear icon, bottom-right of the player). На ТВ + Вместе are above
                 next to "Смотреть". */}
 
-            {/* === EPISODES SECTION === */}
-            {validSeasons.length > 0 && (
+            {/* === EPISODES SECTION === (скрыт на zenithjs: там навигация только
+                внутри их плеера, наш список рассинхронизировался бы) */}
+            {validSeasons.length > 0 && !srcIsZenith && (
               <section className="mt-10">
                 <h2 className="text-2xl font-bold text-foreground tracking-tight mb-4">{"Эпизоды"}</h2>
 
