@@ -5,15 +5,32 @@
 // отдельными аудио-дорожками (мгновенное переключение через hls.js).
 export const KINOPUB_WORKER = "https://kinopub-resolver.egor3sanko22.workers.dev";
 
-const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub'
+const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'collaps'
 
-export type KinoSource = "hdrezka" | "kinopub";
+export type KinoSource = "hdrezka" | "kinopub" | "collaps";
 
 export function getSource(): KinoSource {
   try {
-    return localStorage.getItem(SOURCE_KEY) === "kinopub" ? "kinopub" : "hdrezka";
+    const v = localStorage.getItem(SOURCE_KEY);
+    return v === "kinopub" || v === "collaps" ? v : "hdrezka";
   } catch {
     return "hdrezka";
+  }
+}
+
+/** Collaps (= LordFilm, ad-free) — стороннийiframe-плеер с собственными
+ *  сезонами/сериями/озвучками. Резолвим embed-URL через наш /api/collaps/search
+ *  (он проверяет наличие тайтла и отдаёт iframe-ссылку api.ortified.ws). */
+export async function resolveCollapsEmbed(
+  tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
+): Promise<string | null> {
+  try {
+    const p = new URLSearchParams({ tmdb_id: String(tmdbId), type: type === "tv" ? "tv" : "movie" });
+    if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+    const d = await fetch(`/api/collaps/search?${p.toString()}`).then((r) => r.json());
+    return d && d.embed ? (d.embed as string) : null;
+  } catch {
+    return null;
   }
 }
 export function setSource(s: KinoSource) {

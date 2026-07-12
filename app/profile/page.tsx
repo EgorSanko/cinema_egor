@@ -640,9 +640,10 @@ function SourceSetting() {
   return (
     <>
       <h2 className="text-lg font-bold text-foreground mb-4">Источник просмотра</h2>
-      <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
-        {opt("hdrezka", "HDRezka", "Основной источник. Максимальный охват каталога.")}
-        {opt("kinopub", "kino.pub", "Без рекламы, мгновенная смена озвучки. Каталог уже.")}
+      <div className="flex flex-col sm:flex-row gap-3 max-w-3xl">
+        {opt("hdrezka", "HDRezka", "Основной. Макс. охват, 1080p, все озвучки.")}
+        {opt("kinopub", "kino.pub", "Ad-free, 4K, спорт, мгновенная смена озвучки.")}
+        {opt("collaps", "Collaps", "Резервный (LordFilm). Свой плеер, до 1080p.")}
       </div>
       <p className="text-xs text-muted-foreground mt-3">
         Влияет на весь сайт. Если тайтла нет в выбранном источнике — плеер попробует второй.

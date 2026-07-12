@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveCollapsEmbed } from "@/lib/kinopub";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -117,6 +117,15 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   useEffect(() => {
     if (isNotReleased) return;
     let alive = true;
+    // Collaps (=LordFilm) source: resolve the iframe embed URL (their own player).
+    // No pre-buffering — the iframe loads on play. We just resolve the URL early.
+    if (getSource() === "collaps") {
+      (async () => {
+        const embed = await resolveCollapsEmbed(movie.id, "movie");
+        if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
+      })();
+      return () => { alive = false; };
+    }
     // kino.pub source: prewarm via the resolver worker (single adaptive hls4)
     // instead of HDRezka, so the hidden player buffers the right stream.
     if (getSource() === "kinopub") {
@@ -242,6 +251,17 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     setLoading(true);
     setError("");
     let retrying = false; // when true, the finally skips clearing loading
+
+    // Collaps source — resolve the iframe embed (their player has its own dubs).
+    if (getSource() === "collaps" && _attempt === 0 && translatorId == null) {
+      try {
+        const embed = await resolveCollapsEmbed(movie.id, "movie");
+        if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
+      } catch {}
+      setError("Фильм пока недоступен для просмотра");
+      setLoading(false);
+      return;
+    }
 
     // kino.pub source (profile toggle) — resolve to ONE adaptive hls4 (all
     // dubs+qualities in the manifest; player switches via hls.js, no re-resolve).
@@ -431,7 +451,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     // If the player was already pre-warmed (streamData set on open), revealing it
     // flips autoStart → the player starts the buffered video instantly. Only do a
     // cold resolve when nothing is prewarmed yet.
-    if (!streamData?.stream) fetchStream();
+    if (!streamData?.stream && !streamData?.collapsEmbed) fetchStream();
   };
 
   const handleResume = () => {
@@ -538,6 +558,16 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               onPlayerContainerReady={setPlayerContainer}
             />
           )}
+          {/* Collaps (=LordFilm) — сторонний iframe-плеер (свои озвучки/качество).
+              Раскрывается на «Смотреть». Наш ArtPlayer тут не участвует. */}
+          {showPlayer && streamData?.collapsEmbed && (
+            <iframe
+              src={streamData.collapsEmbed}
+              className="absolute inset-0 w-full h-full border-0 z-10"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+            />
+          )}
           {streamData?.stream && showPlayer && (
             <SkipOverlays videoRef={videoRef} playerContainer={playerContainer} tmdbId={movie.id} type="movie" />
           )}
@@ -579,7 +609,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               )}
               <button onClick={() => fetchStream()} className="px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-medium transition-colors">Попробовать снова</button>
             </div>
-          ) : showPlayer && !streamData?.stream && (loading || showLoadingMascot) ? (
+          ) : showPlayer && !streamData?.stream && !streamData?.collapsEmbed && (loading || showLoadingMascot) ? (
             <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4">
               <div className="w-12 h-12 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
               <p className="text-[15px] font-medium text-white/85">{translatorLoading ? "Смена озвучки..." : "Загрузка фильма"}</p>

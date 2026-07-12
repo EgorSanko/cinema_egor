@@ -20,7 +20,7 @@ import { SkipOverlays } from "./skip-overlays";
 import { PlayerEpisodeBar } from "./player-episode-bar";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveCollapsEmbed } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -241,6 +241,15 @@ export function TVPlayer({ show }: TVPlayerProps) {
   useEffect(() => {
     if (showPlayer) return;
     let alive = true;
+    // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
+    // player handles seasons/episodes/dubs itself).
+    if (getSource() === "collaps") {
+      (async () => {
+        const embed = await resolveCollapsEmbed(show.id, "tv", selectedSeason, selectedEpisode);
+        if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
+      })();
+      return () => { alive = false; };
+    }
     // kino.pub source — prewarm this episode via the resolver worker (single
     // adaptive hls4: all dubs+qualities in the manifest). Skips HDRezka.
     if (getSource() === "kinopub") {
@@ -332,6 +341,17 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setLoading(true);
     setError("");
     let retrying = false; // when true, the finally skips clearing loading
+
+    // Collaps source — resolve the iframe embed for this episode.
+    if (getSource() === "collaps" && _attempt === 0 && translatorId == null) {
+      try {
+        const embed = await resolveCollapsEmbed(show.id, "tv", season, episode);
+        if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
+      } catch {}
+      setError("Серия пока недоступна");
+      setLoading(false);
+      return;
+    }
 
     // kino.pub source — resolve THIS episode to one adaptive hls4 (all dubs as
     // audio renditions → instant switch in the player, no re-resolve). Only on
@@ -549,7 +569,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // If the episode was pre-warmed (streamData set on open), revealing it flips
     // autoStart → it starts the buffered video instantly. Only cold-resolve when
     // nothing is prewarmed yet.
-    if (!streamData?.stream) fetchStream(selectedSeason, selectedEpisode, selectedTranslator);
+    if (!streamData?.stream && !streamData?.collapsEmbed) fetchStream(selectedSeason, selectedEpisode, selectedTranslator);
   };
 
   const handleResume = () => {
@@ -898,6 +918,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
               onPlayerContainerReady={setPlayerContainer}
             />
           )}
+          {/* Collaps (=LordFilm) — сторонний iframe со своими сезонами/сериями/
+              озвучками. Наши ArtPlayer/панель серий/скипы тут не участвуют. */}
+          {showPlayer && streamData?.collapsEmbed && (
+            <iframe
+              src={streamData.collapsEmbed}
+              className="absolute inset-0 w-full h-full border-0 z-10"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+            />
+          )}
           {streamData?.stream && showPlayer && (
             <SkipOverlays
               videoRef={videoRef}
@@ -963,7 +993,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
               )}
               <button onClick={() => fetchStream(selectedSeason, selectedEpisode)} className="px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-medium transition-colors">Попробовать снова</button>
             </div>
-          ) : showPlayer && !streamData?.stream && (loading || showLoadingMascot) ? (
+          ) : showPlayer && !streamData?.stream && !streamData?.collapsEmbed && (loading || showLoadingMascot) ? (
             <div className="w-full h-full flex flex-col items-center justify-center bg-black text-white gap-4">
               <div className="w-12 h-12 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
               <p className="text-[15px] font-medium text-white/85">{translatorLoading ? "Смена озвучки..." : "Загрузка серии"}</p>
