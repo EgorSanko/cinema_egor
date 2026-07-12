@@ -20,6 +20,7 @@ import { SkipOverlays } from "./skip-overlays";
 import { PlayerEpisodeBar } from "./player-episode-bar";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
+import { getSource, resolveKinopub } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -240,6 +241,21 @@ export function TVPlayer({ show }: TVPlayerProps) {
   useEffect(() => {
     if (showPlayer) return;
     let alive = true;
+    // kino.pub source — prewarm this episode via the resolver worker (single
+    // adaptive hls4: all dubs+qualities in the manifest). Skips HDRezka.
+    if (getSource() === "kinopub") {
+      (async () => {
+        const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
+        const kpTitle = ((show.name || (show as any).original_name || "") as string).replace(/["«»""]/g, "").trim();
+        if (!kpTitle) return;
+        const kp = await resolveKinopub({ tmdbId: show.id, title: kpTitle, year, type: "tv", season: selectedSeason, episode: selectedEpisode });
+        if (!alive || !kp) return;
+        const c: any = (navigator as any).connection;
+        const fast = !c || (!c.saveData && c.type !== "cellular" && c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
+        if (fast && !startedRef.current) setStreamData({ stream: kp.hls4, kinopub: true, quality: "Auto" });
+      })();
+      return () => { alive = false; };
+    }
     try {
       const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
       const ruName = (show.name || "").replace(/["«»""]/g, "").trim();
@@ -316,6 +332,25 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setLoading(true);
     setError("");
     let retrying = false; // when true, the finally skips clearing loading
+
+    // kino.pub source — resolve THIS episode to one adaptive hls4 (all dubs as
+    // audio renditions → instant switch in the player, no re-resolve). Only on
+    // initial/episode resolve (translatorId==null); dub switches are internal.
+    // Soft fallback to HDRezka if kino.pub lacks the title/episode.
+    if (getSource() === "kinopub" && _attempt === 0 && translatorId == null) {
+      try {
+        const kpYear = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
+        const kpTitle = ((show.name || (show as any).original_name || "") as string).replace(/["«»""]/g, "").trim();
+        const kp = await resolveKinopub({ tmdbId: show.id, title: kpTitle, year: kpYear, type: "tv", season, episode });
+        if (kp) {
+          setStreamData({ stream: kp.hls4, kinopub: true, quality: "Auto" });
+          setLoading(false);
+          setTranslatorLoading(false);
+          return;
+        }
+      } catch {}
+      // промах kino.pub → продолжаем в HDRezka ниже
+    }
     // Fallback chain — explicit arg > state > localStorage. Storage read covers
     // the race where the play button is tapped before the initial restore effect
     // sets selectedTranslator; without this the backend gets no translator_id
@@ -841,10 +876,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
               interactive={showPlayer}
               streamUrl={streamData.stream}
               poster={backdropUrl || undefined}
-              qualities={streamData.streams}
+              kinopubMode={!!streamData.kinopub}
+              qualities={streamData.kinopub ? undefined : streamData.streams}
               selectedQuality={selectedQuality}
               onQualityChange={changeQuality}
-              translators={playerDubs}
+              translators={streamData.kinopub ? [] : playerDubs}
               selectedTranslator={selectedTranslator}
               onTranslatorChange={changeTranslator}
               subtitles={subtitles}
@@ -879,7 +915,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
               container={playerContainer}
               seasons={gatedSeasons}
               episodes={gatedEpisodes}
-              dubs={playerDubs}
+              dubs={streamData.kinopub ? [] : playerDubs}
               selectedSeason={selectedSeason}
               selectedEpisode={selectedEpisode}
               selectedTranslator={selectedTranslator}

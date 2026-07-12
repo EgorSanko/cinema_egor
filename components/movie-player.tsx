@@ -22,6 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
+import { getSource, resolveKinopub } from "@/lib/kinopub";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -116,6 +117,22 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   useEffect(() => {
     if (isNotReleased) return;
     let alive = true;
+    // kino.pub source: prewarm via the resolver worker (single adaptive hls4)
+    // instead of HDRezka, so the hidden player buffers the right stream.
+    if (getSource() === "kinopub") {
+      (async () => {
+        const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
+        const kpTitle = ((movie.title || (movie as any).original_title || "") as string).replace(/["«»""]/g, "").trim();
+        if (!kpTitle) return;
+        const kp = await resolveKinopub({ tmdbId: movie.id, title: kpTitle, year, type: "movie" });
+        if (!alive || !kp) return;
+        setAvailInfo({ quality: (kp.qualities && kp.qualities[0]) || "HD", dubs: 0 });
+        const c: any = (navigator as any).connection;
+        const fast = !c || (!c.saveData && c.type !== "cellular" && c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
+        if (fast && !startedRef.current) setStreamData({ stream: kp.hls4, kinopub: true, quality: "Auto" });
+      })();
+      return () => { alive = false; };
+    }
     try {
       const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
       const ruTitle = (movie.title || "").replace(/["«»""]/g, "").trim();
@@ -225,6 +242,25 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     setLoading(true);
     setError("");
     let retrying = false; // when true, the finally skips clearing loading
+
+    // kino.pub source (profile toggle) — resolve to ONE adaptive hls4 (all
+    // dubs+qualities in the manifest; player switches via hls.js, no re-resolve).
+    // Only on the initial resolve (dub switches happen inside the player). Soft
+    // fallback: if kino.pub doesn't have the title, drop through to HDRezka.
+    if (getSource() === "kinopub" && _attempt === 0 && translatorId == null) {
+      try {
+        const kpYear = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
+        const kpTitle = ((movie.title || (movie as any).original_title || "") as string).replace(/["«»""]/g, "").trim();
+        const kp = await resolveKinopub({ tmdbId: movie.id, title: kpTitle, year: kpYear, type: "movie" });
+        if (kp) {
+          setStreamData({ stream: kp.hls4, kinopub: true, quality: "Auto" });
+          setLoading(false);
+          setTranslatorLoading(false);
+          return;
+        }
+      } catch {}
+      // промах kino.pub → продолжаем в HDRezka ниже
+    }
     // Fallback chain — explicit arg > state > localStorage. Storage read covers
     // the race where the play button is tapped before the initial restore effect
     // sets selectedTranslator state; without this the backend gets no
@@ -482,10 +518,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
             <ArtPlayerView
               streamUrl={streamData.stream}
               poster={backdropUrl || undefined}
-              qualities={streamData.streams}
+              kinopubMode={!!streamData.kinopub}
+              qualities={streamData.kinopub ? undefined : streamData.streams}
               selectedQuality={selectedQuality}
               onQualityChange={changeQuality}
-              translators={translators}
+              translators={streamData.kinopub ? [] : translators}
               selectedTranslator={selectedTranslator}
               onTranslatorChange={changeTranslator}
               subtitles={subtitles}

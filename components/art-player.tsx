@@ -48,6 +48,12 @@ interface ArtPlayerProps {
    *  the new stream begins here instead of restarting at 0, so the position is
    *  preserved without a jarring reset + re-seek). Consumed once per switch. */
   seekOnSwitch?: number;
+  /** kino.pub mode: the stream is a single adaptive hls4 manifest that carries
+   *  ALL dubs as alternate audio renditions + all qualities as levels. Instead of
+   *  the HDRezka flow (separate stream per dub/quality, re-resolve on switch), the
+   *  Озвучка/Качество menus are built from hls.js tracks and switching is done via
+   *  hls.audioTrack / hls.currentLevel — instant, no reload. */
+  kinopubMode?: boolean;
   /** When false, mount + buffer the stream but DON'T autoplay (hidden pre-warm).
    *  The parent starts playback via the video ref it gets from onVideoReady. */
   autoStart?: boolean;
@@ -245,6 +251,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     onNextEpisode,
     resumeTime,
     seekOnSwitch,
+    kinopubMode,
     autoStart,
     interactive = true,
     onVideoReady,
@@ -263,6 +270,8 @@ export function ArtPlayerView(props: ArtPlayerProps) {
   React.useEffect(() => { resumeTimeRef.current = resumeTime; }, [resumeTime]);
   const autoStartRef = React.useRef(autoStart);
   React.useEffect(() => { autoStartRef.current = autoStart; }, [autoStart]);
+  const kinopubModeRef = React.useRef(kinopubMode);
+  React.useEffect(() => { kinopubModeRef.current = kinopubMode; }, [kinopubMode]);
   // One-shot start position for the next source switch (quality switch keeps the
   // current position). Synced from the prop BEFORE the switchUrl effect runs;
   // consumed (→0) once the switch starts so it never leaks to a later switch.
@@ -366,6 +375,16 @@ export function ArtPlayerView(props: ArtPlayerProps) {
                 hls.recoverMediaError();
               }
             });
+            // kino.pub: единый hls4 несёт все качества (levels) и озвучки (audio
+            // renditions). Строим Качество/Озвучка из hls-дорожек; переключение
+            // через hls.currentLevel / hls.audioTrack — мгновенно, без ре-резолва.
+            // kino.pub: rebuild the Озвучка/Качество menus from hls tracks. These
+            // events can fire BEFORE ArtPlayer's `ready` (when setting.add is
+            // lost), so buildKinopubMenus() is ALSO called from the ready handler.
+            if (kinopubModeRef.current) {
+              hls.on(Hls.Events.MANIFEST_PARSED, () => buildKinopubMenus());
+              hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => buildKinopubMenus());
+            }
           } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
             video.src = url;
           }
@@ -375,6 +394,47 @@ export function ArtPlayerView(props: ArtPlayerProps) {
 
     artRef.current = art;
 
+    // kino.pub: build Озвучка (from hls.audioTracks) + Качество (from hls.levels)
+    // in the settings gear. Switching sets hls.audioTrack / hls.currentLevel —
+    // instant, no re-resolve (unlike HDRezka's per-dub/quality streams). Called
+    // from hls MANIFEST_PARSED/AUDIO_TRACKS_UPDATED AND from `ready` (either can
+    // come first; ArtPlayer drops setting.add issued before ready).
+    const buildKinopubMenus = () => {
+      const a = artRef.current;
+      const hls = hlsRef.current as any;
+      if (!a || !hls || !kinopubModeRef.current) return;
+      // ArtPlayer's setting.remove THROWS if the item is absent — guard each one
+      // separately so a missing item never aborts the subsequent add.
+      const rm = (name: string) => { try { a.setting.remove(name); } catch {} };
+      const add = (opt: any) => { try { a.setting.add(opt); } catch {} };
+      rm("kino-quality");
+      if (hls.levels && hls.levels.length > 1) {
+        const lvlName = (l: any) => (l.height || l.width || "") + "p";
+        // Качества — от высшего к низшему (1080 → 480), Auto сверху.
+        const lvlsDesc = hls.levels
+          .map((l: any, i: number) => ({ l, i }))
+          .sort((x: any, y: any) => (y.l.height || y.l.width || 0) - (x.l.height || x.l.width || 0));
+        add({
+          name: "kino-quality", html: "Качество", icon: ICON_QUALITY, width: 180,
+          tooltip: hls.autoLevelEnabled ? "Auto" : lvlName(hls.levels[hls.currentLevel] || {}),
+          selector: [{ html: "Auto", value: -1, default: hls.autoLevelEnabled } as any].concat(
+            lvlsDesc.map(({ l, i }: any) => ({ html: lvlName(l), value: i, default: !hls.autoLevelEnabled && i === hls.currentLevel }))
+          ),
+          onSelect: (item: any) => { hls.currentLevel = item.value; return item.html; },
+        });
+      }
+      rm("kino-translator");
+      if (hls.audioTracks && hls.audioTracks.length > 1) {
+        const cur = hls.audioTrack;
+        add({
+          name: "kino-translator", html: "Озвучка", icon: ICON_DUB, width: 300,
+          tooltip: (hls.audioTracks[cur] && hls.audioTracks[cur].name) || "Озвучка",
+          selector: hls.audioTracks.map((t: any, i: number) => ({ html: t.name, value: i, default: i === cur })),
+          onSelect: (item: any) => { hls.audioTrack = item.value; return item.html; },
+        });
+      }
+    };
+
     // Notify parent that ArtPlayer is initialized — but DO NOT seek here.
     // `ready` fires before MSE attaches the stream, so currentTime gets reset
     // when the source actually loads. Parent's onVideoReady can save the ref
@@ -382,6 +442,9 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // until loadedmetadata so the seek sticks.
     art.on("ready", () => {
       onVideoReady?.(art.video);
+      // kino.pub menus (manifest may already be parsed by now; if not, the hls
+      // listeners rebuild when it is).
+      if (kinopubModeRef.current) buildKinopubMenus();
 
       // Prev/next EPISODE buttons in the bottom control bar (series only) —
       // Alloha-style. Added once; the click reads the latest availability from
@@ -665,12 +728,18 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     const art = artRef.current;
     if (!art) return;
 
-    // Remove our items if present (id starts with "kino-")
-    ["kino-translator", "kino-subtitle", "kino-quality", "kino-speed", "kino-miniprogress"].forEach((name) => {
+    // Remove our items if present (id starts with "kino-"). In kino.pub mode the
+    // Озвучка/Качество menus are owned by the hls-track builder (built on
+    // MANIFEST_PARSED from the adaptive manifest) — don't touch them here, only
+    // manage speed + mini-progress.
+    const managed = kinopubMode
+      ? ["kino-subtitle", "kino-speed", "kino-miniprogress"]
+      : ["kino-translator", "kino-subtitle", "kino-quality", "kino-speed", "kino-miniprogress"];
+    managed.forEach((name) => {
       try { art.setting.remove(name); } catch {}
     });
 
-    const trItem = buildTranslatorSetting(translators, selectedTranslator, onTranslatorChange);
+    const trItem = kinopubMode ? null : buildTranslatorSetting(translators, selectedTranslator, onTranslatorChange);
     if (trItem) art.setting.add(trItem);
 
     // Subtitle UI hidden by user request (2026-05) — wyzie integration
@@ -684,7 +753,7 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     void onSubtitleChange;
     void onLoadSubtitles;
 
-    const qItem = buildQualitySetting(qualities, selectedQuality, onQualityChange);
+    const qItem = kinopubMode ? null : buildQualitySetting(qualities, selectedQuality, onQualityChange);
     if (qItem) art.setting.add(qItem);
 
     art.setting.add(buildSpeedSetting(art));

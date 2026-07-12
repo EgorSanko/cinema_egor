@@ -9,6 +9,7 @@ import { enrichHistoryWithGenres } from "@/lib/genre-enrich";
 import { getCanon, setCanon, getCanonCandidates, type CanonPick } from "@/lib/canon";
 import { getAllByStatus, type WatchStatus } from "@/lib/status";
 import { getLists, createList, type UserList } from "@/lib/lists";
+import { getSource, setSource, type KinoSource } from "@/lib/kinopub";
 import { canFreezeNow, freezeDay, getFrozenDays, daysUntilNextFreeze } from "@/lib/streak-freeze";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -606,8 +607,46 @@ export default function ProfilePage() {
           <section>
             <StatusAndListsSection favorites={favorites} history={history} />
           </section>
+          <section>
+            <SourceSetting />
+          </section>
         </div>
       </main>
+    </>
+  );
+}
+
+/* ── Источник просмотра: HDRezka (по умолчанию) ⇄ kino.pub (ad-free, мгновенная
+   смена озвучки). Глобальный тумблер — влияет на весь сайт. ── */
+function SourceSetting() {
+  const [src, setSrc] = useState<KinoSource>("hdrezka");
+  useEffect(() => { setSrc(getSource()); }, []);
+  const pick = (s: KinoSource) => { setSource(s); setSrc(s); };
+  const opt = (s: KinoSource, title: string, sub: string) => (
+    <button
+      onClick={() => pick(s)}
+      className={
+        "flex-1 text-left rounded-xl px-4 py-3 border-2 transition-colors " +
+        (src === s ? "border-primary bg-primary/10" : "border-border bg-card hover:border-muted-foreground/40")
+      }
+    >
+      <div className="flex items-center gap-2">
+        <span className={"w-3.5 h-3.5 rounded-full border-2 " + (src === s ? "border-primary bg-primary" : "border-muted-foreground/50")} />
+        <span className="font-semibold text-foreground">{title}</span>
+      </div>
+      <p className="text-xs text-muted-foreground mt-1 ml-6">{sub}</p>
+    </button>
+  );
+  return (
+    <>
+      <h2 className="text-lg font-bold text-foreground mb-4">Источник просмотра</h2>
+      <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
+        {opt("hdrezka", "HDRezka", "Основной источник. Максимальный охват каталога.")}
+        {opt("kinopub", "kino.pub", "Без рекламы, мгновенная смена озвучки. Каталог уже.")}
+      </div>
+      <p className="text-xs text-muted-foreground mt-3">
+        Влияет на весь сайт. Если тайтла нет в выбранном источнике — плеер попробует второй.
+      </p>
     </>
   );
 }
