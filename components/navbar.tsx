@@ -217,7 +217,8 @@ export function Navbar() {
                 <span className="hidden lg:inline">Telegram</span>
               </a>
 
-              {/* Android app download — chip style, primary-tinted */}
+              {/* Android app download — chip style. Скрыт на free (zenithjs). */}
+              {source !== "zenithjs" && (
               <Link
                 href="/download"
                 className="hidden lg:inline-flex items-center gap-1.5 h-10 px-3.5 rounded-full bg-primary/12 ring-1 ring-primary/30 text-primary text-[12.5px] font-semibold hover:bg-primary/18 transition-colors"
@@ -226,6 +227,7 @@ export function Navbar() {
                 <Smartphone size={14} />
                 <span>Андроид</span>
               </Link>
+              )}
 
               {/* Search — icon in its own pill, dropdown panel below */}
               <div className="relative">
@@ -431,6 +433,7 @@ export function Navbar() {
                 >
                   <Clock size={17} /> История
                 </Link>
+                {source !== "zenithjs" && (
                 <Link
                   href="/download"
                   className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-primary font-semibold bg-primary/10 hover:bg-primary/15 rounded-lg transition-colors"
@@ -438,6 +441,7 @@ export function Navbar() {
                 >
                   <Smartphone size={17} /> Приложение для Android
                 </Link>
+                )}
                 <a
                   href="https://t.me/sapkeflykino"
                   target="_blank"
