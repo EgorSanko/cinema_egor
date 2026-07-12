@@ -342,8 +342,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setError("");
     let retrying = false; // when true, the finally skips clearing loading
 
-    // Collaps source — resolve the iframe embed for this episode.
-    if (getSource() === "zenithjs" && _attempt === 0 && translatorId == null) {
+    // Zenithjs source — resolve the iframe embed for this episode. НЕ гейтить по
+    // translatorId: у zenithjs озвучки внутри iframe, а selectEpisode передаёт
+    // selectedTranslator — из-за гейта смена серии падала в HDRezka и возвращала
+    // наш ArtPlayer. При source=zenithjs всегда остаёмся на iframe.
+    if (getSource() === "zenithjs" && _attempt === 0) {
       try {
         const embed = await resolveZenithEmbed(show.id, "tv", season, episode);
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }

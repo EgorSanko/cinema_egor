@@ -252,8 +252,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     setError("");
     let retrying = false; // when true, the finally skips clearing loading
 
-    // Collaps source — resolve the iframe embed (their player has its own dubs).
-    if (getSource() === "zenithjs" && _attempt === 0 && translatorId == null) {
+    // Zenithjs source — resolve the iframe embed (их плеер сам держит озвучки).
+    // НЕ гейтим по translatorId (иначе падало бы в HDRezka).
+    if (getSource() === "zenithjs" && _attempt === 0) {
       try {
         const embed = await resolveZenithEmbed(movie.id, "movie");
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
