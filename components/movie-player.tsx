@@ -563,6 +563,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               Раскрывается на «Смотреть». Наш ArtPlayer тут не участвует. */}
           {showPlayer && streamData?.collapsEmbed && (
             <iframe
+              key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}
               className="absolute inset-0 w-full h-full border-0 z-10"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
