@@ -361,7 +361,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         const embed = await resolveZenithEmbed(show.id, "tv", season, episode);
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
-      setError("Серия пока недоступна");
+      setError("Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");
       setLoading(false);
       return;
     }

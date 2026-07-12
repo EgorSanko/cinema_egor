@@ -26,11 +26,20 @@ export function getSource(): KinoSource {
 export async function resolveZenithEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
 ): Promise<string | null> {
-  const imdb = await fetchImdb(tmdbId, type);
-  if (!imdb) return null;
-  let url = `https://api.zenithjs.ws/embed/imdb/${imdb}`;
-  if (type === "tv") url += `?season=${season || 1}&episode=${episode || 1}`;
-  return url;
+  // Проверяем, что движок collaps/zenithjs реально держит этот тайтл/серию —
+  // через наш /api/collaps (тот же каталог, серверная проверка, кэш 5мин). Иначе
+  // iframe просто отдал бы 404. null → плеер покажет сообщение (не битый фрейм).
+  try {
+    const p = new URLSearchParams({ tmdb_id: String(tmdbId), type: type === "tv" ? "tv" : "movie" });
+    if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+    const d = await fetch(`/api/collaps/search?${p.toString()}`).then((r) => r.json());
+    if (!d || !d.embed || !d.imdb) return null; // нет в каталоге
+    let url = `https://api.zenithjs.ws/embed/imdb/${d.imdb}`;
+    if (type === "tv") url += `?season=${season || 1}&episode=${episode || 1}`;
+    return url;
+  } catch {
+    return null;
+  }
 }
 export function setSource(s: KinoSource) {
   try {

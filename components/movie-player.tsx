@@ -259,7 +259,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         const embed = await resolveZenithEmbed(movie.id, "movie");
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
-      setError("Фильм пока недоступен для просмотра");
+      setError("Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
       setLoading(false);
       return;
     }
