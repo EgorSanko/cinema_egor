@@ -6,7 +6,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
-  Home, Tv, Layers, Flame, Users, LayoutGrid,
+  Home, Tv, Layers, Users, LayoutGrid,
   Bookmark, ChevronDown, Heart, Clock, Smartphone, Send, Radio,
 } from "lucide-react";
 import Image from "next/image";
@@ -22,7 +22,6 @@ const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
   { label: "Главная", href: "/", Icon: Home },
   { label: "Сериалы", href: "/tv", Icon: Tv },
   { label: "Подборки", href: "/collections", Icon: Layers },
-  { label: "Свайп", href: "/swipe", Icon: Flame },
   { label: "Вместе", href: "/watch", Icon: Users },
   { label: "Жанры", href: "/genres", Icon: LayoutGrid },
 ];

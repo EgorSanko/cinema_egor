@@ -5,7 +5,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import {
   ArrowRight, Sparkles, Crosshair, Compass, Drama, ShieldAlert, Camera,
   Users, Wand2, Skull, Heart, Rocket, Tv, AlertTriangle, Shield, Mountain,
-  ScrollText, HelpCircle, Music, Star,
+  ScrollText, HelpCircle, Music,
 } from "lucide-react";
 
 // Genre theme: brand color + lucide icon
@@ -127,26 +127,6 @@ export function GenreGrid({ genres }: GenreGridProps) {
             </Link>
           );
         })}
-      </div>
-
-      {/* CTA banner */}
-      <div className="mt-8 rounded-2xl bg-gradient-to-r from-primary/[0.06] via-background/40 to-background/40 ring-1 ring-white/[0.06] backdrop-blur p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/15 ring-1 ring-primary/25 flex items-center justify-center text-primary shadow-[0_0_24px_rgba(163,230,53,0.25)] flex-shrink-0">
-            <Star size={20} />
-          </div>
-          <div>
-            <h4 className="text-base sm:text-lg font-semibold text-foreground">Не знаете, что выбрать?</h4>
-            <p className="text-foreground/55 text-[13px] sm:text-sm mt-0.5">Мы подберём фильмы специально для вас</p>
-          </div>
-        </div>
-        <Link
-          href="/swipe"
-          className="inline-flex items-center gap-2 px-5 h-11 rounded-full bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-colors flex-shrink-0"
-        >
-          Подобрать фильм
-          <ArrowRight size={16} />
-        </Link>
       </div>
     </>
   );
