@@ -23,6 +23,7 @@ import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 import { getSource, resolveKinopub, resolveZenithEmbed } from "@/lib/kinopub";
+import { ProUpsell } from "./pro-upsell";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -41,6 +42,16 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const [showLoadingMascot, setShowLoadingMascot] = useState(false);
   const [error, setError] = useState("");
   const [streamData, setStreamData] = useState<any>(null);
+  // Free (zenithjs) по умолчанию → init true, чтобы SSR/первый рендер сразу
+  // скрывали платные кнопки (скачать/вместе) без мелькания.
+  const [srcIsZenith, setSrcIsZenith] = useState(true);
+  useEffect(() => {
+    const check = () => setSrcIsZenith(getSource() === "zenithjs");
+    check();
+    window.addEventListener("kino-source-changed", check);
+    window.addEventListener("storage", check);
+    return () => { window.removeEventListener("kino-source-changed", check); window.removeEventListener("storage", check); };
+  }, []);
   // Position to start the next source switch at — set on a quality switch so the
   // new stream begins where playback is, not at 0.
   const [seekOnSwitch, setSeekOnSwitch] = useState<number | undefined>(undefined);
@@ -645,6 +656,8 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           )}
         </div>
 
+        {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
+        {srcIsZenith && !cssFullscreen && <ProUpsell />}
 
         {!cssFullscreen && (
           <>
@@ -730,20 +743,25 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
                   )}
-                  <MovieDownloadButton type="movie" movie={{
-                    id: movie.id,
-                    title: movie.title,
-                    poster_path: movie.poster_path,
-                    release_date: movie.release_date,
-                    runtime: movie.runtime,
-                  }} />
-                  <Link
-                    href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
-                    className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
-                    title="Смотреть вместе"
-                  >
-                    <Users size={14} /> {"Вместе"}
-                  </Link>
+                  {/* Скачивание и «Вместе» — только на платных источниках (не free). */}
+                  {!srcIsZenith && (
+                    <>
+                      <MovieDownloadButton type="movie" movie={{
+                        id: movie.id,
+                        title: movie.title,
+                        poster_path: movie.poster_path,
+                        release_date: movie.release_date,
+                        runtime: movie.runtime,
+                      }} />
+                      <Link
+                        href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
+                        className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
+                        title="Смотреть вместе"
+                      >
+                        <Users size={14} /> {"Вместе"}
+                      </Link>
+                    </>
+                  )}
                 </div>
 
                 {/* Progress bar if any */}

@@ -18,6 +18,7 @@ import { TrailerButton } from "./trailer-modal";
 import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { PlayerEpisodeBar } from "./player-episode-bar";
+import { ProUpsell } from "./pro-upsell";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
 import { getSource, resolveKinopub, resolveZenithEmbed } from "@/lib/kinopub";
@@ -1030,6 +1031,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
           )}
         </div>
 
+        {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
+        {srcIsZenith && !cssFullscreen && <ProUpsell />}
 
         {!cssFullscreen && (
           <>
@@ -1119,30 +1122,31 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     <SkipForward size={15} /> {"Следующая серия"}
                   </button>
 
-                  {/* Compact chips — feature shortcuts that used to live in the bottom options bar */}
-                  <MovieDownloadButton
-                    type="tv"
-                    show={{
-                      id: show.id,
-                      name: show.name,
-                      poster_path: show.poster_path,
-                      first_air_date: show.first_air_date,
-                      number_of_seasons: show.number_of_seasons || 1,
-                      // TMDB returns `seasons: [{season_number, episode_count, ...}]`
-                      // — pass it so the modal can render an exact dropdown of
-                      // episodes per season instead of a free-form input.
-                      seasons: (show as any).seasons,
-                    }}
-                    initialSeason={selectedSeason}
-                    initialEpisode={selectedEpisode}
-                  />
-                  <Link
-                    href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "") + "&season=" + selectedSeason + "&episode=" + selectedEpisode}
-                    className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
-                    title="Смотреть вместе"
-                  >
-                    <Users size={14} /> {"Вместе"}
-                  </Link>
+                  {/* Скачивание и «Вместе» — только на платных источниках (не free). */}
+                  {!srcIsZenith && (
+                    <>
+                      <MovieDownloadButton
+                        type="tv"
+                        show={{
+                          id: show.id,
+                          name: show.name,
+                          poster_path: show.poster_path,
+                          first_air_date: show.first_air_date,
+                          number_of_seasons: show.number_of_seasons || 1,
+                          seasons: (show as any).seasons,
+                        }}
+                        initialSeason={selectedSeason}
+                        initialEpisode={selectedEpisode}
+                      />
+                      <Link
+                        href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "") + "&season=" + selectedSeason + "&episode=" + selectedEpisode}
+                        className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
+                        title="Смотреть вместе"
+                      >
+                        <Users size={14} /> {"Вместе"}
+                      </Link>
+                    </>
+                  )}
                 </div>
 
                 {/* Current episode + progress — скрыт на zenithjs (наш стейт не
