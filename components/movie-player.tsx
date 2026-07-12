@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveCollapsEmbed } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed } from "@/lib/kinopub";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -119,9 +119,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     let alive = true;
     // Collaps (=LordFilm) source: resolve the iframe embed URL (their own player).
     // No pre-buffering — the iframe loads on play. We just resolve the URL early.
-    if (getSource() === "collaps") {
+    if (getSource() === "zenithjs") {
       (async () => {
-        const embed = await resolveCollapsEmbed(movie.id, "movie");
+        const embed = await resolveZenithEmbed(movie.id, "movie");
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -253,9 +253,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     let retrying = false; // when true, the finally skips clearing loading
 
     // Collaps source — resolve the iframe embed (their player has its own dubs).
-    if (getSource() === "collaps" && _attempt === 0 && translatorId == null) {
+    if (getSource() === "zenithjs" && _attempt === 0 && translatorId == null) {
       try {
-        const embed = await resolveCollapsEmbed(movie.id, "movie");
+        const embed = await resolveZenithEmbed(movie.id, "movie");
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
       setError("Фильм пока недоступен для просмотра");

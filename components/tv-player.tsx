@@ -20,7 +20,7 @@ import { SkipOverlays } from "./skip-overlays";
 import { PlayerEpisodeBar } from "./player-episode-bar";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub, resolveCollapsEmbed } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -243,9 +243,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
     let alive = true;
     // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
     // player handles seasons/episodes/dubs itself).
-    if (getSource() === "collaps") {
+    if (getSource() === "zenithjs") {
       (async () => {
-        const embed = await resolveCollapsEmbed(show.id, "tv", selectedSeason, selectedEpisode);
+        const embed = await resolveZenithEmbed(show.id, "tv", selectedSeason, selectedEpisode);
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -343,9 +343,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
     let retrying = false; // when true, the finally skips clearing loading
 
     // Collaps source — resolve the iframe embed for this episode.
-    if (getSource() === "collaps" && _attempt === 0 && translatorId == null) {
+    if (getSource() === "zenithjs" && _attempt === 0 && translatorId == null) {
       try {
-        const embed = await resolveCollapsEmbed(show.id, "tv", season, episode);
+        const embed = await resolveZenithEmbed(show.id, "tv", season, episode);
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
       setError("Серия пока недоступна");

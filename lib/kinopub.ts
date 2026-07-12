@@ -5,33 +5,30 @@
 // отдельными аудио-дорожками (мгновенное переключение через hls.js).
 export const KINOPUB_WORKER = "https://kinopub-resolver.egor3sanko22.workers.dev";
 
-const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'collaps'
+const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs'
 
-export type KinoSource = "hdrezka" | "kinopub" | "collaps";
+export type KinoSource = "hdrezka" | "kinopub" | "zenithjs";
 
 export function getSource(): KinoSource {
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "collaps" ? v : "hdrezka";
+    return v === "kinopub" || v === "zenithjs" ? v : "hdrezka";
   } catch {
     return "hdrezka";
   }
 }
 
-/** Collaps (= LordFilm, ad-free) — стороннийiframe-плеер с собственными
- *  сезонами/сериями/озвучками. Резолвим embed-URL через наш /api/collaps/search
- *  (он проверяет наличие тайтла и отдаёт iframe-ссылку api.ortified.ws). */
-export async function resolveCollapsEmbed(
+/** Zenithjs — сторонний iframe-плеер (тот же движок, что Lift) с собственными
+ *  сезонами/сериями/озвучками. Принимает imdb-id прямо в URL. Резолвим imdb из
+ *  TMDB external_ids и строим embed-ссылку. */
+export async function resolveZenithEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
 ): Promise<string | null> {
-  try {
-    const p = new URLSearchParams({ tmdb_id: String(tmdbId), type: type === "tv" ? "tv" : "movie" });
-    if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
-    const d = await fetch(`/api/collaps/search?${p.toString()}`).then((r) => r.json());
-    return d && d.embed ? (d.embed as string) : null;
-  } catch {
-    return null;
-  }
+  const imdb = await fetchImdb(tmdbId, type);
+  if (!imdb) return null;
+  let url = `https://api.zenithjs.ws/embed/imdb/${imdb}`;
+  if (type === "tv") url += `?season=${season || 1}&episode=${episode || 1}`;
+  return url;
 }
 export function setSource(s: KinoSource) {
   try {
