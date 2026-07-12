@@ -65,6 +65,18 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`dark ${geist.variable} ${righteous.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
+        {/* Разовая принудительная миграция ВСЕХ на бесплатный источник (zenithjs)
+            — перекрывает и явно выбранный ранее HDRezka/kino.pub. Запускается до
+            гидрации, поэтому навбар/плеер сразу читают уже zenithjs. Флаг не даёт
+            переставлять повторно — после этого профиль-тумблер снова свободен. */}
+        <Script id="force-free-source" strategy="beforeInteractive">{`
+          try {
+            if (!localStorage.getItem('kino_src_force_v1')) {
+              localStorage.setItem('kino_source','zenithjs');
+              localStorage.setItem('kino_src_force_v1','1');
+            }
+          } catch (e) {}
+        `}</Script>
         <AuthProvider>
           {children}
           <AuthGate />
