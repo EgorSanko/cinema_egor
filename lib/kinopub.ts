@@ -10,11 +10,13 @@ const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs'
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs";
 
 export function getSource(): KinoSource {
+  // Дефолт для ВСЕХ — zenithjs (бесплатный источник). Явный выбор HDRezka/kino.pub
+  // в профиле уважается; всё остальное (не задано / старые значения) → zenithjs.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "zenithjs" ? v : "hdrezka";
+    return v === "kinopub" || v === "hdrezka" ? v : "zenithjs";
   } catch {
-    return "hdrezka";
+    return "zenithjs";
   }
 }
 
