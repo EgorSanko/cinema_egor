@@ -169,24 +169,25 @@ export function Navbar() {
       >
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 gap-3">
-            {/* Logo */}
-            <Link href="/" className="group flex-shrink-0 flex items-center gap-2">
-              <img
-                src="/logo.png"
-                alt="sapkefly kino"
-                width={170}
-                height={44}
-                decoding="async"
-                fetchPriority="high"
-                className="h-11 w-auto transition-all duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)]"
-              />
-            </Link>
-            {/* Тариф-бейдж у логотипа: FREE на бесплатном источнике (zenithjs). */}
-            {source === "zenithjs" && (
-              <span className="flex-shrink-0 -ml-1 text-[9px] font-extrabold uppercase tracking-wider text-muted-foreground/80 bg-foreground/[0.06] ring-1 ring-border rounded px-1.5 py-0.5 leading-none">
-                free
-              </span>
-            )}
+            {/* Logo + тариф-бейдж (FREE на бесплатном источнике zenithjs) */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <Link href="/" className="group flex items-center">
+                <img
+                  src="/logo.png"
+                  alt="sapkefly kino"
+                  width={170}
+                  height={44}
+                  decoding="async"
+                  fetchPriority="high"
+                  className="h-11 w-auto transition-all duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)]"
+                />
+              </Link>
+              {source === "zenithjs" && (
+                <span className="inline-flex items-center h-6 px-2.5 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[11px] font-bold uppercase tracking-wider leading-none">
+                  Free
+                </span>
+              )}
+            </div>
 
             {/* Nav pill (desktop) */}
             <div className={`hidden lg:flex ${pillContainer}`}>
