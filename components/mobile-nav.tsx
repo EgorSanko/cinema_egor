@@ -18,7 +18,7 @@ export function MobileNav() {
   const pathname = usePathname();
   // «Вместе» (совместный просмотр в нашем плеере) недоступно на zenithjs (чужой
   // iframe) — прячем таб на бесплатном источнике.
-  const [hideWatch, setHideWatch] = useState(false);
+  const [hideWatch, setHideWatch] = useState(true); // free по умолчанию → без флеша «Вместе»
   useEffect(() => {
     const check = () => setHideWatch(getSource() === "zenithjs");
     check();

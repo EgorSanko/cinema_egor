@@ -40,7 +40,10 @@ export function Navbar() {
   //  • «Спорт» (прямой эфир kino.pub) — только на kino.pub.
   //  • «Вместе» (совместный просмотр в НАШЕМ плеере) — только на HDRezka/kino.pub;
   //    на zenithjs это чужой iframe, синхронизировать нельзя → прячем.
-  const [source, setSourceState] = useState<KinoSource>("hdrezka");
+  // Инициализируем как zenithjs (бесплатный — дефолт для всех) чтобы SSR/первый
+  // рендер сразу были free-разметкой (FREE, без Вместе/Спорт/Андроид) и не было
+  // мелькания премиум-навигации до того, как эффект прочитает источник.
+  const [source, setSourceState] = useState<KinoSource>("zenithjs");
   useEffect(() => {
     const check = () => setSourceState(getSource());
     check();

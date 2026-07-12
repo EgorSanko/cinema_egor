@@ -68,7 +68,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [showEpisodes, setShowEpisodes] = useState(false);
   // На zenithjs (не наш плеер) наш список серий прячем — навигация только внутри
   // их iframe, чтобы не было рассинхрона (мы не видим внутренние смены серии).
-  const [srcIsZenith, setSrcIsZenith] = useState(false);
+  const [srcIsZenith, setSrcIsZenith] = useState(true); // free по умолчанию → без флеша списка серий
   useEffect(() => {
     const check = () => setSrcIsZenith(getSource() === "zenithjs");
     check();
