@@ -15,7 +15,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth-context";
 import { AuthModal } from "./auth-modal";
-import { getSource } from "@/lib/kinopub";
+import { getSource, type KinoSource } from "@/lib/kinopub";
 
 type IconType = React.ComponentType<{ size?: number; className?: string }>;
 const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
@@ -36,16 +36,23 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [favCount, setFavCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
-  // «Спорт» (прямой эфир kino.pub) в навигации — только когда источник kino.pub.
-  const [kinopubSrc, setKinopubSrc] = useState(false);
+  // Навигация зависит от источника:
+  //  • «Спорт» (прямой эфир kino.pub) — только на kino.pub.
+  //  • «Вместе» (совместный просмотр в НАШЕМ плеере) — только на HDRezka/kino.pub;
+  //    на zenithjs это чужой iframe, синхронизировать нельзя → прячем.
+  const [source, setSourceState] = useState<KinoSource>("hdrezka");
   useEffect(() => {
-    const check = () => setKinopubSrc(getSource() === "kinopub");
+    const check = () => setSourceState(getSource());
     check();
     window.addEventListener("storage", check);
     window.addEventListener("kino-source-changed", check);
     return () => { window.removeEventListener("storage", check); window.removeEventListener("kino-source-changed", check); };
   }, []);
-  const navLinks = kinopubSrc ? [...NAV_LINKS, { label: "Спорт", href: "/sport", Icon: Radio }] : NAV_LINKS;
+  const navLinks = (() => {
+    let links = source === "zenithjs" ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
+    if (source === "kinopub") links = [...links, { label: "Спорт", href: "/sport", Icon: Radio }];
+    return links;
+  })();
   const searchPanelRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
