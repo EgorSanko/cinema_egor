@@ -181,6 +181,12 @@ export function Navbar() {
                 className="h-11 w-auto transition-all duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)]"
               />
             </Link>
+            {/* Тариф-бейдж у логотипа: FREE на бесплатном источнике (zenithjs). */}
+            {source === "zenithjs" && (
+              <span className="flex-shrink-0 -ml-1 text-[9px] font-extrabold uppercase tracking-wider text-muted-foreground/80 bg-foreground/[0.06] ring-1 ring-border rounded px-1.5 py-0.5 leading-none">
+                free
+              </span>
+            )}
 
             {/* Nav pill (desktop) */}
             <div className={`hidden lg:flex ${pillContainer}`}>
