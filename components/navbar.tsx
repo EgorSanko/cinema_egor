@@ -64,7 +64,8 @@ export function Navbar() {
     // Тариф определяем по isPro, НЕ по источнику: free теперь на alloha (не
     // zenithjs), поэтому source больше не отличает free от Pro.
     let links = !isPro ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
-    if (source === "kinopub") links = [...links, { label: "Спорт", href: "/sport", Icon: Radio }];
+    // Спорт (kino.pub live TV) — Pro-фича, от выбранного плеера не зависит.
+    if (isPro) links = [...links, { label: "Спорт", href: "/sport", Icon: Radio }];
     // Вкладка «Про»: у free — апселл подписки; у Pro — управление подпиской. Всегда.
     links = [...links, { label: "Про", href: "/pro", Icon: Crown }];
     return links;

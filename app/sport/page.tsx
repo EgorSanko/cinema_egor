@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/navbar";
 import { ArtPlayerView } from "@/components/art-player";
-import { fetchChannels, getSource, type SportChannel } from "@/lib/kinopub";
+import { fetchChannels, type SportChannel } from "@/lib/kinopub";
+import { useSubscription } from "@/hooks/use-subscription";
 import { Radio, Tv, ArrowRight } from "lucide-react";
 
 export default function SportPage() {
@@ -13,17 +14,20 @@ export default function SportPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<SportChannel | null>(null);
 
+  const { isPro, loading: subLoading } = useSubscription();
   useEffect(() => {
-    const on = getSource() === "kinopub";
-    setEnabled(on);
-    if (!on) { setLoading(false); return; }
+    // Спорт — фича Про (каналы kino.pub тянутся через gated /kp/ по Pro-куке).
+    // От ВЫБРАННОГО плеера (alloha/hdrezka) НЕ зависит — только от подписки.
+    if (subLoading) return;
+    setEnabled(isPro);
+    if (!isPro) { setLoading(false); return; }
     (async () => {
       const list = await fetchChannels();
       setChannels(list);
       setSelected(list[0] || null);
       setLoading(false);
     })();
-  }, []);
+  }, [isPro, subLoading]);
 
   return (
     <>
@@ -42,12 +46,12 @@ export default function SportPage() {
         {enabled === false ? (
           <div className="rounded-2xl border border-border bg-card p-8 text-center max-w-xl mx-auto mt-10">
             <Tv size={40} className="text-muted-foreground mx-auto mb-4" />
-            <p className="text-foreground font-semibold mb-2">Раздел доступен при источнике kino.pub</p>
+            <p className="text-foreground font-semibold mb-2">Спорт — по подписке Про</p>
             <p className="text-sm text-muted-foreground mb-5">
-              Прямой эфир спортивных каналов идёт через kino.pub. Включите его в профиле.
+              Прямой эфир спортивных каналов доступен подписчикам Про.
             </p>
-            <Link href="/profile" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold">
-              В профиль <ArrowRight size={16} />
+            <Link href="/pro" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold">
+              Оформить Про <ArrowRight size={16} />
             </Link>
           </div>
         ) : loading ? (
