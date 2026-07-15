@@ -250,13 +250,11 @@ export async function fetchChannels(): Promise<SportChannel[]> {
     if (!r) return [];
     const d = await r.json();
     if (!d || !d.ok || !Array.isArray(d.channels)) return [];
-    // Поток канала — HLS на mycdn.video, который браузер без VPN не тянет. Гоним
-    // через наш same-origin прокси /api/kp-cdn (мастер + сегменты, mycdn достижим
-    // с нашего VPS). Токен уже в URL — прокси его сохраняет.
-    return (d.channels as SportChannel[]).map((c) => ({
-      ...c,
-      stream: c.stream ? `/api/kp-cdn?u=${encodeURIComponent(c.stream)}` : c.stream,
-    }));
+    // Поток канала = HLS на mycdn.video (токен в URL, CORS открыт). Браузер юзера
+    // (резидентный IP) тянет mycdn НАПРЯМУЮ. Прокси /api/kp-cdn убрали: наши VPS
+    // (дата-центр) mycdn НЕ достают (connection blocked → 502), а residential —
+    // достаёт. Если у кого-то ISP режет mycdn — увы, проксировать нам нечем.
+    return d.channels as SportChannel[];
   } catch {
     return [];
   }
