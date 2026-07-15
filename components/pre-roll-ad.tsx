@@ -35,15 +35,15 @@ export function PreRollAd({ src, onDone }: { src: string; onDone: () => void }) 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    // Умеренная громкость + уважаем прошлый выбор «выключить звук».
+    // ВАЖНО: стартуем БЕЗ ЗВУКА. Muted-автоплей проходит во всех браузерах, а
+    // автоплей СО звуком на мобиле/строгих браузерах реджектится → оставался
+    // чёрный экран вместо рекламы. Звук юзер включает кнопкой (это же убирает
+    // жалобу «реклама орёт»). Громкость при включении — умеренная.
+    v.muted = true;
+    setMuted(true);
     v.volume = AD_VOLUME;
-    let wantMuted = false;
-    try { wantMuted = localStorage.getItem(MUTE_KEY) === "1"; } catch {}
-    if (wantMuted) { v.muted = true; setMuted(true); }
-    // Пытаемся играть; если автоплей со звуком заблокирован — глушим и играем.
-    v.play().catch(() => {
-      try { v.muted = true; setMuted(true); v.play().catch(() => {}); } catch {}
-    });
+    const p = v.play();
+    if (p && typeof p.catch === "function") p.catch(() => {});
     // Отсчёт по реальному времени (performance.now), чтобы сворачивание вкладки
     // или троттлинг таймера не «замораживали» пропуск, но и не давали ускорить.
     const t0 = performance.now();

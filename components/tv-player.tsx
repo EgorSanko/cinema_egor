@@ -23,8 +23,9 @@ import { PlayerSwitcher } from "./player-switcher";
 import { PreRollAd } from "./pre-roll-ad";
 import { useSubscription } from "@/hooks/use-subscription";
 
-// Пре-ролл реклама для free-тарифа (nginx-статика, вне Next).
-const AD_URL = "/ads/amnyam.mp4";
+// Пре-ролл реклама для free-тарифа (nginx-статика, вне Next). Путь НЕ /ads/ —
+// иначе блокировщики режут → чёрный экран. /media/ они не трогают.
+const AD_URL = "/media/intro.mp4";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
 import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";

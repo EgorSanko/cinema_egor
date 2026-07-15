@@ -28,8 +28,9 @@ import { PlayerSwitcher } from "./player-switcher";
 import { PreRollAd } from "./pre-roll-ad";
 import { useSubscription } from "@/hooks/use-subscription";
 
-// Пре-ролл реклама для free-тарифа (хостится nginx-статикой, вне Next).
-const AD_URL = "/ads/amnyam.mp4";
+// Пре-ролл реклама для free-тарифа (nginx-статика, вне Next). Путь НЕ /ads/ —
+// иначе блокировщики рекламы режут его → чёрный экран. /media/ они не трогают.
+const AD_URL = "/media/intro.mp4";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
