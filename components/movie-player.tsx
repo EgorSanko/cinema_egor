@@ -30,12 +30,6 @@ import { useSubscription } from "@/hooks/use-subscription";
 
 // Пре-ролл реклама для free-тарифа (хостится nginx-статикой, вне Next).
 const AD_URL = "/ads/amnyam.mp4";
-// Мид-ролл: iframe Alloha кроссдоменный — переключение серий ВНУТРИ него не
-// детектится (нет postMessage/onload/смены src, проверено). Поэтому крутим
-// рекламу по таймеру, как обычные ad-supported сервисы: раз в N минут просмотра
-// снова показываем пре-ролл. Так бинж без рекламы невозможен независимо от
-// того, как юзер листает серии внутри плеера. Тюнить тут.
-const AD_MIDROLL_MS = 20 * 60 * 1000; // 20 минут
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -66,14 +60,6 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   useEffect(() => { isProRef.current = isPro; }, [isPro]);
   // Реклама показана/пропущена в этой сессии страницы (гейтит контент-iframe).
   const [adDone, setAdDone] = useState(false);
-  // Мид-ролл по таймеру: пока free смотрит (adDone), раз в AD_MIDROLL_MS снова
-  // показываем рекламу (adDone→false = iframe размонтируется, поверх играет
-  // пре-ролл; после skip iframe вернётся — Alloha сам предложит «продолжить»).
-  useEffect(() => {
-    if (isPro || subLoading || !showPlayer || !adDone) return;
-    const t = setTimeout(() => setAdDone(false), AD_MIDROLL_MS);
-    return () => clearTimeout(t);
-  }, [isPro, subLoading, showPlayer, adDone]);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
