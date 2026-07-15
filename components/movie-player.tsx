@@ -30,7 +30,12 @@ import { useSubscription } from "@/hooks/use-subscription";
 
 // Пре-ролл реклама для free-тарифа (nginx-статика, вне Next). Путь НЕ /ads/ —
 // иначе блокировщики рекламы режут его → чёрный экран. /media/ они не трогают.
-const AD_URL = "/media/intro2.mp4";
+// Последовательность: сначала короткий непропускаемый ролик, потом длинный с
+// пропуском через 5с. Порядок/список менять тут.
+const AD_SEQUENCE = [
+  { src: "/media/intro2.mp4", skippable: true },
+  { src: "/media/oldspice.mp4", skippable: false },
+];
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -700,7 +705,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           {/* Пре-ролл реклама (free-тариф) — перед контентом (Alloha-нативно ИЛИ
               collaps-iframe). Ждём резолва подписки, чтобы не мигнуть Pro-юзеру. */}
           {showPlayer && (streamData?.collapsEmbed || streamData?.alloha) && !isPro && !subLoading && !adDone && (
-            <PreRollAd src={AD_URL} onDone={() => setAdDone(true)} />
+            <PreRollAd ads={AD_SEQUENCE} onDone={() => setAdDone(true)} />
           )}
           {streamData?.stream && showPlayer && (
             <SkipOverlays videoRef={videoRef} playerContainer={playerContainer} tmdbId={movie.id} type="movie" />

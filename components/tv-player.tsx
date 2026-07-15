@@ -24,8 +24,12 @@ import { PreRollAd } from "./pre-roll-ad";
 import { useSubscription } from "@/hooks/use-subscription";
 
 // Пре-ролл реклама для free-тарифа (nginx-статика, вне Next). Путь НЕ /ads/ —
-// иначе блокировщики режут → чёрный экран. /media/ они не трогают.
-const AD_URL = "/media/intro2.mp4";
+// иначе блокировщики режут → чёрный экран. Последовательность: сначала ролик с
+// пропуском через 5с, потом короткий непропускаемый.
+const AD_SEQUENCE = [
+  { src: "/media/intro2.mp4", skippable: true },
+  { src: "/media/oldspice.mp4", skippable: false },
+];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
 import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
@@ -1067,7 +1071,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
           )}
           {/* Пре-ролл реклама (free). Ждём резолва подписки, чтобы не мигнуть Pro. */}
           {showPlayer && (streamData?.collapsEmbed || streamData?.alloha) && !isPro && !subLoading && !adDone && (
-            <PreRollAd src={AD_URL} onDone={() => setAdDone(true)} />
+            <PreRollAd ads={AD_SEQUENCE} onDone={() => setAdDone(true)} />
           )}
           {streamData?.stream && showPlayer && (
             <SkipOverlays

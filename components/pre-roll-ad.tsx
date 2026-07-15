@@ -1,44 +1,51 @@
 "use client";
 
-// Пре-ролл реклама для FREE-тарифа. Играет ПЕРЕД бесплатным плеером (Alloha).
-// Пропустить можно только через SKIP_AFTER секунд — кнопка до этого не
-// показывается. Контент-iframe в DOM не появляется, пока не вызван onDone
-// (см. movie-player/tv-player: iframe рендерится только при isPro || adDone),
-// поэтому обойти рекламу «мимо» нельзя — досмотреть 5с придётся.
+// Пре-ролл реклама для FREE-тарифа. Играет ПОСЛЕДОВАТЕЛЬНОСТЬ роликов ПЕРЕД
+// бесплатным плеером (Alloha). Часть роликов непропускаемые (короткие бамперы),
+// часть — пропускаемые через SKIP_AFTER сек. Контент-плеер в DOM не появляется,
+// пока не вызван onDone (гейт в movie/tv-player), поэтому обойти рекламу нельзя.
 import { useEffect, useRef, useState } from "react";
 import { SkipForward, Volume2, VolumeX } from "lucide-react";
 
-const SKIP_AFTER = 5; // секунд до появления кнопки «Пропустить»
+const SKIP_AFTER = 5; // секунд до кнопки «Пропустить» (для пропускаемых роликов)
 const AD_VOLUME = 0.35; // умеренная громкость — реклама не «орёт»
-const MUTE_KEY = "kino_ad_muted"; // запоминаем выбор юзера
 
-export function PreRollAd({ src, onDone }: { src: string; onDone: () => void }) {
+export interface AdClip {
+  src: string;
+  /** true → можно пропустить через SKIP_AFTER сек; false → досмотреть до конца. */
+  skippable: boolean;
+}
+
+export function PreRollAd({ ads, onDone }: { ads: AdClip[]; onDone: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [idx, setIdx] = useState(0);
   const [left, setLeft] = useState(SKIP_AFTER);
   const [muted, setMuted] = useState(false);
   const doneRef = useRef(false);
+  const cur = ads[idx];
 
   const finish = () => {
     if (doneRef.current) return;
     doneRef.current = true;
     onDone();
   };
+  // Следующий ролик, либо конец всей рекламы.
+  const next = () => {
+    if (idx < ads.length - 1) setIdx((i) => i + 1);
+    else finish();
+  };
 
   const toggleMute = () => {
     const v = videoRef.current;
-    const next = !muted;
-    setMuted(next);
-    if (v) v.muted = next;
-    try { localStorage.setItem(MUTE_KEY, next ? "1" : "0"); } catch {}
+    const nx = !muted;
+    setMuted(nx);
+    if (v) v.muted = nx;
   };
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    // Изначально СО ЗВУКОМ (умеренная громкость). Если браузер блокнёт автоплей
-    // со звуком (мобилки/строгие) — глушим и играем без звука, чтобы не было
-    // чёрного экрана/паузы; звук юзер включит кнопкой. (Чёрный экран из прошлой
-    // жалобы был из-за адблока на /ads/ — путь уже перенесён на /media/.)
+    // Со звуком (умеренно); если браузер блокнёт автоплей со звуком — muted-фолбэк.
     v.volume = AD_VOLUME;
     v.muted = false;
     setMuted(false);
@@ -46,8 +53,9 @@ export function PreRollAd({ src, onDone }: { src: string; onDone: () => void }) 
     if (p && typeof p.catch === "function") {
       p.catch(() => { try { v.muted = true; setMuted(true); v.play().catch(() => {}); } catch {} });
     }
-    // Отсчёт по реальному времени (performance.now), чтобы сворачивание вкладки
-    // или троттлинг таймера не «замораживали» пропуск, но и не давали ускорить.
+    // Отсчёт «Пропустить» только для пропускаемого ролика (по performance.now).
+    if (!cur?.skippable) return;
+    setLeft(SKIP_AFTER);
     const t0 = performance.now();
     const iv = setInterval(() => {
       const rem = Math.max(0, Math.ceil(SKIP_AFTER - (performance.now() - t0) / 1000));
@@ -56,25 +64,28 @@ export function PreRollAd({ src, onDone }: { src: string; onDone: () => void }) 
     }, 250);
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [idx]);
+
+  if (!cur) return null;
 
   return (
     <div className="absolute inset-0 z-40 bg-black flex items-center justify-center">
       <video
+        key={idx}
         ref={videoRef}
-        src={src}
+        src={cur.src}
         className="w-full h-full object-contain"
         playsInline
         autoPlay
-        onEnded={finish}
+        onEnded={next}
       />
 
-      {/* Метка «Реклама» */}
+      {/* Метка «Реклама» + счётчик роликов, если их больше одного */}
       <div className="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-black/70 text-white/90 text-[11px] font-bold uppercase tracking-wider ring-1 ring-white/15">
-        Реклама
+        Реклама{ads.length > 1 ? ` ${idx + 1}/${ads.length}` : ""}
       </div>
 
-      {/* Звук вкл/выкл — всегда доступно (реклама не орёт, можно приглушить) */}
+      {/* Звук вкл/выкл — всегда доступно */}
       <button
         onClick={toggleMute}
         aria-label={muted ? "Включить звук" : "Выключить звук"}
@@ -84,19 +95,25 @@ export function PreRollAd({ src, onDone }: { src: string; onDone: () => void }) 
         {muted ? "Звук" : "Без звука"}
       </button>
 
-      {/* Пропустить — только после SKIP_AFTER секунд */}
+      {/* Пропуск — только для пропускаемого ролика и только после SKIP_AFTER сек */}
       <div className="absolute bottom-4 right-4">
-        {left > 0 ? (
-          <div className="inline-flex items-center h-10 px-4 rounded-lg bg-black/70 text-white/75 text-[13px] font-medium ring-1 ring-white/12 select-none">
-            {"Пропустить через " + left}
-          </div>
+        {cur.skippable ? (
+          left > 0 ? (
+            <div className="inline-flex items-center h-10 px-4 rounded-lg bg-black/70 text-white/75 text-[13px] font-medium ring-1 ring-white/12 select-none">
+              {"Пропустить через " + left}
+            </div>
+          ) : (
+            <button
+              onClick={next}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-white text-black text-[13px] font-bold hover:bg-white/90 active:scale-[0.98] transition-all shadow-lg"
+            >
+              {"Пропустить рекламу"} <SkipForward size={15} fill="currentColor" />
+            </button>
+          )
         ) : (
-          <button
-            onClick={finish}
-            className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-white text-black text-[13px] font-bold hover:bg-white/90 active:scale-[0.98] transition-all shadow-lg"
-          >
-            {"Пропустить рекламу"} <SkipForward size={15} fill="currentColor" />
-          </button>
+          <div className="inline-flex items-center h-9 px-3 rounded-lg bg-black/60 text-white/60 text-[12px] font-medium ring-1 ring-white/10 select-none">
+            {"Реклама без пропуска"}
+          </div>
         )}
       </div>
     </div>
