@@ -213,10 +213,10 @@ export function MovieDownloadButton(props: Props) {
   };
 
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-block w-full sm:w-auto">
       <button
         onClick={openMenu}
-        className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-foreground/[0.06] ring-1 ring-white/[0.08] text-foreground/85 hover:bg-foreground/[0.1] transition-colors text-[13px] font-medium"
+        className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 sm:h-10 px-4 rounded-xl sm:rounded-full bg-foreground/[0.06] ring-1 ring-white/[0.08] text-foreground/85 hover:bg-foreground/[0.1] transition-colors text-[13px] font-medium"
         title={downloadedAny ? `Уже скачано в ${downloadedAny.quality}` : "Скачать файл"}
       >
         {downloadedAny ? <Check size={15} className="text-primary" /> : <Download size={15} />}

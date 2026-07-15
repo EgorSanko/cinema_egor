@@ -771,11 +771,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   />
                 )}
 
-                <div className="flex items-center gap-2.5 flex-wrap pt-2">
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2.5 pt-2">
                   <button
                     onClick={() => { openPlayer(false); scrollToPlayer(); }}
                     disabled={isNotReleased}
-                    className="inline-flex items-center gap-2 h-11 px-6 rounded-xl bg-primary text-primary-foreground text-[14px] font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 hover:-translate-y-px active:translate-y-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                    className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 px-6 rounded-xl bg-primary text-primary-foreground text-[14px] font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 hover:-translate-y-px active:translate-y-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
                   >
                     {isNotReleased ? (
                       <><CalendarDays size={16} /> {"Скоро в кино"}</>
@@ -786,14 +786,16 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   {!isNotReleased && resumeTime && resumeTime > 10 && (
                     <button
                       onClick={() => { openPlayer(true); scrollToPlayer(); }}
-                      className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-white/[0.06] ring-1 ring-white/12 text-foreground/90 text-[13.5px] font-semibold hover:bg-white/[0.1] hover:ring-white/20 transition-colors"
+                      className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto whitespace-nowrap h-11 px-5 rounded-xl bg-white/[0.06] ring-1 ring-white/12 text-foreground/90 text-[13.5px] font-semibold hover:bg-white/[0.1] hover:ring-white/20 transition-colors"
                     >
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
                   )}
-                  {/* Скачивание и «Вместе» — только на платных источниках (не free). */}
+                  {/* Скачивание и «Вместе» — только на платных источниках (не free).
+                      На мобиле 2-в-ряд (grid-cols-2), на десктопе sm:contents =
+                      прозрачная обёртка, кнопки идут как раньше в общий ряд. */}
                   {!srcIsZenith && (
-                    <>
+                    <div className="grid grid-cols-2 gap-2.5 w-full sm:contents">
                       <MovieDownloadButton type="movie" movie={{
                         id: movie.id,
                         title: movie.title,
@@ -803,12 +805,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                       }} />
                       <Link
                         href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
-                        className="inline-flex items-center gap-2 h-11 px-4 rounded-xl bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[13px] font-semibold"
+                        className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 px-4 rounded-xl bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[13px] font-semibold"
                         title="Смотреть вместе"
                       >
-                        <Users size={15} /> {"Смотреть вместе"}
+                        <Users size={15} /> <span className="sm:hidden">{"Вместе"}</span><span className="hidden sm:inline">{"Смотреть вместе"}</span>
                       </Link>
-                    </>
+                    </div>
                   )}
                 </div>
 

@@ -599,6 +599,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }
   }, [streamData, show.id, selectedSeason, selectedEpisode, translatorLoading]);
 
+  // Плеер теперь под блоком инфо — по «Смотреть»/выбору серии прокручиваем к нему.
+  const scrollToPlayer = () => {
+    requestAnimationFrame(() => containerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  };
+
   // Open the player for the selected episode. resume=false → from 0
   // ("Смотреть"); resume=true → seek to the saved position ("Продолжить").
   const openPlayerEp = (resume: boolean) => {
@@ -930,10 +935,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
 
   return (
     <div className="relative w-full">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* flex-col + order-* : инфо (order-1) сверху, плеер (order-2) под ним,
+          переключатель (order-3), список эпизодов (order-4) — снизу. В
+          фуллскрине плеер fixed и выпадает из потока, order неважен. */}
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col">
         <div ref={containerRef} className={cssFullscreen
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
-          : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
+          : "order-2 mt-8 aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
           {/* Player mounts + pre-buffers as soon as the episode resolves
               (autoStart=false) HIDDEN behind the poster, so pressing play starts
@@ -1067,13 +1075,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
         </div>
 
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
-        {!cssFullscreen && <PlayerSwitcher />}
-        {srcIsFree && !cssFullscreen && <ProUpsell />}
+        {!cssFullscreen && <div className="order-3"><PlayerSwitcher /></div>}
+        {srcIsFree && !cssFullscreen && <div className="order-3"><ProUpsell /></div>}
 
         {!cssFullscreen && (
           <>
-            {/* === INFO CARD: poster + title + meta + buttons + current episode progress === */}
-            <section className="mt-7 grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] gap-5 sm:gap-7">
+            {/* === INFO CARD: poster + title + meta + buttons + current episode progress === (order-1: над плеером) */}
+            <section className="order-1 grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] gap-5 sm:gap-7">
               {/* Poster */}
               <div className="rounded-2xl overflow-hidden ring-1 ring-white/[0.08] shadow-2xl shadow-black/40 aspect-[2/3] bg-foreground/[0.04]">
                 {show.poster_path && (
@@ -1132,18 +1140,19 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   />
                 )}
 
-                {/* Action buttons */}
-                <div className="flex items-center gap-2 flex-wrap pt-1">
+                {/* Action buttons — на мобиле full-width стек (h-11 rounded-xl),
+                    на десктопе прежний ряд пилюль (sm:h-10 rounded-full). */}
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 pt-1">
                   <button
-                    onClick={() => openPlayerEp(false)}
-                    className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:bg-primary/90 transition-colors"
+                    onClick={() => { openPlayerEp(false); scrollToPlayer(); }}
+                    className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 sm:h-10 px-4 rounded-xl sm:rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:bg-primary/90 transition-colors"
                   >
                     <Play size={15} fill="currentColor" /> {"Смотреть"}
                   </button>
                   {resumeTime && resumeTime > 10 && (
                     <button
-                      onClick={() => openPlayerEp(true)}
-                      className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-white/[0.06] ring-1 ring-white/15 text-foreground/90 text-[13px] font-semibold hover:bg-white/[0.12] transition-colors"
+                      onClick={() => { openPlayerEp(true); scrollToPlayer(); }}
+                      className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto whitespace-nowrap h-11 sm:h-10 px-4 rounded-xl sm:rounded-full bg-white/[0.06] ring-1 ring-white/15 text-foreground/90 text-[13px] font-semibold hover:bg-white/[0.12] transition-colors"
                     >
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
@@ -1152,15 +1161,17 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     onClick={() => {
                       if (!requireAuth("Войдите, чтобы смотреть сериалы и сохранять прогресс")) return;
                       if (showPlayer) nextEpisode({ manual: true }); else { nextEpisode({ manual: true }); setShowPlayer(true); }
+                      scrollToPlayer();
                     }}
-                    className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-foreground/[0.06] ring-1 ring-white/[0.08] text-foreground/85 hover:bg-foreground/[0.1] transition-colors text-[13px] font-medium"
+                    className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 sm:h-10 px-4 rounded-xl sm:rounded-full bg-foreground/[0.06] ring-1 ring-white/[0.08] text-foreground/85 hover:bg-foreground/[0.1] transition-colors text-[13px] font-medium"
                   >
                     <SkipForward size={15} /> {"Следующая серия"}
                   </button>
 
-                  {/* Скачивание и «Вместе» — только на платных источниках (не free). */}
+                  {/* Скачивание и «Вместе» — только на платных источниках (не free).
+                      На мобиле 2-в-ряд, на десктопе sm:contents = как раньше. */}
                   {!srcIsZenith && (
-                    <>
+                    <div className="grid grid-cols-2 gap-2 w-full sm:contents">
                       <MovieDownloadButton
                         type="tv"
                         show={{
@@ -1176,12 +1187,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
                       />
                       <Link
                         href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "") + "&season=" + selectedSeason + "&episode=" + selectedEpisode}
-                        className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
+                        className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 sm:h-10 px-3.5 rounded-xl sm:rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
                         title="Смотреть вместе"
                       >
                         <Users size={14} /> {"Вместе"}
                       </Link>
-                    </>
+                    </div>
                   )}
                 </div>
 
@@ -1222,7 +1233,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
             {/* === EPISODES SECTION === (скрыт на zenithjs: там навигация только
                 внутри их плеера, наш список рассинхронизировался бы) */}
             {validSeasons.length > 0 && !srcIsZenith && (
-              <section className="mt-10">
+              <section className="order-4 mt-10">
                 <h2 className="text-2xl font-bold text-foreground tracking-tight mb-4">{"Эпизоды"}</h2>
 
                 {/* Озвучка selector — prominent, like HDRezka: pick a dub and the
@@ -1292,7 +1303,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                       return (
                         <button
                           key={ep.episode_number}
-                          onClick={() => released && selectEpisode(selectedSeason, ep.episode_number)}
+                          onClick={() => { if (released) { selectEpisode(selectedSeason, ep.episode_number); scrollToPlayer(); } }}
                           disabled={!released}
                           className="snap-start flex-shrink-0 w-[200px] text-left group disabled:cursor-not-allowed disabled:opacity-50"
                         >
