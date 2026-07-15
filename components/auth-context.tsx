@@ -112,6 +112,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setUser(u);
     localStorage.setItem("user", JSON.stringify(u));
+
+    if (reload) {
+      // ВАЖНО: НЕ делаем inline clearLocalProfile + await loadFromServer перед
+      // reload. Иначе ещё живой плеер (юзер переключал аккаунт ПРЯМО во время
+      // просмотра) во время await дописывал бы kino_pos_* уже под НОВЫЙ аккаунт —
+      // и в «Продолжить» у нового аккаунта появлялся чужой фильм. owner НЕ трогаем:
+      // после reload свежая страница (плеер уже размонтирован) через mount-эффект
+      // увидит owner≠email → сама очистит и загрузит только свой профиль.
+      window.location.reload();
+      return;
+    }
+    // reload=false (подтверждение регистрации): плеера в этот момент нет — можно
+    // синхронно.
     setSyncing(true);
     if (foreign) {
       clearLocalProfile();          // чужой профиль — прочь
@@ -120,7 +133,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await syncFromServer(u.email); // тот же юзер / аноним → миграция-мерж ок
     }
     setSyncing(false);
-    if (reload) window.location.reload();
   };
 
   const login = async (email: string, password: string): Promise<string | null> => {
