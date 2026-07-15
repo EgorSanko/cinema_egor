@@ -30,7 +30,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 
 // Пре-ролл реклама для free-тарифа (nginx-статика, вне Next). Путь НЕ /ads/ —
 // иначе блокировщики рекламы режут его → чёрный экран. /media/ они не трогают.
-const AD_URL = "/media/intro.mp4";
+const AD_URL = "/media/intro2.mp4";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
