@@ -78,15 +78,17 @@ export function SubscriptionEnforcer() {
       try {
         if (!localStorage.getItem(PRO_DEFAULT_FLAG)) {
           localStorage.setItem(PRO_DEFAULT_FLAG, "1");
-          if (cur === "zenithjs") setSource("hdrezka");
+          // Первый Про-заход: поднимаем с бесплатного (zenithjs/alloha) на HDRezka.
+          if (cur === "zenithjs" || cur === "alloha") setSource("hdrezka");
         }
       } catch {}
     } else {
       // Уже был Pro в этой сессии → транзиент, НЕ понижаем.
       if (wasPro.current) return;
-      // Настоящий free — принудительно zenithjs; сбрасываем pro-флаг.
+      // Настоящий free — источник ВСЕГДА alloha (бесплатный плеер с пре-роллом).
+      // Раньше был zenithjs (Collaps); теперь free = Alloha + реклама.
       try { localStorage.removeItem(PRO_DEFAULT_FLAG); } catch {}
-      if (cur !== "zenithjs") setSource("zenithjs");
+      if (cur !== "alloha") setSource("alloha");
     }
   }, [isPro, loading, user]);
 

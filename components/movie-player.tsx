@@ -25,6 +25,11 @@ import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
+import { PreRollAd } from "./pre-roll-ad";
+import { useSubscription } from "@/hooks/use-subscription";
+
+// Пре-ролл реклама для free-тарифа (хостится nginx-статикой, вне Next).
+const AD_URL = "/ads/amnyam.mp4";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -49,13 +54,31 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // Реальный бесплатный тариф = ТОЛЬКО zenithjs. Alloha — тоже iframe, но это
   // Про-источник (админ-тест), поэтому фри-апселл на ней показывать НЕЛЬЗЯ.
   const [srcIsFree, setSrcIsFree] = useState(true);
+  // Тариф: free (не Pro) → плеер Alloha + пре-ролл; Pro → без рекламы.
+  const { isPro, loading: subLoading } = useSubscription();
+  const isProRef = useRef(isPro);
+  useEffect(() => { isProRef.current = isPro; }, [isPro]);
+  // Реклама показана/пропущена в этой сессии страницы (гейтит контент-iframe).
+  const [adDone, setAdDone] = useState(false);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
-    window.addEventListener("kino-source-changed", check);
+    // Источник сменился (энфорсер free→alloha, либо переключатель) и просмотр
+    // ещё не начат → пере-резолвим iframe-embed под новый источник, чтобы free
+    // реально попал на Alloha, а не на устаревший zenithjs с первого рендера.
+    const onSourceChange = () => {
+      check();
+      if (!startedRef.current && isIframeSource()) {
+        setStreamData(null);
+        resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current })
+          .then((embed) => { if (embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed }); });
+      }
+    };
+    window.addEventListener("kino-source-changed", onSourceChange);
     window.addEventListener("storage", check);
-    return () => { window.removeEventListener("kino-source-changed", check); window.removeEventListener("storage", check); };
-  }, []);
+    return () => { window.removeEventListener("kino-source-changed", onSourceChange); window.removeEventListener("storage", check); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movie.id]);
   // Position to start the next source switch at — set on a quality switch so the
   // new stream begins where playback is, not at 0.
   const [seekOnSwitch, setSeekOnSwitch] = useState<number | undefined>(undefined);
@@ -141,7 +164,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     // No pre-buffering — the iframe loads on play. We just resolve the URL early.
     if (isIframeSource()) {
       (async () => {
-        const embed = await resolveIframeEmbed(movie.id, "movie");
+        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -300,7 +323,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     // НЕ гейтим по translatorId (иначе падало бы в HDRezka).
     if (isIframeSource() && _attempt === 0) {
       try {
-        const embed = await resolveIframeEmbed(movie.id, "movie");
+        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
       setError(getSource() === "alloha" ? "Этого тайтла нет в Alloha." : "Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
@@ -608,7 +631,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           )}
           {/* Collaps (=LordFilm) — сторонний iframe-плеер (свои озвучки/качество).
               Раскрывается на «Смотреть». Наш ArtPlayer тут не участвует. */}
-          {showPlayer && streamData?.collapsEmbed && (
+          {/* Контент-iframe: для Pro сразу, для free — ТОЛЬКО после пре-ролла
+              (adDone). До этого src в DOM нет → рекламу не обойти. */}
+          {showPlayer && streamData?.collapsEmbed && (isPro || adDone) && (
             <iframe
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}
@@ -616,6 +641,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
             />
+          )}
+          {/* Пре-ролл реклама (free-тариф). Ждём резолва подписки, чтобы не мигнуть
+              рекламой Pro-юзеру. */}
+          {showPlayer && streamData?.collapsEmbed && !isPro && !subLoading && !adDone && (
+            <PreRollAd src={AD_URL} onDone={() => setAdDone(true)} />
           )}
           {streamData?.stream && showPlayer && (
             <SkipOverlays videoRef={videoRef} playerContainer={playerContainer} tmdbId={movie.id} type="movie" />
@@ -696,7 +726,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         {!cssFullscreen && <div className="order-3"><PlayerSwitcher /></div>}
 
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
-        {srcIsFree && !cssFullscreen && <div className="order-3"><ProUpsell /></div>}
+        {!isPro && !subLoading && !cssFullscreen && <div className="order-3"><ProUpsell /></div>}
 
         {!cssFullscreen && (
           <>
@@ -786,15 +816,15 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   {!isNotReleased && resumeTime && resumeTime > 10 && (
                     <button
                       onClick={() => { openPlayer(true); scrollToPlayer(); }}
-                      className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto whitespace-nowrap h-11 px-5 rounded-xl bg-white/[0.06] ring-1 ring-white/12 text-foreground/90 text-[13.5px] font-semibold hover:bg-white/[0.1] hover:ring-white/20 transition-colors"
+                      className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 px-5 rounded-xl bg-white/[0.06] ring-1 ring-white/12 text-foreground/90 text-[13.5px] font-semibold hover:bg-white/[0.1] hover:ring-white/20 transition-colors"
                     >
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
                   )}
-                  {/* Скачивание и «Вместе» — только на платных источниках (не free).
-                      На мобиле 2-в-ряд (grid-cols-2), на десктопе sm:contents =
-                      прозрачная обёртка, кнопки идут как раньше в общий ряд. */}
-                  {!srcIsZenith && (
+                  {/* Скачивание и «Вместе» — Pro-фичи (на любом Pro-источнике,
+                      включая Alloha). Free их не видит. На мобиле 2-в-ряд
+                      (grid-cols-2), на десктопе sm:contents = прежний ряд. */}
+                  {isPro && (
                     <div className="grid grid-cols-2 gap-2.5 w-full sm:contents">
                       <MovieDownloadButton type="movie" movie={{
                         id: movie.id,

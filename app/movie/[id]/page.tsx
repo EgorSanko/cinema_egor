@@ -85,7 +85,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
       />
       <Navbar />
-      <main className="bg-background min-h-screen pb-20 sm:pb-0">
+      <main className="bg-background min-h-screen pb-20 sm:pb-0 overflow-x-clip">
         <MoviePlayer movie={movie} />
 
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pb-12">

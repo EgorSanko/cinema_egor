@@ -86,12 +86,20 @@ export async function resolveAllohaEmbed(
 }
 
 // Единый резолвер iframe-embed по текущему источнику (zenithjs или alloha).
+// opts.allohaFallbackToZenith: для FREE-тарифа (источник alloha) если у Alloha
+// нет тайтла — падаем на zenithjs (Collaps), чтобы покрытие free не упало. Для
+// Pro-плеера «Плеер 2» флаг НЕ ставим — там alloha строго без подмены.
 export async function resolveIframeEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
+  opts?: { allohaFallbackToZenith?: boolean },
 ): Promise<string | null> {
-  return getSource() === "alloha"
-    ? resolveAllohaEmbed(tmdbId, type, season, episode)
-    : resolveZenithEmbed(tmdbId, type, season, episode);
+  if (getSource() === "alloha") {
+    const a = await resolveAllohaEmbed(tmdbId, type, season, episode);
+    if (a) return a;
+    if (opts?.allohaFallbackToZenith) return resolveZenithEmbed(tmdbId, type, season, episode);
+    return null;
+  }
+  return resolveZenithEmbed(tmdbId, type, season, episode);
 }
 
 /** Zenithjs — сторонний iframe-плеер (тот же движок, что Lift) с собственными

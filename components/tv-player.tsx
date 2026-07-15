@@ -20,6 +20,11 @@ import { SkipOverlays } from "./skip-overlays";
 import { PlayerEpisodeBar } from "./player-episode-bar";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
+import { PreRollAd } from "./pre-roll-ad";
+import { useSubscription } from "@/hooks/use-subscription";
+
+// Пре-ролл реклама для free-тарифа (nginx-статика, вне Next).
+const AD_URL = "/ads/amnyam.mp4";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
 import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource } from "@/lib/kinopub";
@@ -73,13 +78,33 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [srcIsZenith, setSrcIsZenith] = useState(true); // free по умолчанию → без флеша списка серий
   // Реальный фри = только zenithjs; Alloha (тоже iframe) — Про-источник, апселл не показываем.
   const [srcIsFree, setSrcIsFree] = useState(true);
+  // Тариф: free → плеер Alloha + пре-ролл; Pro → без рекламы.
+  const { isPro, loading: subLoading } = useSubscription();
+  const isProRef = useRef(isPro);
+  useEffect(() => { isProRef.current = isPro; }, [isPro]);
+  // Реклама показана/пропущена в этой сессии страницы (гейтит контент-iframe).
+  const [adDone, setAdDone] = useState(false);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
-    window.addEventListener("kino-source-changed", check);
+    // Источник сменился (энфорсер free→alloha / переключатель), просмотр не начат
+    // → пере-резолвим embed под новый источник (free реально попадает на Alloha).
+    const onSourceChange = () => {
+      check();
+      if (!startedRef.current && isIframeSource()) {
+        setStreamData(null);
+        resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: !isProRef.current })
+          .then((embed) => { if (embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed }); });
+      }
+    };
+    window.addEventListener("kino-source-changed", onSourceChange);
     window.addEventListener("storage", check);
-    return () => { window.removeEventListener("kino-source-changed", check); window.removeEventListener("storage", check); };
-  }, []);
+    return () => { window.removeEventListener("kino-source-changed", onSourceChange); window.removeEventListener("storage", check); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show.id, selectedSeason, selectedEpisode]);
+  // Новая серия → снова пре-ролл для free (иначе переключение серий было бы
+  // обходом рекламы). Для Pro adDone ни на что не влияет — рекламу не показываем.
+  useEffect(() => { setAdDone(false); }, [selectedSeason, selectedEpisode]);
   const [cssFullscreen, setCssFullscreen] = useState(false);
   // ArtPlayer container — once captured, SkipOverlays portals into it so
   // they stay visible in every fullscreen mode (web/native/mobile).
@@ -287,7 +312,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // player handles seasons/episodes/dubs itself).
     if (isIframeSource()) {
       (async () => {
-        const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode);
+        const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: !isProRef.current });
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -390,7 +415,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // наш ArtPlayer. При source=zenithjs всегда остаёмся на iframe.
     if (isIframeSource() && _attempt === 0) {
       try {
-        const embed = await resolveIframeEmbed(show.id, "tv", season, episode);
+        const embed = await resolveIframeEmbed(show.id, "tv", season, episode, { allohaFallbackToZenith: !isProRef.current });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
       setError(getSource() === "alloha" ? "Этой серии нет в Alloha." : "Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");
@@ -977,7 +1002,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
           )}
           {/* Collaps (=LordFilm) — сторонний iframe со своими сезонами/сериями/
               озвучками. Наши ArtPlayer/панель серий/скипы тут не участвуют. */}
-          {showPlayer && streamData?.collapsEmbed && (
+          {/* Контент-iframe: Pro сразу, free — только после пре-ролла (adDone). */}
+          {showPlayer && streamData?.collapsEmbed && (isPro || adDone) && (
             <iframe
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}
@@ -985,6 +1011,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
             />
+          )}
+          {/* Пре-ролл реклама (free). Ждём резолва подписки, чтобы не мигнуть Pro. */}
+          {showPlayer && streamData?.collapsEmbed && !isPro && !subLoading && !adDone && (
+            <PreRollAd src={AD_URL} onDone={() => setAdDone(true)} />
           )}
           {streamData?.stream && showPlayer && (
             <SkipOverlays
@@ -1076,7 +1106,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
 
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
         {!cssFullscreen && <div className="order-3"><PlayerSwitcher /></div>}
-        {srcIsFree && !cssFullscreen && <div className="order-3"><ProUpsell /></div>}
+        {!isPro && !subLoading && !cssFullscreen && <div className="order-3"><ProUpsell /></div>}
 
         {!cssFullscreen && (
           <>
@@ -1162,7 +1192,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                   {resumeTime && resumeTime > 10 && (
                     <button
                       onClick={() => { openPlayerEp(true); scrollToPlayer(); }}
-                      className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto whitespace-nowrap h-11 sm:h-10 px-4 rounded-xl sm:rounded-full bg-white/[0.06] ring-1 ring-white/15 text-foreground/90 text-[13px] font-semibold hover:bg-white/[0.12] transition-colors"
+                      className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 sm:h-10 px-4 rounded-xl sm:rounded-full bg-white/[0.06] ring-1 ring-white/15 text-foreground/90 text-[13px] font-semibold hover:bg-white/[0.12] transition-colors"
                     >
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
@@ -1178,9 +1208,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     <SkipForward size={15} /> {"Следующая серия"}
                   </button>
 
-                  {/* Скачивание и «Вместе» — только на платных источниках (не free).
-                      На мобиле 2-в-ряд, на десктопе sm:contents = как раньше. */}
-                  {!srcIsZenith && (
+                  {/* Скачивание и «Вместе» — Pro-фичи (любой Pro-источник, вкл.
+                      Alloha). На мобиле 2-в-ряд, на десктопе sm:contents. */}
+                  {isPro && (
                     <div className="grid grid-cols-2 gap-2 w-full sm:contents">
                       <MovieDownloadButton
                         type="tv"
