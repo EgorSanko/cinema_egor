@@ -9,7 +9,7 @@ import {
 import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { StatusButtons } from "./status-buttons";
@@ -27,7 +27,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 const AD_URL = "/ads/amnyam.mp4";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -84,6 +84,42 @@ export function TVPlayer({ show }: TVPlayerProps) {
   useEffect(() => { isProRef.current = isPro; }, [isPro]);
   // Реклама показана/пропущена в этой сессии страницы (гейтит контент-iframe).
   const [adDone, setAdDone] = useState(false);
+  // Alloha нативно: резолвнутые озвучки+качества (VK m3u8 через наш прокси).
+  const [allohaHls, setAllohaHls] = useState<AllohaHls | null>(null);
+  const [allohaTr, setAllohaTr] = useState(0);
+  const [allohaQ, setAllohaQ] = useState("1080");
+  const allohaTranslators = useMemo(
+    () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
+    [allohaHls],
+  );
+  const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
+    const a = await resolveAllohaHls(show.id, "tv", season, episode);
+    if (!a) return false;
+    const pick = pickAllohaStream(a, 0, "1080");
+    if (!pick) return false;
+    setAllohaHls(a); setAllohaTr(0); setAllohaQ(pick.quality);
+    setStreamData({ stream: pick.url, alloha: true });
+    return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show.id]);
+  const changeAllohaTranslator = (i: number) => {
+    if (!allohaHls || i === allohaTr) return;
+    const pick = pickAllohaStream(allohaHls, i, allohaQ);
+    if (!pick) return;
+    const pos = videoRef.current?.currentTime || 0;
+    setSeekOnSwitch(pos > 1 ? pos : undefined);
+    setAllohaTr(i); setAllohaQ(pick.quality);
+    setStreamData((prev: any) => (prev ? { ...prev, stream: pick.url } : prev));
+  };
+  const changeAllohaQuality = (q: string) => {
+    if (!allohaHls) return;
+    const pick = pickAllohaStream(allohaHls, allohaTr, q);
+    if (!pick) return;
+    const pos = videoRef.current?.currentTime || 0;
+    setSeekOnSwitch(pos > 1 ? pos : undefined);
+    setAllohaQ(pick.quality);
+    setStreamData((prev: any) => (prev ? { ...prev, stream: pick.url } : prev));
+  };
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
@@ -91,7 +127,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // → пере-резолвим embed под новый источник (free реально попадает на Alloha).
     const onSourceChange = () => {
       check();
-      if (!startedRef.current && isIframeSource()) {
+      if (startedRef.current) return;
+      if (getSource() === "alloha") {
+        setStreamData(null);
+        resolveAllohaNative(selectedSeason, selectedEpisode);
+      } else if (isIframeSource()) {
         setStreamData(null);
         resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: !isProRef.current })
           .then((embed) => { if (embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed }); });
@@ -310,6 +350,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
     let alive = true;
     // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
     // player handles seasons/episodes/dubs itself).
+    // Alloha — нативный резолв этой серии (VK m3u8 в наш ArtPlayer).
+    if (getSource() === "alloha") {
+      (async () => { if (alive) await resolveAllohaNative(selectedSeason, selectedEpisode); })();
+      return () => { alive = false; };
+    }
     if (isIframeSource()) {
       (async () => {
         const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: !isProRef.current });
@@ -413,12 +458,19 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // translatorId: у zenithjs озвучки внутри iframe, а selectEpisode передаёт
     // selectedTranslator — из-за гейта смена серии падала в HDRezka и возвращала
     // наш ArtPlayer. При source=zenithjs всегда остаёмся на iframe.
+    // Alloha — нативный резолв этой серии в наш ArtPlayer.
+    if (getSource() === "alloha" && _attempt === 0) {
+      const ok = await resolveAllohaNative(season, episode);
+      if (!ok) setError("Этой серии нет в Alloha.");
+      setLoading(false);
+      return;
+    }
     if (isIframeSource() && _attempt === 0) {
       try {
         const embed = await resolveIframeEmbed(show.id, "tv", season, episode, { allohaFallbackToZenith: !isProRef.current });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
-      setError(getSource() === "alloha" ? "Этой серии нет в Alloha." : "Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");
+      setError("Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");
       setLoading(false);
       return;
     }
@@ -973,18 +1025,18 @@ export function TVPlayer({ show }: TVPlayerProps) {
               instantly. interactive={showPlayer} keeps the pre-warmed player
               non-interactive until the auth gate passes, so unregistered users
               can't tap the hidden player and bypass the gate. */}
-          {streamData?.stream && (
+          {streamData?.stream && (!streamData.alloha || isPro || adDone) && (
             <ArtPlayerView
               interactive={showPlayer}
               streamUrl={streamData.stream}
               poster={backdropUrl || undefined}
               kinopubMode={!!streamData.kinopub}
-              qualities={streamData.kinopub ? undefined : streamData.streams}
-              selectedQuality={selectedQuality}
-              onQualityChange={changeQuality}
-              translators={streamData.kinopub ? [] : playerDubs}
-              selectedTranslator={selectedTranslator}
-              onTranslatorChange={changeTranslator}
+              qualities={streamData.alloha ? (allohaHls?.translations[allohaTr]?.quality) : (streamData.kinopub ? undefined : streamData.streams)}
+              selectedQuality={streamData.alloha ? allohaQ : selectedQuality}
+              onQualityChange={streamData.alloha ? changeAllohaQuality : changeQuality}
+              translators={streamData.alloha ? allohaTranslators : (streamData.kinopub ? [] : playerDubs)}
+              selectedTranslator={streamData.alloha ? allohaTr : selectedTranslator}
+              onTranslatorChange={streamData.alloha ? changeAllohaTranslator : changeTranslator}
               subtitles={subtitles}
               selectedSubtitleId={selectedSubtitleId}
               onSubtitleChange={setSelectedSubtitleId}
@@ -1013,7 +1065,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
             />
           )}
           {/* Пре-ролл реклама (free). Ждём резолва подписки, чтобы не мигнуть Pro. */}
-          {showPlayer && streamData?.collapsEmbed && !isPro && !subLoading && !adDone && (
+          {showPlayer && (streamData?.collapsEmbed || streamData?.alloha) && !isPro && !subLoading && !adDone && (
             <PreRollAd src={AD_URL} onDone={() => setAdDone(true)} />
           )}
           {streamData?.stream && showPlayer && (

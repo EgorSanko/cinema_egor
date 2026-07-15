@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
 import { StatusButtons } from "./status-buttons";
@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { PreRollAd } from "./pre-roll-ad";
@@ -58,8 +58,26 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   const { isPro, loading: subLoading } = useSubscription();
   const isProRef = useRef(isPro);
   useEffect(() => { isProRef.current = isPro; }, [isPro]);
-  // Реклама показана/пропущена в этой сессии страницы (гейтит контент-iframe).
+  // Реклама показана/пропущена в этой сессии страницы (гейтит контент).
   const [adDone, setAdDone] = useState(false);
+  // Alloha нативно: резолвнутые озвучки+качества (VK m3u8 через наш прокси).
+  const [allohaHls, setAllohaHls] = useState<AllohaHls | null>(null);
+  const [allohaTr, setAllohaTr] = useState(0);
+  const [allohaQ, setAllohaQ] = useState("1080");
+  const allohaTranslators = useMemo(
+    () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
+    [allohaHls],
+  );
+  const resolveAllohaNative = useCallback(async (): Promise<boolean> => {
+    const a = await resolveAllohaHls(movie.id, "movie");
+    if (!a) return false;
+    const pick = pickAllohaStream(a, 0, "1080");
+    if (!pick) return false;
+    setAllohaHls(a); setAllohaTr(0); setAllohaQ(pick.quality);
+    setStreamData({ stream: pick.url, alloha: true });
+    return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movie.id]);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
@@ -68,7 +86,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     // реально попал на Alloha, а не на устаревший zenithjs с первого рендера.
     const onSourceChange = () => {
       check();
-      if (!startedRef.current && isIframeSource()) {
+      if (startedRef.current) return;
+      if (getSource() === "alloha") {
+        setStreamData(null);
+        resolveAllohaNative();
+      } else if (isIframeSource()) {
         setStreamData(null);
         resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current })
           .then((embed) => { if (embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed }); });
@@ -162,6 +184,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     let alive = true;
     // Collaps (=LordFilm) source: resolve the iframe embed URL (their own player).
     // No pre-buffering — the iframe loads on play. We just resolve the URL early.
+    // Alloha — нативный резолв (VK m3u8 в наш ArtPlayer).
+    if (getSource() === "alloha") {
+      (async () => { if (alive) await resolveAllohaNative(); })();
+      return () => { alive = false; };
+    }
     if (isIframeSource()) {
       (async () => {
         const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
@@ -321,12 +348,19 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
     // Zenithjs source — resolve the iframe embed (их плеер сам держит озвучки).
     // НЕ гейтим по translatorId (иначе падало бы в HDRezka).
+    // Alloha — нативный резолв в наш ArtPlayer.
+    if (getSource() === "alloha" && _attempt === 0) {
+      const ok = await resolveAllohaNative();
+      if (!ok) setError("Этого тайтла нет в Alloha.");
+      setLoading(false);
+      return;
+    }
     if (isIframeSource() && _attempt === 0) {
       try {
         const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
-      setError(getSource() === "alloha" ? "Этого тайтла нет в Alloha." : "Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
+      setError("Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
       setLoading(false);
       return;
     }
@@ -484,6 +518,26 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     await fetchStream(trId);
   };
 
+  // Alloha: смена озвучки/качества = свап уже резолвнутого VK m3u8 (без ре-резолва).
+  const changeAllohaTranslator = (i: number) => {
+    if (!allohaHls || i === allohaTr) return;
+    const pick = pickAllohaStream(allohaHls, i, allohaQ);
+    if (!pick) return;
+    const pos = videoRef.current?.currentTime || 0;
+    setSeekOnSwitch(pos > 1 ? pos : undefined);
+    setAllohaTr(i); setAllohaQ(pick.quality);
+    setStreamData((prev: any) => (prev ? { ...prev, stream: pick.url } : prev));
+  };
+  const changeAllohaQuality = (q: string) => {
+    if (!allohaHls) return;
+    const pick = pickAllohaStream(allohaHls, allohaTr, q);
+    if (!pick) return;
+    const pos = videoRef.current?.currentTime || 0;
+    setSeekOnSwitch(pos > 1 ? pos : undefined);
+    setAllohaQ(pick.quality);
+    setStreamData((prev: any) => (prev ? { ...prev, stream: pick.url } : prev));
+  };
+
   // HLS loading + recovery + visibilitychange resume live inside ArtPlayerView now.
   useEffect(() => {
     if (!streamData?.stream) return;
@@ -605,17 +659,17 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               non-interactive (pointer-events:none) until the auth gate passes in
               openPlayer — otherwise unregistered users could tap the hidden
               player and bypass the gate. */}
-          {streamData?.stream && (
+          {streamData?.stream && (!streamData.alloha || isPro || adDone) && (
             <ArtPlayerView
               streamUrl={streamData.stream}
               poster={backdropUrl || undefined}
               kinopubMode={!!streamData.kinopub}
-              qualities={streamData.kinopub ? undefined : streamData.streams}
-              selectedQuality={selectedQuality}
-              onQualityChange={changeQuality}
-              translators={streamData.kinopub ? [] : translators}
-              selectedTranslator={selectedTranslator}
-              onTranslatorChange={changeTranslator}
+              qualities={streamData.alloha ? (allohaHls?.translations[allohaTr]?.quality) : (streamData.kinopub ? undefined : streamData.streams)}
+              selectedQuality={streamData.alloha ? allohaQ : selectedQuality}
+              onQualityChange={streamData.alloha ? changeAllohaQuality : changeQuality}
+              translators={streamData.alloha ? allohaTranslators : (streamData.kinopub ? [] : translators)}
+              selectedTranslator={streamData.alloha ? allohaTr : selectedTranslator}
+              onTranslatorChange={streamData.alloha ? changeAllohaTranslator : changeTranslator}
               subtitles={subtitles}
               selectedSubtitleId={selectedSubtitleId}
               onSubtitleChange={setSelectedSubtitleId}
@@ -642,9 +696,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
               allowFullScreen
             />
           )}
-          {/* Пре-ролл реклама (free-тариф). Ждём резолва подписки, чтобы не мигнуть
-              рекламой Pro-юзеру. */}
-          {showPlayer && streamData?.collapsEmbed && !isPro && !subLoading && !adDone && (
+          {/* Пре-ролл реклама (free-тариф) — перед контентом (Alloha-нативно ИЛИ
+              collaps-iframe). Ждём резолва подписки, чтобы не мигнуть Pro-юзеру. */}
+          {showPlayer && (streamData?.collapsEmbed || streamData?.alloha) && !isPro && !subLoading && !adDone && (
             <PreRollAd src={AD_URL} onDone={() => setAdDone(true)} />
           )}
           {streamData?.stream && showPlayer && (

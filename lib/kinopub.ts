@@ -55,11 +55,45 @@ export function getSource(): KinoSource {
   }
 }
 
-// Оба «iframe-источника» (их плеер, не наш ArtPlayer): zenithjs (Collaps) и
-// alloha. Плеер для них рендерит iframe из streamData.collapsEmbed.
+// iframe-источник (их плеер, не наш ArtPlayer) = ТОЛЬКО zenithjs (Collaps).
+// Alloha теперь играется НАТИВНО в нашем ArtPlayer (VK m3u8 через бэк-резолвер
+// /api/alloha-hls + прокси), поэтому больше НЕ iframe.
 export function isIframeSource(s?: KinoSource): boolean {
   const x = s || getSource();
-  return x === "zenithjs" || x === "alloha";
+  return x === "zenithjs";
+}
+
+export interface AllohaTranslation { name: string; quality: Record<string, string>; }
+export interface AllohaHls { skipTime?: string; translations: AllohaTranslation[]; }
+
+/** Нативный резолв Alloha → VK m3u8 (все озвучки/качества) через наш бэкенд.
+ *  Возвращает список озвучек, каждая со своим набором качеств (проксированные
+ *  m3u8-URL). null при промахе (тайтла нет в Alloha). */
+export async function resolveAllohaHls(
+  tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
+): Promise<AllohaHls | null> {
+  try {
+    const imdb = await fetchImdb(tmdbId, type);
+    if (!imdb) return null;
+    const p = new URLSearchParams({ imdb, type });
+    if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+    const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/alloha-hls?${p.toString()}`).then((r) => r.json());
+    if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
+    return d as AllohaHls;
+  } catch {
+    return null;
+  }
+}
+
+/** Порядок качеств от высшего к низшему для выбора дефолта/сортировки. */
+export const ALLOHA_Q_ORDER = ["2160", "1440", "1080", "720", "480", "360"];
+/** Выбирает URL для озвучки+качества; если качества нет — берёт ближайшее высшее. */
+export function pickAllohaStream(a: AllohaHls, trIdx: number, quality: string): { url: string; quality: string } | null {
+  const q = a.translations[trIdx]?.quality || {};
+  if (q[quality]) return { url: q[quality], quality };
+  for (const k of ALLOHA_Q_ORDER) if (q[k]) return { url: q[k], quality: k };
+  const keys = Object.keys(q);
+  return keys.length ? { url: q[keys[0]], quality: keys[0] } : null;
 }
 
 // Alloha (VK Video cloud, 4K, все озвучки) — тест-источник. Резолвим imdb из
