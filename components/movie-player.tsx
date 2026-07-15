@@ -91,6 +91,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // True once the user actually pressed play — gates the (async) pre-warm probe
   // from clobbering the stream the click already started resolving.
   const startedRef = useRef(false);
+  // Плеер теперь под блоком инфо — по «Смотреть» прокручиваем к нему.
+  const playerRef = useRef<HTMLDivElement>(null);
+  const scrollToPlayer = () => {
+    requestAnimationFrame(() => playerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  };
 
   const fetchSubtitles = useCallback(async () => {
     if (subsFetchedRef.current) return;
@@ -563,10 +568,13 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
   return (
     <div className="relative w-full">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className={cssFullscreen
+      {/* flex-col + order-* : блок инфо (order-1) идёт ПЕРВЫМ, плеер (order-2)
+          и переключатель/апселл (order-3) — под ним. В фуллскрине плеер
+          становится fixed и выпадает из потока, order там неважен. */}
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col">
+        <div ref={playerRef} className={cssFullscreen
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
-          : "aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
+          : "order-2 mt-8 aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
           {/* Player mounts + pre-buffers as soon as the stream resolves
               (autoStart=false) HIDDEN behind the poster, so "Смотреть" plays
@@ -685,15 +693,15 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         </div>
 
         {/* Переключатель плеера (Про) — под плеером, не поверх видео. */}
-        {!cssFullscreen && <PlayerSwitcher />}
+        {!cssFullscreen && <div className="order-3"><PlayerSwitcher /></div>}
 
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
-        {srcIsFree && !cssFullscreen && <ProUpsell />}
+        {srcIsFree && !cssFullscreen && <div className="order-3"><ProUpsell /></div>}
 
         {!cssFullscreen && (
           <>
-            {/* === INFO CARD === */}
-            <div className="mt-8 relative rounded-3xl overflow-hidden ring-1 ring-white/[0.07]">
+            {/* === INFO CARD === (order-1: над плеером) */}
+            <div className="order-1 relative rounded-3xl overflow-hidden ring-1 ring-white/[0.07]">
               {/* Кино-бэкдроп за блоком инфо (для красоты). Затемнён градиентом,
                   чтобы текст оставался контрастным. Игнорируем клики. */}
               {backdropUrl && movie.backdrop_path && (
@@ -763,7 +771,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
                 <div className="flex items-center gap-2.5 flex-wrap pt-2">
                   <button
-                    onClick={() => openPlayer(false)}
+                    onClick={() => { openPlayer(false); scrollToPlayer(); }}
                     disabled={isNotReleased}
                     className="inline-flex items-center gap-2 h-11 px-6 rounded-xl bg-primary text-primary-foreground text-[14px] font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 hover:-translate-y-px active:translate-y-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
                   >
@@ -775,7 +783,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   </button>
                   {!isNotReleased && resumeTime && resumeTime > 10 && (
                     <button
-                      onClick={() => openPlayer(true)}
+                      onClick={() => { openPlayer(true); scrollToPlayer(); }}
                       className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-white/[0.06] ring-1 ring-white/12 text-foreground/90 text-[13.5px] font-semibold hover:bg-white/[0.1] hover:ring-white/20 transition-colors"
                     >
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
