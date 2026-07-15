@@ -27,7 +27,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 const AD_URL = "/ads/amnyam.mp4";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -1260,9 +1260,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     <SkipForward size={15} /> {"Следующая серия"}
                   </button>
 
-                  {/* Скачивание и «Вместе» — Pro-фичи (любой Pro-источник, вкл.
-                      Alloha). На мобиле 2-в-ряд, на десктопе sm:contents. */}
-                  {isPro && (
+                  {/* Скачивание и «Вместе» — обе через HDRezka. Пока HDRezka
+                      лежит (HDREZKA_UP=false) — прячем. */}
+                  {isPro && HDREZKA_UP && (
                     <div className="grid grid-cols-2 gap-2 w-full sm:contents">
                       <MovieDownloadButton
                         type="tv"

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useSubscription, invalidateSubscription } from "@/hooks/use-subscription";
 import { useAuth } from "@/components/auth-context";
-import { getSource, setSource } from "@/lib/kinopub";
+import { getSource, setSource, HDREZKA_UP } from "@/lib/kinopub";
 
 // Приводит источник в соответствие с тарифом (монтируется глобально в layout):
 //  • Free (нет подписки) → источник ВСЕГДА zenithjs (даже если в localStorage
@@ -73,15 +73,19 @@ export function SubscriptionEnforcer() {
     const cur = getSource();
     if (isPro) {
       wasPro.current = true;
-      // Разовый дефолт ТОЛЬКО при первом Про-заходе И только с бесплатного на
-      // hdrezka. Явный выбор Про-плеера (hdrezka/kinopub/alloha) НЕ перебиваем.
-      try {
-        if (!localStorage.getItem(PRO_DEFAULT_FLAG)) {
-          localStorage.setItem(PRO_DEFAULT_FLAG, "1");
-          // Первый Про-заход: поднимаем с бесплатного (zenithjs/alloha) на HDRezka.
-          if (cur === "zenithjs" || cur === "alloha") setSource("hdrezka");
-        }
-      } catch {}
+      // HDRezka лежит → уводим Pro с недоступного hdrezka на Alloha (нативный, 4K).
+      if (!HDREZKA_UP && cur === "hdrezka") {
+        setSource("alloha");
+      } else {
+        // Разовый дефолт при первом Про-заходе с бесплатного. Пока HDRezka лежит —
+        // дефолт Alloha (иначе был бы hdrezka). Явный выбор Pro НЕ перебиваем.
+        try {
+          if (!localStorage.getItem(PRO_DEFAULT_FLAG)) {
+            localStorage.setItem(PRO_DEFAULT_FLAG, "1");
+            if (cur === "zenithjs") setSource(HDREZKA_UP ? "hdrezka" : "alloha");
+          }
+        } catch {}
+      }
     } else {
       // Уже был Pro в этой сессии → транзиент, НЕ понижаем.
       if (wasPro.current) return;

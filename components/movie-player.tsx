@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { PreRollAd } from "./pre-roll-ad";
@@ -875,10 +875,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
                   )}
-                  {/* Скачивание и «Вместе» — Pro-фичи (на любом Pro-источнике,
-                      включая Alloha). Free их не видит. На мобиле 2-в-ряд
-                      (grid-cols-2), на десктопе sm:contents = прежний ряд. */}
-                  {isPro && (
+                  {/* Скачивание и «Вместе» — Pro-фичи, но обе резолвятся через
+                      HDRezka. Пока HDRezka лежит (HDREZKA_UP=false) — прячем. */}
+                  {isPro && HDREZKA_UP && (
                     <div className="grid grid-cols-2 gap-2.5 w-full sm:contents">
                       <MovieDownloadButton type="movie" movie={{
                         id: movie.id,

@@ -39,6 +39,11 @@ export function prewarmKinopub() {
   try { fetch(`${KINOPUB_WORKER}/health`, { cache: "no-store" }).catch(() => {}); } catch {}
 }
 
+// HDRezka временно недоступна (IP бэкенда забанен, ошибка 101). Пока false —
+// прячем всё, что на ней завязано: Плеер 1 (hdrezka), Скачать, Смотреть вместе;
+// Pro-дефолт и юзеров с hdrezka уводим на Alloha. Вернуть = поставить true.
+export const HDREZKA_UP = false;
+
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha";

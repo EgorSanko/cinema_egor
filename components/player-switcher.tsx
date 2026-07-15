@@ -7,14 +7,21 @@
 // источнике. Free-юзерам не показывается (у них только бесплатный zenithjs).
 
 import { useEffect, useState } from "react";
-import { getSource, setSource, type KinoSource } from "@/lib/kinopub";
+import { getSource, setSource, HDREZKA_UP, type KinoSource } from "@/lib/kinopub";
 import { useSubscription } from "@/hooks/use-subscription";
 
-const PLAYERS: { src: KinoSource; label: string }[] = [
-  { src: "hdrezka", label: "Плеер 1" },
-  { src: "alloha", label: "Плеер 2" },
-  { src: "kinopub", label: "Плеер 3" },
-];
+// HDRezka лежит → прячем Плеер 1 (hdrezka) и перенумеровываем: Alloha=Плеер 1,
+// kino.pub=Плеер 2. Вернётся HDRezka (HDREZKA_UP=true) — снова 1/2/3.
+const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
+  ? [
+      { src: "hdrezka", label: "Плеер 1" },
+      { src: "alloha", label: "Плеер 2" },
+      { src: "kinopub", label: "Плеер 3" },
+    ]
+  : [
+      { src: "alloha", label: "Плеер 1" },
+      { src: "kinopub", label: "Плеер 2" },
+    ];
 
 export function PlayerSwitcher() {
   const { isPro, loading } = useSubscription();
