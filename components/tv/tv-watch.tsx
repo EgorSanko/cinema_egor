@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Hls from "hls.js";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
+import { resolveAllohaHls, ALLOHA_Q_ORDER, HDREZKA_UP } from "@/lib/kinopub";
 import {
   savePosition,
   getPosition,
@@ -55,6 +56,9 @@ type ResolveData = {
   translators?: Translator[];
   active_translator_id?: number;
   results?: unknown[];
+  // Alloha-нативный резолв: streams уже проксированы (alloha.m3u8), их НЕ нужно
+  // оборачивать повторно через hlsProxyUrl.
+  alloha?: boolean;
 };
 
 type Episode = { episode_number: number; name: string; still_path: string | null; air_date: string };
@@ -221,6 +225,27 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // The actual resolve work — fetch chain that yields a playable ResolveData
       // or null. Raced against a timeout below so it can never hang forever.
       const doResolve = async (): Promise<ResolveData | null> => {
+        // Alloha (нативно) — ОСНОВНОЙ источник для ТВ: HDRezka забанена. Резолвим
+        // VK m3u8 (все озвучки/качества, уже проксированы) и мапим в ResolveData.
+        // trId = ИНДЕКС озвучки в списке Alloha.
+        try {
+          const a = await resolveAllohaHls(media.id, media.type, s, e);
+          if (a && a.translations.length) {
+            const trIdx = typeof trId === "number" && trId >= 0 && trId < a.translations.length ? trId : 0;
+            const q = a.translations[trIdx].quality || {};
+            const sq = ALLOHA_Q_ORDER.find((k) => q[k]) || Object.keys(q)[0];
+            return {
+              alloha: true,
+              stream: q[sq],
+              streams: q,
+              quality: sq,
+              translators: a.translations.map((t, i) => ({ id: i, name: t.name })),
+              active_translator_id: trIdx,
+            };
+          }
+        } catch {}
+        // Дальше — HDRezka (только если поднимется; сейчас HDREZKA_UP=false).
+        if (!HDREZKA_UP) return null;
         // HDRezka-native title → resolve DIRECTLY by URL (the same endpoint the
         // website's HdDetail uses), bypassing the title-search chain below.
         if (media.hdUrl) {
@@ -287,7 +312,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // wrap the chosen tier through the LeadSeek HLS proxy — same as the site.
   const applyStream = (d: ResolveData, requestedTr: number | null) => {
     const sq = pickDefaultQuality(d.streams || {}, d.quality || "");
-    const url = sq && d.streams?.[sq] ? hlsProxyUrl(d.streams[sq]) : d.stream;
+    // Alloha-URL уже проксирован — не оборачиваем повторно.
+    const url = sq && d.streams?.[sq] ? (d.alloha ? d.streams[sq] : hlsProxyUrl(d.streams[sq])) : d.stream;
     setData({ ...d, stream: url, quality: sq || d.quality });
     setQuality(sq || d.quality || "");
     if (d.translators?.length) {
@@ -640,7 +666,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     setQualityPref(q);
     seekOnNext.current = videoRef.current?.currentTime || 0;
     setQuality(q);
-    setData((prev) => (prev ? { ...prev, stream: hlsProxyUrl(data.streams![q]), quality: q } : prev));
+    setData((prev) => (prev ? { ...prev, stream: data.alloha ? data.streams![q] : hlsProxyUrl(data.streams![q]), quality: q } : prev));
     flash(`Качество: ${q}`);
   }, [data, quality, flash]);
 
