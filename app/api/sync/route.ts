@@ -67,6 +67,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, data });
     }
 
+    // RECOGNIZE - есть ли по этой почте профиль просмотров (для «мягких» юзеров
+    // без логина: смотрели по остаточной сессии, история копилась по email, но
+    // аккаунта нет). Read-only: используется, когда логин вернул «не найден», —
+    // чтобы предложить «Мы вас узнали → подтвердите почту» и сохранить историю.
+    if (action === "recognize") {
+      const err = requireEmail(); if (err) return err;
+      const data = getUserData(email);
+      const watched = Array.isArray(data.history) ? data.history.length : 0;
+      const favorites = Array.isArray(data.favorites) ? data.favorites.length : 0;
+      return NextResponse.json({ watched, favorites, hasProfile: watched > 0 || favorites > 0 });
+    }
+
     // SAVE - save all user data to server
     if (action === "save") {
       const err = requireEmail(); if (err) return err;

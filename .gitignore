@@ -36,3 +36,6 @@ next-env.d.ts
 
 # build temp tarball used by deploy script
 /movie-build.tar.gz
+# runtime caches (не в git)
+tmdb-cache/
+__pycache__/

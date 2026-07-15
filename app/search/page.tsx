@@ -136,6 +136,18 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         (hit.type === "tv" ? tvItems : movieItems).push(item);
       }
     }
+    // Дальше — TMDB-результаты, которых НЕ было у HDRezka: они доступны на других
+    // источниках (Alloha/kino.pub), а поиск раньше их прятал (напр. «Фишер»
+    // 220018 играет на Alloha, но HDRezka его не отдаёт). Показываем после
+    // HDRezka-хитов, чтобы ничего доступного не терялось.
+    for (const m of movieResults) {
+      const key = "movie:" + m.id;
+      if (!usedTmdb.has(key)) { usedTmdb.add(key); movieItems.push({ kind: "tmdb", mt: "movie", obj: m }); }
+    }
+    for (const t of tvResults) {
+      const key = "tv:" + t.id;
+      if (!usedTmdb.has(key)) { usedTmdb.add(key); tvItems.push({ kind: "tmdb", mt: "tv", obj: t }); }
+    }
   } else {
     // Availability backend unreachable — degrade to plain TMDB so search still works.
     movieResults.forEach((m: any) => movieItems.push({ kind: "tmdb", mt: "movie", obj: m }));

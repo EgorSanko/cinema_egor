@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { syncFromServer } from "@/lib/storage";
+import { syncFromServer, loadFromServer, clearLocalProfile, getDataOwner } from "@/lib/storage";
 
 interface User {
   email: string;
@@ -68,19 +68,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(saved);
         setUser(parsed);
         if (parsed?.email) {
+          // Валидируем сессию: если реального подтверждённого аккаунта в базе нет
+          // (phantom — залогинен, но не завершил верификацию), разлогиниваем, чтобы
+          // человек прошёл подтверждение. Разлогин ТОЛЬКО при явном exists:false
+          // (не на сетевой ошибке — иначе выкинем при временном сбое).
+          postAuth({ action: "check", email: parsed.email })
+            .then((d) => {
+              if (d && d.exists === false) {
+                setUser(null);
+                localStorage.removeItem("user");
+              }
+            })
+            .catch(() => {});
           setSyncing(true);
-          syncFromServer(parsed.email).finally(() => setSyncing(false));
+          // Если данные в браузере принадлежат другому аккаунту (владелец ≠
+          // текущий email) — стереть и загрузить только свои, не пушить чужое.
+          const owner = getDataOwner();
+          if (owner && owner !== parsed.email) {
+            clearLocalProfile();
+            loadFromServer(parsed.email).finally(() => setSyncing(false));
+          } else {
+            syncFromServer(parsed.email).finally(() => setSyncing(false));
+          }
         }
       } catch {}
     }
   }, []);
 
   // Shared: persist the authenticated user, pull their server data, reflect it.
+  //
+  // КРИТИЧНО для изоляции профилей: если в браузере лежат данные ДРУГОГО
+  // аккаунта (владелец localStorage-данных ≠ этот email, или ранее был залогинен
+  // другой user), их надо СТЕРЕТЬ и загрузить только серверные данные нового
+  // аккаунта. Иначе прошлый профиль (история, «год в кино», достижения) утекал в
+  // новый: syncFromServer сначала пушил чужой localStorage на сервер под новую
+  // почту, а /api/sync мержил — новый аккаунт наследовал чужое. Анонимные данные
+  // (никто раньше не входил) при первой регистрации по-прежнему мигрируют.
   const completeAuth = async (u: User, reload: boolean) => {
+    let prevUser: string | null = null;
+    try { prevUser = JSON.parse(localStorage.getItem("user") || "null")?.email || null; } catch {}
+    const owner = getDataOwner();
+    const foreign = (!!owner && owner !== u.email) || (!!prevUser && prevUser !== u.email);
+
     setUser(u);
     localStorage.setItem("user", JSON.stringify(u));
     setSyncing(true);
-    await syncFromServer(u.email);
+    if (foreign) {
+      clearLocalProfile();          // чужой профиль — прочь
+      await loadFromServer(u.email); // только загрузка, пушить нечего
+    } else {
+      await syncFromServer(u.email); // тот же юзер / аноним → миграция-мерж ок
+    }
     setSyncing(false);
     if (reload) window.location.reload();
   };
@@ -158,6 +196,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(null);
     localStorage.removeItem("user");
+    // Стираем локальный профиль — иначе на общем ПК следующий залогинившийся
+    // унаследует историю/достижения предыдущего (и утечёт в его аккаунт).
+    clearLocalProfile();
+    // Снимаем cookie гейта подписки — иначе на общем ПК следующий увидит Pro.
+    try { document.cookie = "kino_sub=; path=/; max-age=0"; } catch {}
   };
 
   return (

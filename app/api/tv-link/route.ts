@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { hasVerifiedAccount } from "@/lib/subscription-server";
 
 /**
  * QR device-link LOGIN.
@@ -69,6 +70,9 @@ export async function POST(req: NextRequest) {
     const email = String(body.user?.email || "").trim().toLowerCase();
     const name = String(body.user?.name || "").trim() || email.split("@")[0];
     if (!code || !email) return NextResponse.json({ error: "bad request" }, { status: 400 });
+    // Подтвердить вход на другом устройстве может только реальный подтверждённый
+    // аккаунт — иначе через QR можно протащить phantom-почту без верификации.
+    if (!hasVerifiedAccount(email)) return NextResponse.json({ error: "Аккаунт не подтверждён" }, { status: 403 });
     const s = sessions.get(code);
     if (!s) return NextResponse.json({ error: "Код не найден или истёк" }, { status: 404 });
     if (Date.now() > s.expires) { sessions.delete(code); return NextResponse.json({ error: "Код истёк" }, { status: 410 }); }

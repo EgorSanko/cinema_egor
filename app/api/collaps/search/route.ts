@@ -171,8 +171,33 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "no imdb id", fallback: true, results: [] });
 
   const { html, status } = await fetchEmbed(imdb);
-  if (status !== 200)
-    return NextResponse.json({ error: "collaps http " + status, fallback: true, imdb, results: [] });
+  if (status !== 200) {
+    // Прод-сервер (RU-датацентр) часто получает 422/403 от ortified/zenithjs —
+    // движки блокируют IP датацентра. Но БРАУЗЕР юзера (резидентный IP) грузит
+    // embed нормально, поэтому серверный блок = ЛОЖНЫЙ негатив. Не режем из-за
+    // него бесплатный источник (zenithjs = дефолт всех) — отдаём embed+imdb
+    // оптимистично. Фронт (resolveZenithEmbed) строит zenithjs-URL из imdb сам;
+    // `embed` ему нужен лишь как флаг наличия. Метаданные (озвучки/скип) при этом
+    // недоступны — их даёт собственное меню zenithjs-плеера.
+    const isSeriesGuess = type === "tv" || type === "series";
+    const embed = isSeriesGuess
+      ? `${COLLAPS_BASE}${imdb}?season=${season}&episode=${episode}`
+      : `${COLLAPS_BASE}${imdb}`;
+    return NextResponse.json(
+      {
+        source: "collaps",
+        embed,
+        is_series: isSeriesGuess,
+        translators: [],
+        active_translator_id: 0,
+        sections: [],
+        imdb,
+        degraded: true, // сервер не смог подтвердить (IP-блок) — отдали оптимистично
+        results: [],
+      },
+      { headers: { "Cache-Control": "private, max-age=0, must-revalidate" } }
+    );
+  }
 
   const parsed = parseCollaps(html, season, episode);
   if (!parsed.ok)

@@ -31,6 +31,9 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
   const [devCode, setDevCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  // >0, если по введённой почте нашёлся профиль просмотров без аккаунта
+  // («мягкий» юзер). Тогда логин-провал превращаем в «Мы вас узнали → подтвердите».
+  const [recognized, setRecognized] = useState(0);
 
   // QR login: mint a link-code while the "qr" step is open and poll until the
   // phone confirms, then finish by storing the user + reloading (same as a
@@ -81,9 +84,9 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
   const close = () => {
     onClose();
     setStep("login"); setName(""); setEmail(""); setPassword(""); setCode("");
-    setError(""); setInfo(""); setDevCode(null);
+    setError(""); setInfo(""); setDevCode(null); setRecognized(0);
   };
-  const goto = (s: Step) => { reset(); setCode(""); setStep(s); };
+  const goto = (s: Step) => { reset(); setCode(""); setRecognized(0); setStep(s); };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +94,28 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
     try {
       if (step === "login") {
         const err = await login(email, password);
-        if (err) setError(err); else close();
+        if (!err) { close(); return; }
+        // Логин не прошёл. Если аккаунта нет, но по этой почте есть история
+        // просмотров («мягкий» юзер) — не отбиваем ошибкой, а предлагаем забрать
+        // свой профиль: подтвердить почту и задать пароль. История сохранится.
+        if (/не найден/i.test(err) && password.length >= 6) {
+          try {
+            const rr = await fetch("/api/sync", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "recognize", email }),
+            }).then((r) => r.json());
+            if (rr && rr.hasProfile) {
+              const reg = await register(name || email.split("@")[0], email, password);
+              if (reg.error) { setError(reg.error); return; }
+              setRecognized(rr.watched || 0);
+              setCode(""); setStep("verify");
+              setInfo(`Мы вас узнали — ${rr.watched} просмотров сохранено. Подтвердите почту, чтобы вернуть доступ к своему профилю.`);
+              setDevCode(reg.devCode || null);
+              return;
+            }
+          } catch {}
+        }
+        setError(err);
       } else if (step === "register") {
         const r = await register(name, email, password);
         if (r.error) setError(r.error);

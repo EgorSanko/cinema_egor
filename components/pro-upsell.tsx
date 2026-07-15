@@ -40,7 +40,7 @@ export function ProUpsell() {
             ))}
           </ul>
           <Link
-            href="/profile"
+            href="/pro"
             className="inline-flex items-center gap-2 mt-4 h-11 px-5 rounded-full bg-primary text-primary-foreground font-bold text-[14px] hover:bg-primary/90 transition-colors"
           >
             Перейти на Про <ArrowRight size={16} />

@@ -59,6 +59,68 @@ function getCurrentEmail(): string | null {
   } catch { return null; }
 }
 
+// Кто «владелец» данных, лежащих сейчас в localStorage. Нужен, чтобы при смене
+// аккаунта не залить/не показать чужой профиль. Ставится при любой загрузке
+// данных аккаунта, снимается при очистке.
+const OWNER_KEY = "kino_data_owner";
+export function getDataOwner(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return localStorage.getItem(OWNER_KEY); } catch { return null; }
+}
+function setDataOwner(email: string) {
+  try { localStorage.setItem(OWNER_KEY, email); } catch {}
+}
+
+// Все ключи одного профиля. Стираем их при смене/выходе аккаунта, иначе данные
+// прошлого юзера утекают в новый (пушатся на сервер и показываются).
+const PROFILE_KEYS = [
+  "kino_favorites", "kino_history", "kino_comments", "kino_lists_v1",
+  "kino_status_v1", "kino_downloads_v1", "kino_tried_translators", "kino_friend_code",
+];
+export function clearLocalProfile(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (const k of PROFILE_KEYS) localStorage.removeItem(k);
+    const del: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith("kino_pos_") || key.startsWith("last-ep-") || key.startsWith("last-tr-"))) del.push(key);
+    }
+    del.forEach((k) => localStorage.removeItem(k));
+    localStorage.removeItem(OWNER_KEY);
+    try {
+      window.dispatchEvent(new CustomEvent("sync-complete"));
+      window.dispatchEvent(new CustomEvent("downloads-changed"));
+      window.dispatchEvent(new Event("status-changed"));
+    } catch {}
+  } catch {}
+}
+
+// ТОЛЬКО загрузка данных аккаунта с сервера, без пуша локального. Используется
+// при входе в ДРУГОЙ аккаунт — локальное уже стёрто, пушить нечего и незачем.
+export async function loadFromServer(email: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "load", email }),
+    });
+    if (res.ok) {
+      const result = await res.json();
+      if (result.data) {
+        applyServerData(result.data);
+        if (result.data.friendCode) {
+          try { localStorage.setItem("kino_friend_code", result.data.friendCode); } catch {}
+        }
+        setDataOwner(email);
+        window.dispatchEvent(new CustomEvent("sync-complete"));
+        return true;
+      }
+    }
+    return false;
+  } catch { return false; }
+}
+
 function scheduleSyncToServer() {
   const email = getCurrentEmail();
   if (!email) return;
@@ -137,6 +199,7 @@ export async function syncFromServer(email: string): Promise<boolean> {
         if (result.data.friendCode) {
           try { localStorage.setItem("kino_friend_code", result.data.friendCode); } catch {}
         }
+        setDataOwner(email);
         window.dispatchEvent(new CustomEvent("sync-complete"));
         return true;
       }

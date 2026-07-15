@@ -295,9 +295,11 @@ html:not(.dark) a[href^="/person/"]:hover {
    two stay in sync. */
 @media (max-width: 639px) {
 	.art-video-player .art-control-pip,
-	.art-video-player .art-control-fullscreenWeb,
 	.art-video-player .art-control-kino-prev-ep,
 	.art-video-player .art-control-kino-next-ep {
 		display: none !important;
 	}
+	/* fullscreenWeb (⛶ «на весь экран по ширине») ВОЗВРАЩЕНА на мобиле по просьбе —
+	   в портретной ориентации полезна (заполнить экран без нативного FS). Одна
+	   кнопка помещается: pip и стрелки серий скрыты, место есть. */
 }

@@ -8,6 +8,7 @@ import { AuthGate } from "@/components/auth-gate";
 import { MobileNav } from "@/components/mobile-nav";
 import { PWABackButton } from "@/components/pwa-back-button";
 import { ReloadOnStale } from "@/components/reload-on-stale";
+import { SubscriptionEnforcer } from "@/components/subscription-enforcer";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -80,6 +81,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
           <AuthGate />
+          <SubscriptionEnforcer />
         </AuthProvider>
         <MobileNav />
         <PWABackButton />

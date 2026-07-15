@@ -7,7 +7,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
   Home, Tv, Layers, Users, LayoutGrid,
-  Bookmark, ChevronDown, Heart, Clock, Smartphone, Send, Radio,
+  Bookmark, ChevronDown, Heart, Clock, Send, Radio, Crown, Tv2,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -15,7 +15,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth-context";
 import { AuthModal } from "./auth-modal";
-import { getSource, type KinoSource } from "@/lib/kinopub";
+import { getSource, prewarmKinopub, type KinoSource } from "@/lib/kinopub";
+import { useSubscription } from "@/hooks/use-subscription";
 
 type IconType = React.ComponentType<{ size?: number; className?: string }>;
 const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
@@ -36,6 +37,7 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [favCount, setFavCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
   // Навигация зависит от источника:
   //  • «Спорт» (прямой эфир kino.pub) — только на kino.pub.
   //  • «Вместе» (совместный просмотр в НАШЕМ плеере) — только на HDRezka/kino.pub;
@@ -45,15 +47,26 @@ export function Navbar() {
   // мелькания премиум-навигации до того, как эффект прочитает источник.
   const [source, setSourceState] = useState<KinoSource>("zenithjs");
   useEffect(() => {
-    const check = () => setSourceState(getSource());
+    const check = () => {
+      const s = getSource();
+      setSourceState(s);
+      // Прогреваем соединение к воркеру заранее — чтобы первый холодный коннект
+      // без VPN не сбросился на самом play (иначе «вечная загрузка серии»).
+      if (s === "kinopub") prewarmKinopub();
+    };
     check();
     window.addEventListener("storage", check);
     window.addEventListener("kino-source-changed", check);
     return () => { window.removeEventListener("storage", check); window.removeEventListener("kino-source-changed", check); };
   }, []);
+  const { isPro } = useSubscription();
   const navLinks = (() => {
     let links = source === "zenithjs" ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
     if (source === "kinopub") links = [...links, { label: "Спорт", href: "/sport", Icon: Radio }];
+    // Вкладка «Про»: у free — апселл подписки; у Pro — управление подпиской
+    // (посмотреть срок, продлить). Показываем всегда, кроме случая когда её и так
+    // некуда деть.
+    if (source === "zenithjs" || isPro) links = [...links, { label: "Про", href: "/pro", Icon: Crown }];
     return links;
   })();
   const searchPanelRef = useRef<HTMLDivElement>(null);
@@ -135,9 +148,43 @@ export function Navbar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
 
+  // ── История поиска (localStorage) — показывается при открытии строки поиска ──
+  const HISTORY_KEY = "kino_search_history";
+  const loadHistory = () => {
+    try { setSearchHistory(JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]")); } catch { setSearchHistory([]); }
+  };
+  const saveHistory = (q: string) => {
+    const query = q.trim();
+    if (!query) return;
+    try {
+      let h = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]") as string[];
+      h = [query, ...h.filter((x) => x.toLowerCase() !== query.toLowerCase())].slice(0, 8);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+      setSearchHistory(h);
+    } catch {}
+  };
+  const removeHistory = (q: string) => {
+    try {
+      const h = (JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]") as string[]).filter((x) => x !== q);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+      setSearchHistory(h);
+    } catch {}
+  };
+  const clearHistory = () => {
+    try { localStorage.removeItem(HISTORY_KEY); } catch {}
+    setSearchHistory([]);
+  };
+  const runHistorySearch = (q: string) => {
+    saveHistory(q); // поднимаем наверх
+    router.push(`/search?q=${encodeURIComponent(q)}`);
+    setSearchQuery(""); setShowSuggestions(false); setSearchOpen(false); setIsOpen(false);
+  };
+  useEffect(() => { if (searchOpen || isOpen) loadHistory(); }, [searchOpen, isOpen]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      saveHistory(searchQuery);
       router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
       setSearchQuery("");
       setShowSuggestions(false);
@@ -147,6 +194,7 @@ export function Navbar() {
   };
 
   const handleSuggestionClick = (item: any) => {
+    saveHistory(item.title || item.name || searchQuery);
     const path = item.media_type === "tv" ? `/tv/${item.id}` : `/movie/${item.id}`;
     router.push(path);
     setSearchQuery("");
@@ -185,22 +233,28 @@ export function Navbar() {
                   className="h-11 w-auto transition-all duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)]"
                 />
               </Link>
-              {source === "zenithjs" && (
+              {isPro ? (
+                <span className="inline-flex items-center gap-1 h-6 px-2.5 rounded-full bg-gradient-to-r from-amber-400/20 to-primary/20 ring-1 ring-primary/40 text-primary text-[11px] font-bold uppercase tracking-wider leading-none">
+                  <Crown size={12} /> Про
+                </span>
+              ) : source === "zenithjs" ? (
                 <span className="inline-flex items-center h-6 px-2.5 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[11px] font-bold uppercase tracking-wider leading-none">
                   Free
                 </span>
-              )}
+              ) : null}
             </div>
 
-            {/* Nav pill (desktop) */}
-            <div className={`hidden lg:flex ${pillContainer}`}>
+            {/* Nav pill (desktop). min-w-0 + overflow-x-auto: когда пунктов много
+                (напр. +«Спорт» на kino.pub) pill сжимается и скроллится ВНУТРИ,
+                а не выталкивает правую группу («Моё») за край экрана. */}
+            <div className={`hidden lg:flex min-w-0 overflow-x-auto ${pillContainer}`} style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
               {navLinks.map(({ label, href, Icon }) => {
                 const active = isActive(href);
                 return (
                   <Link
                     key={href}
                     href={href}
-                    className={`flex items-center gap-2 h-8 px-3.5 rounded-full text-[13px] tracking-[0.01em] transition-colors duration-200 ${
+                    className={`flex flex-shrink-0 items-center gap-2 h-8 px-3.5 rounded-full text-[13px] tracking-[0.01em] transition-colors duration-200 ${
                       active
                         ? "bg-primary/15 text-primary font-semibold"
                         : "text-foreground/70 hover:text-foreground hover:bg-foreground/[0.06] font-medium"
@@ -213,8 +267,8 @@ export function Navbar() {
               })}
             </div>
 
-            {/* Right pill */}
-            <div className="hidden sm:flex items-center gap-2" ref={searchPanelRef}>
+            {/* Right pill — flex-shrink-0: всегда видна целиком, не уезжает за край */}
+            <div className="hidden sm:flex items-center gap-2 flex-shrink-0" ref={searchPanelRef}>
               {/* Telegram channel — blue chip */}
               <a
                 href="https://t.me/sapkeflykino"
@@ -227,17 +281,15 @@ export function Navbar() {
                 <span className="hidden lg:inline">Telegram</span>
               </a>
 
-              {/* Android app download — chip style. Скрыт на free (zenithjs). */}
-              {source !== "zenithjs" && (
+              {/* Приложение для Android TV (телефонное снято — все через сайт). */}
               <Link
                 href="/download"
                 className="hidden lg:inline-flex items-center gap-1.5 h-10 px-3.5 rounded-full bg-primary/12 ring-1 ring-primary/30 text-primary text-[12.5px] font-semibold hover:bg-primary/18 transition-colors"
-                title="Скачать приложение для Android"
+                title="Приложение для Android TV"
               >
-                <Smartphone size={14} />
-                <span>Андроид</span>
+                <Tv2 size={14} />
+                <span>ТВ</span>
               </Link>
-              )}
 
               {/* Search — icon in its own pill, dropdown panel below */}
               <div className="relative">
@@ -271,6 +323,25 @@ export function Navbar() {
                         <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono text-foreground/40 bg-foreground/[0.04] border border-white/[0.08] rounded">ESC</kbd>
                       </div>
                     </form>
+                    {searchQuery.trim().length <= 1 && searchHistory.length > 0 && (
+                      <div className="border-t border-white/[0.06]">
+                        <div className="flex items-center justify-between px-3 pt-2 pb-1">
+                          <span className="text-[10.5px] text-foreground/40 uppercase tracking-wider font-semibold">Недавние запросы</span>
+                          <button type="button" onClick={clearHistory} className="text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors">Очистить</button>
+                        </div>
+                        <div className="max-h-[46vh] overflow-y-auto pb-1">
+                          {searchHistory.map((q) => (
+                            <div key={q} className="group flex items-center gap-2.5 px-3 py-2 hover:bg-foreground/[0.05] transition-colors">
+                              <Clock size={14} className="text-foreground/40 flex-shrink-0" />
+                              <button type="button" onClick={() => runHistorySearch(q)} className="flex-1 text-left text-[13px] text-foreground/80 truncate hover:text-foreground">{q}</button>
+                              <button type="button" onClick={() => removeHistory(q)} className="opacity-0 group-hover:opacity-100 text-foreground/40 hover:text-foreground/80 transition-all flex-shrink-0" aria-label="Удалить">
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {showSuggestions && suggestions.length > 0 && (
                       <div className="border-t border-white/[0.06] max-h-[60vh] overflow-y-auto">
                         {suggestions.map((item: any) => (
@@ -410,6 +481,23 @@ export function Navbar() {
                   />
                 </div>
               </form>
+              {searchQuery.trim().length <= 1 && searchHistory.length > 0 && (
+                <div className="px-1 pb-2">
+                  <div className="flex items-center justify-between px-2 pb-1">
+                    <span className="text-[10.5px] text-foreground/40 uppercase tracking-wider font-semibold">Недавние запросы</span>
+                    <button type="button" onClick={clearHistory} className="text-[11px] text-foreground/40 hover:text-foreground/70">Очистить</button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 px-1">
+                    {searchHistory.map((q) => (
+                      <button key={q} type="button" onClick={() => runHistorySearch(q)}
+                        className="inline-flex items-center gap-1.5 max-w-full px-2.5 py-1.5 rounded-full bg-foreground/[0.05] ring-1 ring-white/[0.06] text-[12.5px] text-foreground/80 hover:bg-foreground/[0.09] transition-colors">
+                        <Clock size={12} className="flex-shrink-0 text-foreground/40" />
+                        <span className="truncate">{q}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {navLinks.map(({ label, href, Icon }) => {
                 const active = isActive(href);
                 return (
@@ -443,15 +531,13 @@ export function Navbar() {
                 >
                   <Clock size={17} /> История
                 </Link>
-                {source !== "zenithjs" && (
                 <Link
                   href="/download"
                   className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-primary font-semibold bg-primary/10 hover:bg-primary/15 rounded-lg transition-colors"
                   onClick={() => setIsOpen(false)}
                 >
-                  <Smartphone size={17} /> Приложение для Android
+                  <Tv2 size={17} /> Приложение для ТВ
                 </Link>
-                )}
                 <a
                   href="https://t.me/sapkeflykino"
                   target="_blank"

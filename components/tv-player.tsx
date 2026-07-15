@@ -19,9 +19,10 @@ import { useAuthGate } from "./auth-gate";
 import { SkipOverlays } from "./skip-overlays";
 import { PlayerEpisodeBar } from "./player-episode-bar";
 import { ProUpsell } from "./pro-upsell";
+import { PlayerSwitcher } from "./player-switcher";
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub, resolveZenithEmbed } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -70,8 +71,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // На zenithjs (не наш плеер) наш список серий прячем — навигация только внутри
   // их iframe, чтобы не было рассинхрона (мы не видим внутренние смены серии).
   const [srcIsZenith, setSrcIsZenith] = useState(true); // free по умолчанию → без флеша списка серий
+  // Реальный фри = только zenithjs; Alloha (тоже iframe) — Про-источник, апселл не показываем.
+  const [srcIsFree, setSrcIsFree] = useState(true);
   useEffect(() => {
-    const check = () => setSrcIsZenith(getSource() === "zenithjs");
+    const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
     window.addEventListener("kino-source-changed", check);
     window.addEventListener("storage", check);
@@ -246,6 +249,34 @@ export function TVPlayer({ show }: TVPlayerProps) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [show.id, selectedSeason, selectedEpisode]);
 
+  // iframe-источники (Alloha/Collaps/zenithjs) — их плеер чёрный ящик. Оцениваем
+  // просмотр по реальному времени, что iframe открыт, и пишем историю+позицию
+  // ЭТОЙ серии → попадает в «продолжить смотреть», считаются часы. Точную
+  // докрутку/навигацию серий держит сам их плеер.
+  useEffect(() => {
+    if (!showPlayer || !streamData?.collapsEmbed) return;
+    const durSec = ((show as any)?.episode_run_time?.[0] > 0 ? (show as any).episode_run_time[0] : 45) * 60;
+    const startedAt = Date.now();
+    const write = () => {
+      const elapsed = Math.min((Date.now() - startedAt) / 1000, durSec - 1);
+      if (elapsed < 10) return;
+      watchHeartbeat();
+      savePosition(show.id, "tv", elapsed, durSec, selectedSeason, selectedEpisode);
+      saveLastEpisode(show.id, selectedSeason, selectedEpisode);
+      const epName = episodes.find((e) => e.episode_number === selectedEpisode)?.name || "";
+      addToHistory({
+        id: show.id, type: "tv", title: show.name, poster_path: show.poster_path,
+        vote_average: show.vote_average, first_air_date: show.first_air_date, watchedAt: Date.now(),
+        progress: elapsed, duration: durSec, season: selectedSeason, episode: selectedEpisode,
+        episodeName: epName, genre_ids: show.genres?.map((g) => g.id),
+        episodeCount: show.seasons?.find((s) => s.season_number === selectedSeason)?.episode_count,
+        seasonCount: show.seasons?.filter((s) => s.season_number > 0).length,
+      });
+    };
+    const iv = setInterval(write, 20000);
+    return () => { clearInterval(iv); write(); };
+  }, [showPlayer, streamData?.collapsEmbed, show, selectedSeason, selectedEpisode, episodes]);
+
   // Prefetch the selected episode's stream before the user presses "Смотреть"
   // so the first play is instant. Only warms while the player isn't open;
   // fetchStream consumes this in-flight request when the URL matches.
@@ -254,9 +285,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
     let alive = true;
     // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
     // player handles seasons/episodes/dubs itself).
-    if (getSource() === "zenithjs") {
+    if (isIframeSource()) {
       (async () => {
-        const embed = await resolveZenithEmbed(show.id, "tv", selectedSeason, selectedEpisode);
+        const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode);
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -268,7 +299,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         const year = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
         const kpTitle = ((show.name || (show as any).original_name || "") as string).replace(/["«»""]/g, "").trim();
         if (!kpTitle) return;
-        const kp = await resolveKinopub({ tmdbId: show.id, title: kpTitle, year, type: "tv", season: selectedSeason, episode: selectedEpisode });
+        const kp = await resolveKinopub({ tmdbId: show.id, title: kpTitle, otitle: show.original_name, year, type: "tv", season: selectedSeason, episode: selectedEpisode });
         if (!alive || !kp) return;
         const c: any = (navigator as any).connection;
         const fast = !c || (!c.saveData && c.type !== "cellular" && c.effectiveType !== "2g" && c.effectiveType !== "slow-2g" && c.effectiveType !== "3g");
@@ -357,12 +388,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // translatorId: у zenithjs озвучки внутри iframe, а selectEpisode передаёт
     // selectedTranslator — из-за гейта смена серии падала в HDRezka и возвращала
     // наш ArtPlayer. При source=zenithjs всегда остаёмся на iframe.
-    if (getSource() === "zenithjs" && _attempt === 0) {
+    if (isIframeSource() && _attempt === 0) {
       try {
-        const embed = await resolveZenithEmbed(show.id, "tv", season, episode);
+        const embed = await resolveIframeEmbed(show.id, "tv", season, episode);
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
-      setError("Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");
+      setError(getSource() === "alloha" ? "Этой серии нет в Alloha." : "Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");
       setLoading(false);
       return;
     }
@@ -371,11 +402,15 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // audio renditions → instant switch in the player, no re-resolve). Only on
     // initial/episode resolve (translatorId==null); dub switches are internal.
     // Soft fallback to HDRezka if kino.pub lacks the title/episode.
-    if (getSource() === "kinopub" && _attempt === 0 && translatorId == null) {
+    // НЕ гейтим по translatorId: selectEpisode передаёт selectedTranslator (id
+    // озвучки HDRezka), и из-за гейта сериал на kino.pub уходил в HDRezka. У
+    // kino.pub озвучки — аудиодорожки в плеере (смена внутренняя, fetchStream не
+    // зовётся), поэтому translatorId тут не нужен.
+    if (getSource() === "kinopub" && _attempt === 0) {
       try {
         const kpYear = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
         const kpTitle = ((show.name || (show as any).original_name || "") as string).replace(/["«»""]/g, "").trim();
-        const kp = await resolveKinopub({ tmdbId: show.id, title: kpTitle, year: kpYear, type: "tv", season, episode });
+        const kp = await resolveKinopub({ tmdbId: show.id, title: kpTitle, otitle: show.original_name, year: kpYear, type: "tv", season, episode });
         if (kp) {
           setStreamData({ stream: kp.hls4, kinopub: true, quality: "Auto" });
           setLoading(false);
@@ -1032,7 +1067,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
         </div>
 
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
-        {srcIsZenith && !cssFullscreen && <ProUpsell />}
+        {!cssFullscreen && <PlayerSwitcher />}
+        {srcIsFree && !cssFullscreen && <ProUpsell />}
 
         {!cssFullscreen && (
           <>

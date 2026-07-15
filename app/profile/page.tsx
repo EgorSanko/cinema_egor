@@ -10,6 +10,7 @@ import { getCanon, setCanon, getCanonCandidates, type CanonPick } from "@/lib/ca
 import { getAllByStatus, type WatchStatus } from "@/lib/status";
 import { getLists, createList, type UserList } from "@/lib/lists";
 import { getSource, setSource, type KinoSource } from "@/lib/kinopub";
+import { useSubscription } from "@/hooks/use-subscription";
 import { canFreezeNow, freezeDay, getFrozenDays, daysUntilNextFreeze } from "@/lib/streak-freeze";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -616,37 +617,54 @@ export default function ProfilePage() {
   );
 }
 
-/* ── Источник просмотра: HDRezka (по умолчанию) ⇄ kino.pub (ad-free, мгновенная
-   смена озвучки). Глобальный тумблер — влияет на весь сайт. ── */
+/* ── Источник просмотра. Названия движков НЕ раскрываем (только «качество»).
+   Переключение доступно только на Про; на Free выбор залочен на «Бесплатный». ── */
 function SourceSetting() {
-  const [src, setSrc] = useState<KinoSource>("hdrezka");
+  const { isPro } = useSubscription();
+  const [src, setSrc] = useState<KinoSource>("zenithjs");
   useEffect(() => { setSrc(getSource()); }, []);
-  const pick = (s: KinoSource) => { setSource(s); setSrc(s); };
-  const opt = (s: KinoSource, title: string, sub: string) => (
+  const pick = (s: KinoSource) => {
+    if (!isPro && s !== "zenithjs") return; // free — только бесплатный
+    setSource(s); setSrc(s);
+  };
+  const opt = (s: KinoSource, title: string, sub: string, locked: boolean) => (
     <button
-      onClick={() => pick(s)}
+      onClick={() => (locked ? (location.href = "/pro") : pick(s))}
       className={
-        "flex-1 text-left rounded-xl px-4 py-3 border-2 transition-colors " +
-        (src === s ? "border-primary bg-primary/10" : "border-border bg-card hover:border-muted-foreground/40")
+        "relative flex-1 text-left rounded-xl px-4 py-3 border-2 transition-colors " +
+        (src === s && !locked ? "border-primary bg-primary/10" : "border-border bg-card hover:border-muted-foreground/40") +
+        (locked ? " opacity-70" : "")
       }
     >
       <div className="flex items-center gap-2">
-        <span className={"w-3.5 h-3.5 rounded-full border-2 " + (src === s ? "border-primary bg-primary" : "border-muted-foreground/50")} />
-        <span className="font-semibold text-foreground">{title}</span>
+        <span className={"w-3.5 h-3.5 rounded-full border-2 " + (src === s && !locked ? "border-primary bg-primary" : "border-muted-foreground/50")} />
+        <span className="font-semibold text-foreground flex items-center gap-1.5">
+          {title}{locked && <Lock size={12} className="text-amber-400" />}
+        </span>
       </div>
-      <p className="text-xs text-muted-foreground mt-1 ml-6">{sub}</p>
+      <p className="text-xs text-muted-foreground mt-1 ml-6">{locked ? "Доступно по подписке Про" : sub}</p>
     </button>
   );
   return (
     <>
-      <h2 className="text-lg font-bold text-foreground mb-4">Источник просмотра</h2>
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="text-lg font-bold text-foreground">Качество и источник</h2>
+        {isPro && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[10px] font-bold uppercase tracking-wider">
+            <Crown size={10} /> Про
+          </span>
+        )}
+      </div>
       <div className="flex flex-col sm:flex-row gap-3 max-w-3xl">
-        {opt("hdrezka", "HDRezka", "Основной. Макс. охват, 1080p, все озвучки.")}
-        {opt("kinopub", "kino.pub", "Ad-free, 4K, спорт, мгновенная смена озвучки.")}
-        {opt("zenithjs", "Бесплатный", "Резервный источник. Свой плеер, до 1080p.")}
+        {opt("hdrezka", "Плеер 1", "Наш плеер, максимальное качество, все озвучки.", !isPro)}
+        {opt("alloha", "Плеер 2", "4K, все озвучки, стабильный.", !isPro)}
+        {opt("kinopub", "Плеер 3", "4K, спорт, мгновенная смена озвучки.", !isPro)}
+        {opt("zenithjs", "Бесплатный", "Резервный источник, до 1080p.", false)}
       </div>
       <p className="text-xs text-muted-foreground mt-3">
-        Влияет на весь сайт. Если тайтла нет в выбранном источнике — плеер попробует второй.
+        {isPro
+          ? "Влияет на весь сайт. Если тайтла нет в выбранном источнике — плеер попробует второй."
+          : "На бесплатном тарифе доступен только базовый источник. Оформи Про — откроются максимальное качество, 4K, спорт и наш плеер."}
       </p>
     </>
   );

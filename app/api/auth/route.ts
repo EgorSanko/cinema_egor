@@ -4,10 +4,22 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { sendCode, isEmailConfigured } from "@/lib/email";
+import { issueToken } from "@/lib/token-server";
+
+// Успешный вход/verify/reset: отдаём юзера + ставим cookie kino_sub (подписанный
+// токен) — по нему nginx-гейт пускает к Pro-стримам. Не httpOnly, чтобы фронт мог
+// снять его при logout; подделать нельзя (HMAC), а без активной подписки он и так
+// бесполезен.
+function authSuccess(email: string, user: { email: string; name: string }) {
+  const res = NextResponse.json({ success: true, user });
+  const token = issueToken(email);
+  if (token) res.cookies.set("kino_sub", token, { path: "/", maxAge: 60 * 60 * 24 * 180, sameSite: "lax" });
+  return res;
+}
 
 const USERS_FILE = path.join(process.cwd(), "users.json");
 
-type StoredUser = { email: string; password: string; name: string; verified?: boolean };
+type StoredUser = { email: string; password: string; name: string; verified?: boolean; subscription?: unknown };
 
 function getUsers(): Record<string, StoredUser> {
   try {
@@ -16,7 +28,11 @@ function getUsers(): Record<string, StoredUser> {
   return {};
 }
 function saveUsers(users: Record<string, StoredUser>) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), "utf-8");
+  // Атомарно (tmp+rename): иначе параллельная запись из начислений/крона может
+  // прочитать полу-записанный JSON или перетереть аккаунт.
+  const tmp = USERS_FILE + ".tmp-auth";
+  fs.writeFileSync(tmp, JSON.stringify(users, null, 2), "utf-8");
+  fs.renameSync(tmp, USERS_FILE);
 }
 
 // Existing accounts predate verification — treat anyone already in users.json
@@ -96,10 +112,28 @@ export async function POST(req: NextRequest) {
       p.attempts++;
       return NextResponse.json({ error: "Неверный код" }, { status: 400 });
     }
-    users[email] = { email, password: p.passwordHash!, name: p.name || email.split("@")[0], verified: true };
+    // Сохраняем существующие поля (напр. subscription из shadow-записи, если
+    // человек оплатил Про ДО регистрации) — иначе подписка потеряется.
+    users[email] = { ...(users[email] || {}), email, password: p.passwordHash!, name: p.name || users[email]?.name || email.split("@")[0], verified: true };
     saveUsers(users);
     pending.delete(email);
-    return NextResponse.json({ success: true, user: { email, name: users[email].name } });
+    return authSuccess(email, { email, name: users[email].name });
+  }
+
+  // ---- CHECK: существует ли реальный подтверждённый аккаунт (для валидации
+  // сохранённой сессии; phantom/shadow без пароля → exists:false → фронт
+  // разлогинит и попросит подтвердить). ----
+  if (action === "check") {
+    const u = users[email];
+    const exists = !!u && !!u.password && u.verified !== false;
+    const res = NextResponse.json({ exists });
+    // Обновляем cookie гейта для уже-залогиненных (ставится на каждой загрузке) —
+    // чтобы существующие подписчики получили токен без повторного входа.
+    if (exists) {
+      const t = issueToken(email);
+      if (t) res.cookies.set("kino_sub", t, { path: "/", maxAge: 60 * 60 * 24 * 180, sameSite: "lax" });
+    }
+    return res;
   }
 
   // ---- LOGIN ----
@@ -108,7 +142,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Пользователь не найден" }, { status: 401 });
     const valid = await bcrypt.compare(password || "", user.password);
     if (!valid) return NextResponse.json({ error: "Неверный пароль" }, { status: 401 });
-    return NextResponse.json({ success: true, user: { email: user.email, name: user.name } });
+    return authSuccess(user.email, { email: user.email, name: user.name });
   }
 
   // ---- FORGOT PASSWORD: email a reset code (generic response, no enumeration) ----
@@ -136,7 +170,7 @@ export async function POST(req: NextRequest) {
     user.verified = true;
     saveUsers(users);
     pending.delete(email);
-    return NextResponse.json({ success: true, user: { email: user.email, name: user.name } });
+    return authSuccess(user.email, { email: user.email, name: user.name });
   }
 
   // ---- RESEND code (register or reset), with cooldown ----

@@ -314,6 +314,12 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     const art = new Artplayer({
       container: containerRef.current,
       url: streamUrl,
+      // В kino.pub-режиме URL может НЕ оканчиваться на .m3u8 (напр. проксирован-
+      // ный /api/kp-cdn?u=… для спорт-каналов) — форсируем hls.js, иначе ArtPlayer
+      // по расширению уйдёт в нативный HLS (Chrome не умеет → чёрный экран).
+      // ВАЖНО: ключ `type` вообще НЕ передаём вне kino.pub — ArtPlayer падает на
+      // `type: undefined` («require string»), это ломало ВСЮ страницу на HDRezka.
+      ...(kinopubMode ? { type: "m3u8" } : {}),
       poster: poster || "",
       theme: "#a3e635",
       setting: true,
