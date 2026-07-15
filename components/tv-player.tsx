@@ -25,6 +25,11 @@ import { useSubscription } from "@/hooks/use-subscription";
 
 // Пре-ролл реклама для free-тарифа (nginx-статика, вне Next).
 const AD_URL = "/ads/amnyam.mp4";
+// Мид-ролл: iframe Alloha кроссдоменный — переключение серий ВНУТРИ него не
+// детектится (нет postMessage/onload/смены src). Поэтому крутим рекламу по
+// таймеру: раз в N минут просмотра снова показываем пре-ролл, чтобы бинж без
+// рекламы был невозможен независимо от навигации внутри плеера. Тюнить тут.
+const AD_MIDROLL_MS = 20 * 60 * 1000; // 20 минут
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
 import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource } from "@/lib/kinopub";
@@ -84,6 +89,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
   useEffect(() => { isProRef.current = isPro; }, [isPro]);
   // Реклама показана/пропущена в этой сессии страницы (гейтит контент-iframe).
   const [adDone, setAdDone] = useState(false);
+  // Мид-ролл по таймеру (см. AD_MIDROLL_MS): раз в N минут просмотра снова
+  // показываем рекламу — бинж без рекламы невозможен даже при навигации серий
+  // внутри кроссдоменного плеера Alloha (которую мы не видим).
+  useEffect(() => {
+    if (isPro || subLoading || !showPlayer || !adDone) return;
+    const t = setTimeout(() => setAdDone(false), AD_MIDROLL_MS);
+    return () => clearTimeout(t);
+  }, [isPro, subLoading, showPlayer, adDone]);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
