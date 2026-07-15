@@ -6,9 +6,11 @@
 // (см. movie-player/tv-player: iframe рендерится только при isPro || adDone),
 // поэтому обойти рекламу «мимо» нельзя — досмотреть 5с придётся.
 import { useEffect, useRef, useState } from "react";
-import { SkipForward, Volume2 } from "lucide-react";
+import { SkipForward, Volume2, VolumeX } from "lucide-react";
 
 const SKIP_AFTER = 5; // секунд до появления кнопки «Пропустить»
+const AD_VOLUME = 0.35; // умеренная громкость — реклама не «орёт»
+const MUTE_KEY = "kino_ad_muted"; // запоминаем выбор юзера
 
 export function PreRollAd({ src, onDone }: { src: string; onDone: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -22,12 +24,23 @@ export function PreRollAd({ src, onDone }: { src: string; onDone: () => void }) 
     onDone();
   };
 
+  const toggleMute = () => {
+    const v = videoRef.current;
+    const next = !muted;
+    setMuted(next);
+    if (v) v.muted = next;
+    try { localStorage.setItem(MUTE_KEY, next ? "1" : "0"); } catch {}
+  };
+
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    // Пытаемся со звуком (жест «Смотреть» только что был); если браузер блокнул
-    // автоплей со звуком — играем без звука + кнопка «Включить звук». Реклама
-    // всё равно играет, таймер пропуска идёт.
+    // Умеренная громкость + уважаем прошлый выбор «выключить звук».
+    v.volume = AD_VOLUME;
+    let wantMuted = false;
+    try { wantMuted = localStorage.getItem(MUTE_KEY) === "1"; } catch {}
+    if (wantMuted) { v.muted = true; setMuted(true); }
+    // Пытаемся играть; если автоплей со звуком заблокирован — глушим и играем.
     v.play().catch(() => {
       try { v.muted = true; setMuted(true); v.play().catch(() => {}); } catch {}
     });
@@ -59,15 +72,15 @@ export function PreRollAd({ src, onDone }: { src: string; onDone: () => void }) 
         Реклама
       </div>
 
-      {/* Включить звук — если автоплей ушёл в mute */}
-      {muted && (
-        <button
-          onClick={() => { const v = videoRef.current; if (v) { v.muted = false; setMuted(false); } }}
-          className="absolute top-3 right-3 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-black/70 text-white/90 text-[12px] font-semibold ring-1 ring-white/15 hover:bg-black/85 transition-colors"
-        >
-          <Volume2 size={14} /> Звук
-        </button>
-      )}
+      {/* Звук вкл/выкл — всегда доступно (реклама не орёт, можно приглушить) */}
+      <button
+        onClick={toggleMute}
+        aria-label={muted ? "Включить звук" : "Выключить звук"}
+        className="absolute top-3 right-3 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-black/70 text-white/90 text-[12px] font-semibold ring-1 ring-white/15 hover:bg-black/85 transition-colors"
+      >
+        {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+        {muted ? "Звук" : "Без звука"}
+      </button>
 
       {/* Пропустить — только после SKIP_AFTER секунд */}
       <div className="absolute bottom-4 right-4">
