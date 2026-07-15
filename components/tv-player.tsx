@@ -1080,8 +1080,18 @@ export function TVPlayer({ show }: TVPlayerProps) {
 
         {!cssFullscreen && (
           <>
-            {/* === INFO CARD: poster + title + meta + buttons + current episode progress === (order-1: над плеером) */}
-            <section className="order-1 grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] gap-5 sm:gap-7">
+            {/* === INFO CARD === (order-1: над плеером) + кино-бэкдроп «для красоты»
+                (как у фильмов). Скругление/клип на внутреннем слое, карточка
+                overflow-visible — чтобы выпадашка «Скачать» не обрезалась. */}
+            <div className="order-1 relative rounded-3xl ring-1 ring-white/[0.07]">
+              {backdropUrl && show.backdrop_path && (
+                <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none select-none">
+                  <img src={backdropUrl} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover object-[center_18%]" />
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(10,10,12,0.74) 0%, rgba(10,10,12,0.88) 55%, rgba(10,10,12,0.97) 100%)" }} />
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(10,10,12,0.55) 0%, rgba(10,10,12,0.15) 60%, rgba(10,10,12,0) 100%)" }} />
+                </div>
+              )}
+              <section className="relative grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] gap-5 sm:gap-7 p-5 sm:p-8">
               {/* Poster */}
               <div className="rounded-2xl overflow-hidden ring-1 ring-white/[0.08] shadow-2xl shadow-black/40 aspect-[2/3] bg-foreground/[0.04]">
                 {show.poster_path && (
@@ -1225,6 +1235,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                 })()}
               </div>
             </section>
+            </div>
 
             {/* Player options (Озвучка / Субтитры / Качество / Скорость) moved INTO the ArtPlayer
                 settings menu (gear icon, bottom-right of the player). На ТВ + Вместе are above

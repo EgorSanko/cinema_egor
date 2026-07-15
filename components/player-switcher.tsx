@@ -35,27 +35,30 @@ export function PlayerSwitcher() {
   };
 
   return (
-    <div className="mt-4 flex items-center flex-wrap gap-x-2 gap-y-2.5">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70 mr-1.5">Плеер</span>
-      {PLAYERS.map((p) => {
-        const active = cur === p.src;
-        return (
-          <button
-            key={p.src}
-            onClick={() => switchTo(p.src)}
-            className={
-              "inline-flex items-center gap-2 h-9 px-4 rounded-full text-[13px] font-semibold border transition-all " +
-              (active
-                ? "border-primary/45 bg-primary/12 text-primary shadow-sm shadow-primary/10"
-                : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-white/20 hover:text-foreground hover:bg-white/[0.06]")
-            }
-          >
-            <span className={"w-1.5 h-1.5 rounded-full " + (active ? "bg-primary" : "bg-muted-foreground/40")} />
-            {p.label}
-          </button>
-        );
-      })}
-      <span className="text-[11.5px] text-muted-foreground/60 ml-1">не идёт — попробуйте другой</span>
+    <div className="mt-4 flex flex-wrap items-center gap-2">
+      <span className="hidden sm:inline text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70 mr-0.5">Плеер</span>
+      {/* На мобиле 3 равные пилюли в один ряд (flex-1), на десктопе — по контенту. */}
+      <div className="flex w-full sm:w-auto gap-2">
+        {PLAYERS.map((p) => {
+          const active = cur === p.src;
+          return (
+            <button
+              key={p.src}
+              onClick={() => switchTo(p.src)}
+              className={
+                "flex-1 sm:flex-none inline-flex items-center justify-center sm:justify-start gap-2 h-9 px-3 sm:px-4 rounded-full text-[13px] font-semibold border transition-all " +
+                (active
+                  ? "border-primary/45 bg-primary/12 text-primary shadow-sm shadow-primary/10"
+                  : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-white/20 hover:text-foreground hover:bg-white/[0.06]")
+              }
+            >
+              <span className={"w-1.5 h-1.5 rounded-full shrink-0 " + (active ? "bg-primary" : "bg-muted-foreground/40")} />
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <span className="w-full sm:w-auto text-[11.5px] text-muted-foreground/60 sm:ml-1">не идёт — попробуйте другой</span>
     </div>
   );
 }
