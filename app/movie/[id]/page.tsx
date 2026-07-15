@@ -98,7 +98,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
           {/* Recommendations */}
           {relatedMovies.length > 0 && (
             <section className="mt-10">
-              <h2 className="text-2xl font-bold text-foreground tracking-tight mb-5">Похожие фильмы</h2>
+              <h2 className="text-[22px] sm:text-2xl font-extrabold text-foreground tracking-[-0.01em] mb-5">Похожие фильмы</h2>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4">
                 {relatedMovies.map(r => (
                   <Link key={r.id} href={`/movie/${r.id}`} className="group block">

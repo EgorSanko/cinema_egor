@@ -4,7 +4,7 @@ import type { MovieDetails } from "@/lib/tmdb";
 import { MovieDownloadButton } from './movie-download-button';
 import {
   Play, Film, ChevronDown, Mic, Clock, CalendarDays, Users,
-  Tv as TvIcon, Subtitles, Maximize,
+  Tv as TvIcon, Subtitles, Maximize, Star, Download, Bookmark,
 } from "lucide-react";
 import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
@@ -22,8 +22,9 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
+import { PlayerSwitcher } from "./player-switcher";
 
 interface MoviePlayerProps {
   movie: MovieDetails;
@@ -45,8 +46,11 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
   // Free (zenithjs) по умолчанию → init true, чтобы SSR/первый рендер сразу
   // скрывали платные кнопки (скачать/вместе) без мелькания.
   const [srcIsZenith, setSrcIsZenith] = useState(true);
+  // Реальный бесплатный тариф = ТОЛЬКО zenithjs. Alloha — тоже iframe, но это
+  // Про-источник (админ-тест), поэтому фри-апселл на ней показывать НЕЛЬЗЯ.
+  const [srcIsFree, setSrcIsFree] = useState(true);
   useEffect(() => {
-    const check = () => setSrcIsZenith(getSource() === "zenithjs");
+    const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
     window.addEventListener("kino-source-changed", check);
     window.addEventListener("storage", check);
@@ -130,9 +134,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     let alive = true;
     // Collaps (=LordFilm) source: resolve the iframe embed URL (their own player).
     // No pre-buffering — the iframe loads on play. We just resolve the URL early.
-    if (getSource() === "zenithjs") {
+    if (isIframeSource()) {
       (async () => {
-        const embed = await resolveZenithEmbed(movie.id, "movie");
+        const embed = await resolveIframeEmbed(movie.id, "movie");
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -144,7 +148,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
         const kpTitle = ((movie.title || (movie as any).original_title || "") as string).replace(/["«»""]/g, "").trim();
         if (!kpTitle) return;
-        const kp = await resolveKinopub({ tmdbId: movie.id, title: kpTitle, year, type: "movie" });
+        const kp = await resolveKinopub({ tmdbId: movie.id, title: kpTitle, otitle: movie.original_title, year, type: "movie" });
         if (!alive || !kp) return;
         setAvailInfo({ quality: (kp.qualities && kp.qualities[0]) || "HD", dubs: 0 });
         const c: any = (navigator as any).connection;
@@ -239,6 +243,30 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [movie.id]);
 
+  // iframe-источники (Alloha/Collaps/zenithjs) — их плеер чёрный ящик, событий
+  // от <video> нет, поэтому история/позиция не писались (не появлялось в
+  // «продолжить смотреть», не считались часы). Оцениваем просмотр по РЕАЛЬНОМУ
+  // времени, что iframe открыт (≈ время просмотра), и пишем историю+позицию.
+  // Точную докрутку внутри держит сам их плеер (свой сторедж по домену).
+  useEffect(() => {
+    if (!showPlayer || !streamData?.collapsEmbed) return;
+    const durSec = ((movie as any)?.runtime > 0 ? (movie as any).runtime : 90) * 60;
+    const startedAt = Date.now();
+    const write = () => {
+      const elapsed = Math.min((Date.now() - startedAt) / 1000, durSec - 1);
+      if (elapsed < 10) return;
+      watchHeartbeat();
+      savePosition(movie.id, "movie", elapsed, durSec);
+      addToHistory({
+        id: movie.id, type: "movie", title: movie.title, poster_path: movie.poster_path,
+        vote_average: movie.vote_average, release_date: movie.release_date, watchedAt: Date.now(),
+        progress: elapsed, duration: durSec, genre_ids: movie.genres?.map((g) => g.id),
+      });
+    };
+    const iv = setInterval(write, 20000);
+    return () => { clearInterval(iv); write(); };
+  }, [showPlayer, streamData?.collapsEmbed, movie]);
+
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
   const applyStream = (d: any) => {
@@ -265,12 +293,12 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
     // Zenithjs source — resolve the iframe embed (их плеер сам держит озвучки).
     // НЕ гейтим по translatorId (иначе падало бы в HDRezka).
-    if (getSource() === "zenithjs" && _attempt === 0) {
+    if (isIframeSource() && _attempt === 0) {
       try {
-        const embed = await resolveZenithEmbed(movie.id, "movie");
+        const embed = await resolveIframeEmbed(movie.id, "movie");
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
-      setError("Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
+      setError(getSource() === "alloha" ? "Этого тайтла нет в Alloha." : "Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
       setLoading(false);
       return;
     }
@@ -283,7 +311,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
       try {
         const kpYear = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
         const kpTitle = ((movie.title || (movie as any).original_title || "") as string).replace(/["«»""]/g, "").trim();
-        const kp = await resolveKinopub({ tmdbId: movie.id, title: kpTitle, year: kpYear, type: "movie" });
+        const kp = await resolveKinopub({ tmdbId: movie.id, title: kpTitle, otitle: movie.original_title, year: kpYear, type: "movie" });
         if (kp) {
           setStreamData({ stream: kp.hls4, kinopub: true, quality: "Auto" });
           setLoading(false);
@@ -656,14 +684,17 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
           )}
         </div>
 
+        {/* Переключатель плеера (Про) — под плеером, не поверх видео. */}
+        {!cssFullscreen && <PlayerSwitcher />}
+
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
-        {srcIsZenith && !cssFullscreen && <ProUpsell />}
+        {srcIsFree && !cssFullscreen && <ProUpsell />}
 
         {!cssFullscreen && (
           <>
             {/* === INFO CARD === */}
-            <section className="mt-7 grid grid-cols-[120px_1fr] sm:grid-cols-[180px_1fr] gap-5 sm:gap-7">
-              <div className="rounded-2xl overflow-hidden ring-1 ring-white/[0.08] shadow-2xl shadow-black/40 aspect-[2/3] bg-foreground/[0.04]">
+            <section className="mt-8 grid grid-cols-[128px_1fr] sm:grid-cols-[212px_1fr] gap-5 sm:gap-8">
+              <div className="rounded-2xl overflow-hidden ring-1 ring-white/[0.08] shadow-2xl shadow-black/50 aspect-[2/3] bg-foreground/[0.04] h-fit">
                 {movie.poster_path && (
                   <img
                     src={getImageUrl(movie.poster_path, "w342")}
@@ -672,9 +703,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   />
                 )}
               </div>
-              <div className="space-y-3.5 min-w-0">
+              <div className="space-y-4 min-w-0">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-2xl sm:text-4xl font-bold text-foreground tracking-tight">{movie.title}</h1>
+                  <h1 className="text-[26px] sm:text-[42px] font-extrabold text-foreground tracking-[-0.02em] leading-[1.05]">{movie.title}</h1>
                   <FavoriteButton size="md" item={{
                     id: movie.id, type: "movie", title: movie.title,
                     poster_path: movie.poster_path, vote_average: movie.vote_average,
@@ -691,28 +722,25 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   vote_average={movie.vote_average}
                 />
 
-                <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13.5px] tabular-nums">
+                  <span className="inline-flex items-center gap-1.5 font-bold text-amber-300">
+                    <Star size={15} className="text-amber-400" fill="currentColor" />
+                    {movie.vote_average.toFixed(1)}
+                  </span>
                   {movie.release_date && (
-                    <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">
-                      {new Date(movie.release_date).getFullYear()}
-                    </span>
+                    <><span className="w-1 h-1 rounded-full bg-foreground/25" /><span className="text-foreground/70 font-medium">{new Date(movie.release_date).getFullYear()}</span></>
                   )}
                   {movie.runtime > 0 && (
-                    <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">
-                      {movie.runtime}{" мин"}
-                    </span>
+                    <><span className="w-1 h-1 rounded-full bg-foreground/25" /><span className="text-foreground/70 font-medium">{movie.runtime >= 60 ? `${Math.floor(movie.runtime / 60)} ч ${movie.runtime % 60} мин` : `${movie.runtime} мин`}</span></>
                   )}
-                  <span className="px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/25 font-semibold">
-                    {"★ " + movie.vote_average.toFixed(1)}
-                  </span>
-                  {movie.genres && movie.genres.slice(0, 2).map(g => (
-                    <span key={g.id} className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">{g.name}</span>
-                  ))}
+                  {movie.genres && movie.genres.length > 0 && (
+                    <><span className="w-1 h-1 rounded-full bg-foreground/25" /><span className="text-foreground/55">{movie.genres.slice(0, 3).map(g => g.name).join(", ")}</span></>
+                  )}
                   {availInfo?.quality && (
-                    <span className="px-2.5 py-1 rounded-md bg-primary/12 text-primary ring-1 ring-primary/25 font-semibold">{availInfo.quality}</span>
+                    <span className="ml-1 px-2.5 py-1 rounded-lg bg-primary/12 text-primary ring-1 ring-primary/25 font-semibold text-[12.5px]">{availInfo.quality}</span>
                   )}
                   {availInfo?.dubs ? (
-                    <span className="px-2.5 py-1 rounded-md bg-foreground/[0.05] text-foreground/75 ring-1 ring-white/[0.06]">{availInfo.dubs} {availInfo.dubs === 1 ? "озвучка" : availInfo.dubs < 5 ? "озвучки" : "озвучек"}</span>
+                    <span className="px-2.5 py-1 rounded-lg bg-foreground/[0.05] text-foreground/70 ring-1 ring-white/[0.06] text-[12.5px]">{availInfo.dubs} {availInfo.dubs === 1 ? "озвучка" : availInfo.dubs < 5 ? "озвучки" : "озвучек"}</span>
                   ) : null}
                 </div>
 
@@ -723,22 +751,22 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   />
                 )}
 
-                <div className="flex items-center gap-2 flex-wrap pt-1">
+                <div className="flex items-center gap-2.5 flex-wrap pt-2">
                   <button
                     onClick={() => openPlayer(false)}
                     disabled={isNotReleased}
-                    className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-2 h-11 px-6 rounded-xl bg-primary text-primary-foreground text-[14px] font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 hover:-translate-y-px active:translate-y-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
                   >
                     {isNotReleased ? (
-                      <><CalendarDays size={15} /> {"Скоро в кино"}</>
+                      <><CalendarDays size={16} /> {"Скоро в кино"}</>
                     ) : (
-                      <><Play size={15} fill="currentColor" /> {"Смотреть"}</>
+                      <><Play size={16} fill="currentColor" /> {"Смотреть"}</>
                     )}
                   </button>
                   {!isNotReleased && resumeTime && resumeTime > 10 && (
                     <button
                       onClick={() => openPlayer(true)}
-                      className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-white/[0.06] ring-1 ring-white/15 text-foreground/90 text-[13px] font-semibold hover:bg-white/[0.12] transition-colors"
+                      className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-white/[0.06] ring-1 ring-white/12 text-foreground/90 text-[13.5px] font-semibold hover:bg-white/[0.1] hover:ring-white/20 transition-colors"
                     >
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
@@ -755,10 +783,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                       }} />
                       <Link
                         href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
-                        className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
+                        className="inline-flex items-center gap-2 h-11 px-4 rounded-xl bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[13px] font-semibold"
                         title="Смотреть вместе"
                       >
-                        <Users size={14} /> {"Вместе"}
+                        <Users size={15} /> {"Смотреть вместе"}
                       </Link>
                     </>
                   )}

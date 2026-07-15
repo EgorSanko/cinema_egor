@@ -48,6 +48,14 @@ export async function DetailsMeta({ type, data }: { type: "movie" | "tv"; data: 
   const tagline = data?.tagline;
   const age = type === "movie" ? ageFromMovie(data) : ageFromTV(data);
   const overview = data?.overview;
+  const uniq = (a: string[]) => a.filter((n, i) => a.indexOf(n) === i);
+  const writer = type === "movie"
+    ? uniq(crew.filter((c: any) => ["Screenplay", "Writer", "Story"].includes(c.job)).map((c: any) => c.name)).slice(0, 2).join(", ")
+    : "";
+  const composer = uniq(crew.filter((c: any) => ["Original Music Composer", "Music"].includes(c.job)).map((c: any) => c.name)).slice(0, 2).join(", ");
+  const budget = type === "movie" && data?.budget > 0 ? data.budget : 0;
+  const revenue = type === "movie" && data?.revenue > 0 ? data.revenue : 0;
+  const money = (n: number) => "$ " + n.toLocaleString("en-US").replace(/,/g, " ");
 
   // Franchise (movies only)
   let collection: { name: string; parts: any[] } | null = null;
@@ -56,7 +64,7 @@ export async function DetailsMeta({ type, data }: { type: "movie" | "tv"; data: 
     if (c && c.parts.length > 1) collection = c;
   }
 
-  const hasMeta = director || countries || tagline || age;
+  const hasMeta = director || writer || composer || countries || tagline || age || budget || revenue;
   if (!hasMeta && !overview && !collection) return null;
 
   return (
@@ -64,20 +72,24 @@ export async function DetailsMeta({ type, data }: { type: "movie" | "tv"; data: 
       {/* Synopsis */}
       {overview && (
         <div>
-          <h2 className="text-2xl font-bold text-foreground tracking-tight mb-4">
+          <h2 className="text-[22px] sm:text-2xl font-extrabold text-foreground tracking-[-0.01em] mb-4">
             {type === "movie" ? "О фильме" : "О сериале"}
           </h2>
-          <p className="text-foreground/70 text-[14px] leading-relaxed whitespace-pre-line">{overview}</p>
+          <p className="text-foreground/70 text-[14px] leading-[1.75] whitespace-pre-line max-w-[68ch]">{overview}</p>
         </div>
       )}
 
       {/* Meta table */}
       {hasMeta && (
-        <div className="rounded-2xl bg-foreground/[0.03] ring-1 ring-white/[0.06] p-5 self-start">
+        <div className="rounded-2xl bg-foreground/[0.03] ring-1 ring-white/[0.06] p-5 self-start divide-y divide-white/[0.05]">
           <Row label={type === "movie" ? "Режиссёр" : "Создатели"}>{director}</Row>
+          <Row label="Сценарий">{writer}</Row>
+          <Row label="Композитор">{composer}</Row>
           <Row label="Страна">{countries}</Row>
+          <Row label="Бюджет">{budget ? <span className="tabular-nums">{money(budget)}</span> : null}</Row>
+          <Row label="Сборы">{revenue ? <span className="tabular-nums">{money(revenue)}</span> : null}</Row>
           <Row label="Возраст">{age ? `${age}${/^\d+$/.test(age) ? "+" : ""}` : null}</Row>
-          <Row label="Слоган">{tagline ? <span className="italic">«{tagline}»</span> : null}</Row>
+          <Row label="Слоган">{tagline ? <span className="italic text-foreground/70">«{tagline}»</span> : null}</Row>
         </div>
       )}
 
