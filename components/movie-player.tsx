@@ -700,12 +700,14 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
 
         {!cssFullscreen && (
           <>
-            {/* === INFO CARD === (order-1: над плеером) */}
-            <div className="order-1 relative rounded-3xl overflow-hidden ring-1 ring-white/[0.07]">
+            {/* === INFO CARD === (order-1: над плеером). overflow-visible, чтобы
+                выпадашка «Скачать» не обрезалась краем карточки; скругление
+                бэкдропа делает внутренний слой (rounded-3xl overflow-hidden). */}
+            <div className="order-1 relative rounded-3xl ring-1 ring-white/[0.07]">
               {/* Кино-бэкдроп за блоком инфо (для красоты). Затемнён градиентом,
                   чтобы текст оставался контрастным. Игнорируем клики. */}
               {backdropUrl && movie.backdrop_path && (
-                <div className="absolute inset-0 pointer-events-none select-none">
+                <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none select-none">
                   <img src={backdropUrl} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover object-[center_18%]" />
                   <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(10,10,12,0.74) 0%, rgba(10,10,12,0.88) 55%, rgba(10,10,12,0.97) 100%)" }} />
                   <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(10,10,12,0.55) 0%, rgba(10,10,12,0.15) 60%, rgba(10,10,12,0) 100%)" }} />
