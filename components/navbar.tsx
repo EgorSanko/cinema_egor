@@ -59,14 +59,14 @@ export function Navbar() {
     window.addEventListener("kino-source-changed", check);
     return () => { window.removeEventListener("storage", check); window.removeEventListener("kino-source-changed", check); };
   }, []);
-  const { isPro } = useSubscription();
+  const { isPro, loading: subLoading } = useSubscription();
   const navLinks = (() => {
-    let links = source === "zenithjs" ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
+    // Тариф определяем по isPro, НЕ по источнику: free теперь на alloha (не
+    // zenithjs), поэтому source больше не отличает free от Pro.
+    let links = !isPro ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
     if (source === "kinopub") links = [...links, { label: "Спорт", href: "/sport", Icon: Radio }];
-    // Вкладка «Про»: у free — апселл подписки; у Pro — управление подпиской
-    // (посмотреть срок, продлить). Показываем всегда, кроме случая когда её и так
-    // некуда деть.
-    if (source === "zenithjs" || isPro) links = [...links, { label: "Про", href: "/pro", Icon: Crown }];
+    // Вкладка «Про»: у free — апселл подписки; у Pro — управление подпиской. Всегда.
+    links = [...links, { label: "Про", href: "/pro", Icon: Crown }];
     return links;
   })();
   const searchPanelRef = useRef<HTMLDivElement>(null);
@@ -220,7 +220,8 @@ export function Navbar() {
       >
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 gap-3">
-            {/* Logo + тариф-бейдж (FREE на бесплатном источнике zenithjs) */}
+            {/* Logo + тариф-бейдж: Про / Free по isPro (free = не Pro, независимо
+                от источника; во время загрузки подписки бейдж не мигаем). */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <Link href="/" className="group flex items-center">
                 <img
@@ -237,11 +238,11 @@ export function Navbar() {
                 <span className="inline-flex items-center gap-1 h-6 px-2.5 rounded-full bg-gradient-to-r from-amber-400/20 to-primary/20 ring-1 ring-primary/40 text-primary text-[11px] font-bold uppercase tracking-wider leading-none">
                   <Crown size={12} /> Про
                 </span>
-              ) : source === "zenithjs" ? (
+              ) : subLoading ? null : (
                 <span className="inline-flex items-center h-6 px-2.5 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[11px] font-bold uppercase tracking-wider leading-none">
                   Free
                 </span>
-              ) : null}
+              )}
             </div>
 
             {/* Nav pill (desktop). min-w-0 + overflow-x-auto: когда пунктов много
