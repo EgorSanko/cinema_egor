@@ -693,7 +693,17 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
         {!cssFullscreen && (
           <>
             {/* === INFO CARD === */}
-            <section className="mt-8 grid grid-cols-[128px_1fr] sm:grid-cols-[212px_1fr] gap-5 sm:gap-8">
+            <div className="mt-8 relative rounded-3xl overflow-hidden ring-1 ring-white/[0.07]">
+              {/* Кино-бэкдроп за блоком инфо (для красоты). Затемнён градиентом,
+                  чтобы текст оставался контрастным. Игнорируем клики. */}
+              {backdropUrl && movie.backdrop_path && (
+                <div className="absolute inset-0 pointer-events-none select-none">
+                  <img src={backdropUrl} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover object-[center_18%]" />
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(10,10,12,0.74) 0%, rgba(10,10,12,0.88) 55%, rgba(10,10,12,0.97) 100%)" }} />
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(10,10,12,0.55) 0%, rgba(10,10,12,0.15) 60%, rgba(10,10,12,0) 100%)" }} />
+                </div>
+              )}
+              <section className="relative grid grid-cols-[128px_1fr] sm:grid-cols-[212px_1fr] gap-5 sm:gap-8 p-5 sm:p-8">
               <div className="rounded-2xl overflow-hidden ring-1 ring-white/[0.08] shadow-2xl shadow-black/50 aspect-[2/3] bg-foreground/[0.04] h-fit">
                 {movie.poster_path && (
                   <img
@@ -812,6 +822,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                 })()}
               </div>
             </section>
+            </div>
 
             {/* Player options (Озвучка / Субтитры / Качество / Скорость) moved INTO
                 the ArtPlayer settings menu (gear icon, bottom-right of the player). */}
