@@ -16,6 +16,15 @@ import {
   getLastEpisode,
 } from "@/lib/storage";
 import { getTvUser } from "@/lib/tv-auth";
+import { useTvPro } from "@/hooks/use-tv-pro";
+import { PreRollAd, type AdClip } from "@/components/pre-roll-ad";
+
+// Пре-ролл для FREE-тарифа на ТВ — та же последовательность, что на сайте
+// (movie/tv-player): пропускаемый бампер + непропускаемый ролик. Про — без рекламы.
+const AD_SEQUENCE: AdClip[] = [
+  { src: "/media/intro2.mp4", skippable: true },
+  { src: "/media/oldspice.mp4", skippable: false },
+];
 
 // ════════════════════════════════════════════════════════════════
 // TV WATCH + PLAYER — fully Android-TV-remote (D-pad) controllable.
@@ -103,6 +112,15 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // ── Auth gate ── an unauthenticated user can't watch. Read the logged-in
   // user the SAME way auth-context does (localStorage "user" = {email,name}).
   const [authed, setAuthed] = useState(false);
+
+  // ── Тариф + пре-ролл (FREE) ──
+  const { isPro, loading: subLoading } = useTvPro();
+  const [adDone, setAdDone] = useState(false);
+  // Реклама сейчас перекрывает плеер? (в player-зоне, юзер не Про, статус известен,
+  // ролики ещё не досмотрены). Реф — чтобы key-handler плеера не дёргался под рекламой.
+  const adActive = !isPro && !subLoading && !adDone;
+  const adActiveRef = useRef(adActive);
+  adActiveRef.current = adActive;
   useEffect(() => {
     if (getTvUser()) setAuthed(true);
     else router.replace("/tv-login");
@@ -496,6 +514,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     const url = data?.stream;
     const v = videoRef.current;
     if (!url || !v) return;
+    // FREE: контент не грузится/не играет, пока не досмотрена реклама (пре-ролл
+    // сверху). Как только adDone (или юзер Про) — эффект перезапустится и стартует.
+    if (!isPro && !adDone) return;
 
     const seekTarget = (() => {
       if (seekOnNext.current && seekOnNext.current > 1) return seekOnNext.current;
@@ -527,7 +548,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
     return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.stream]);
+  }, [data?.stream, isPro, adDone]);
 
   // Video element events → progress/paused state.
   useEffect(() => {
@@ -761,6 +782,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
       if (!isLeft && !isUp && !isRight && !isDown && !isEnter && !isSpace && !isPlayPause && !isBack) return;
       e.preventDefault();
+
+      // Под рекламой (FREE) плеером не управляем: стрелки/OK глотает сам пре-ролл
+      // (capture-listener), здесь гасим остальное; «Назад» — выход.
+      if (adActiveRef.current) { if (isBack) exit(); return; }
 
       // ────────── SERIES PICKER (Озвучка | Сезоны | Серии) ──────────
       if (zone === "picker") {
@@ -1077,6 +1102,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       {zone === "player" && (
         <>
           <video ref={videoRef} className="absolute inset-0 h-full w-full bg-black" playsInline autoPlay />
+
+          {/* FREE-тариф: пре-ролл поверх плеера (пультом: OK — пропустить когда
+              можно). Контент под ним не грузится, пока adDone=false (гейт в hls). */}
+          {adActive && <PreRollAd ads={AD_SEQUENCE} onDone={() => setAdDone(true)} tvMode />}
 
           {/* Title chip — shown whenever an overlay is up. */}
           {overlay !== "none" && (

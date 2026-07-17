@@ -16,7 +16,7 @@ export interface AdClip {
   skippable: boolean;
 }
 
-export function PreRollAd({ ads, onDone }: { ads: AdClip[]; onDone: () => void }) {
+export function PreRollAd({ ads, onDone, tvMode = false }: { ads: AdClip[]; onDone: () => void; tvMode?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [idx, setIdx] = useState(0);
   const [left, setLeft] = useState(SKIP_AFTER);
@@ -41,6 +41,34 @@ export function PreRollAd({ ads, onDone }: { ads: AdClip[]; onDone: () => void }
     setMuted(nx);
     if (v) v.muted = nx;
   };
+
+  // Можно ли сейчас пропустить (пропускаемый ролик + отсчёт вышел).
+  const canSkip = !!cur?.skippable && left <= 0;
+  // Рефы для стабильного window-listener на ТВ (без переподписки каждые 250мс).
+  const nextRef = useRef(next); nextRef.current = next;
+  const muteRef = useRef(toggleMute); muteRef.current = toggleMute;
+  const canSkipRef = useRef(canSkip); canSkipRef.current = canSkip;
+
+  // ТВ/пульт: браузерная spatial-навигация в Android TV WebView ненадёжна, поэтому
+  // на tvMode вешаем СВОЙ обработчик в ФАЗЕ ПЕРЕХВАТА и ГЛОТАЕМ стрелки/OK, чтобы
+  // они не долетели до плеера снизу. OK/→ пропускают (когда уже можно), звук — на ↓.
+  useEffect(() => {
+    if (!tvMode) return;
+    const h = (e: KeyboardEvent) => {
+      const c = e.keyCode, k = e.key;
+      const isEnter = k === "Enter" || c === 13;
+      const isRight = k === "ArrowRight" || c === 39;
+      const isArrowOrOk = isEnter || isRight || k === "ArrowLeft" || c === 37 || k === "ArrowUp" || c === 38 || k === "ArrowDown" || c === 40;
+      if (!isArrowOrOk) return;
+      // Пока идёт реклама — гасим навигацию плеера полностью.
+      e.preventDefault();
+      e.stopPropagation();
+      if ((isEnter || isRight) && canSkipRef.current) nextRef.current();
+      else if (k === "ArrowDown" || c === 40) muteRef.current();
+    };
+    window.addEventListener("keydown", h, true); // capture — раньше обработчика плеера
+    return () => window.removeEventListener("keydown", h, true);
+  }, [tvMode]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -95,25 +123,42 @@ export function PreRollAd({ ads, onDone }: { ads: AdClip[]; onDone: () => void }
         {muted ? "Звук" : "Без звука"}
       </button>
 
-      {/* Пропуск — только для пропускаемого ролика и только после SKIP_AFTER сек */}
-      <div className="absolute bottom-4 right-4">
+      {/* Пропуск — только для пропускаемого ролика и только после SKIP_AFTER сек.
+          На ТВ (tvMode) — крупнее, с фокус-рамкой и подсказкой пульта. */}
+      <div className={tvMode ? "absolute bottom-[6vh] right-[5vw] flex flex-col items-end gap-2" : "absolute bottom-4 right-4"}>
         {cur.skippable ? (
           left > 0 ? (
-            <div className="inline-flex items-center h-10 px-4 rounded-lg bg-black/70 text-white/75 text-[13px] font-medium ring-1 ring-white/12 select-none">
+            <div className={
+              tvMode
+                ? "inline-flex items-center h-14 px-6 rounded-xl bg-black/70 text-white/80 text-lg font-semibold ring-1 ring-white/15 select-none"
+                : "inline-flex items-center h-10 px-4 rounded-lg bg-black/70 text-white/75 text-[13px] font-medium ring-1 ring-white/12 select-none"
+            }>
               {"Пропустить через " + left}
             </div>
           ) : (
             <button
               onClick={next}
-              className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-white text-black text-[13px] font-bold hover:bg-white/90 active:scale-[0.98] transition-all shadow-lg"
+              autoFocus={tvMode}
+              className={
+                tvMode
+                  ? "inline-flex items-center gap-2 h-14 px-7 rounded-xl bg-white text-black text-lg font-bold shadow-lg outline-none ring-4 ring-[var(--primary)] active:scale-[0.98] transition-all"
+                  : "inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-white text-black text-[13px] font-bold hover:bg-white/90 active:scale-[0.98] transition-all shadow-lg"
+              }
             >
-              {"Пропустить рекламу"} <SkipForward size={15} fill="currentColor" />
+              {"Пропустить рекламу"} <SkipForward size={tvMode ? 20 : 15} fill="currentColor" />
             </button>
           )
         ) : (
-          <div className="inline-flex items-center h-9 px-3 rounded-lg bg-black/60 text-white/60 text-[12px] font-medium ring-1 ring-white/10 select-none">
+          <div className={
+            tvMode
+              ? "inline-flex items-center h-12 px-5 rounded-xl bg-black/60 text-white/65 text-base font-medium ring-1 ring-white/10 select-none"
+              : "inline-flex items-center h-9 px-3 rounded-lg bg-black/60 text-white/60 text-[12px] font-medium ring-1 ring-white/10 select-none"
+          }>
             {"Реклама без пропуска"}
           </div>
+        )}
+        {tvMode && (
+          <p className="text-sm text-white/50 select-none">OK — пропустить · ↓ звук</p>
         )}
       </div>
     </div>
