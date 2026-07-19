@@ -92,8 +92,8 @@ android {
         applicationId 'ru.leadseek.kinotv'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 28
-        versionName "2.0.27"
+        versionCode 29
+        versionName "2.0.28-hdrezka"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
