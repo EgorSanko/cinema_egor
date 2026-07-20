@@ -272,9 +272,6 @@ export function ArtPlayerView(props: ArtPlayerProps) {
   React.useEffect(() => { autoStartRef.current = autoStart; }, [autoStart]);
   const kinopubModeRef = React.useRef(kinopubMode);
   React.useEffect(() => { kinopubModeRef.current = kinopubMode; }, [kinopubMode]);
-  // Имя выбранной озвучки (kino.pub) — вернуть ту же дорожку после смены серии
-  // (новый hls-манифест сбрасывает audioTrack на дефолт).
-  const lastAudioNameRef = React.useRef<string | null>(null);
   // One-shot start position for the next source switch (quality switch keeps the
   // current position). Synced from the prop BEFORE the switchUrl effect runs;
   // consumed (→0) once the switch starts so it never leaks to a later switch.
@@ -434,19 +431,12 @@ export function ArtPlayerView(props: ArtPlayerProps) {
       }
       rm("kino-translator");
       if (hls.audioTracks && hls.audioTracks.length > 1) {
-        // Смена серии: hls берёт дефолтную дорожку — вернём ранее выбранную по имени.
-        if (lastAudioNameRef.current) {
-          const want = hls.audioTracks.findIndex((t: any) => t.name === lastAudioNameRef.current);
-          if (want >= 0 && want !== hls.audioTrack) { try { hls.audioTrack = want; } catch {} }
-        }
         const cur = hls.audioTrack;
-        // Синхронизируем запомненное имя с активной дорожкой (для след. серии).
-        lastAudioNameRef.current = (hls.audioTracks[cur] && hls.audioTracks[cur].name) || lastAudioNameRef.current;
         add({
           name: "kino-translator", html: "Озвучка", icon: ICON_DUB, width: 300,
           tooltip: (hls.audioTracks[cur] && hls.audioTracks[cur].name) || "Озвучка",
           selector: hls.audioTracks.map((t: any, i: number) => ({ html: t.name, value: i, default: i === cur })),
-          onSelect: (item: any) => { hls.audioTrack = item.value; lastAudioNameRef.current = item.html; return item.html; },
+          onSelect: (item: any) => { hls.audioTrack = item.value; return item.html; },
         });
       }
     };
