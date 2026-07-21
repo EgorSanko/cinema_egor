@@ -873,7 +873,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                 </div>
 
                 {dx && (movie as any).tagline && (
-                  <p className="italic text-foreground/90 text-[15px] sm:text-[17px] border-l-2 border-primary pl-3.5 font-medium">{"«" + (movie as any).tagline + "»"}</p>
+                  <p className="italic text-foreground/90 text-[15px] sm:text-[17px] border-l-2 border-primary pl-3.5 font-medium">{"«" + String((movie as any).tagline).replace(/^[«»"'\s]+|[«»"'\s]+$/g, "") + "»"}</p>
                 )}
                 {movie.overview && (
                   <ExpandableText
