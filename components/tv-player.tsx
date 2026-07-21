@@ -98,10 +98,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
   );
-  // Нативный резолв Alloha в наш ArtPlayer. VkMovie = ТОЛЬКО фильмы → для сериала
-  // недоступен (покажем «недоступно на Плеере N»).
+  // Нативный резолв Alloha в наш ArtPlayer. VkMovie = ТОЛЬКО фильмы → на сериале
+  // Плеер 3 скрыт в switcher, а если он всё же выбран (был persisted) — тихо
+  // резолвим через Alloha (не показываем ошибку).
   const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
-    if (getSource() === "vkmovie") return false;
     const defQ = "1080";
     const a = await resolveAllohaHls(show.id, "tv", season, episode);
     if (!a) return false;
@@ -1167,7 +1167,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         </div>
 
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
-        {!cssFullscreen && <div className="order-3"><PlayerSwitcher /></div>}
+        {!cssFullscreen && <div className="order-3"><PlayerSwitcher mediaType="tv" /></div>}
         {!cssFullscreen && (
           <div className="order-3 flex justify-center sm:justify-start pt-1">
             <ProblemReport mediaType="tv" mediaId={show.id} title={show.name || ""} season={selectedSeason} episode={selectedEpisode} />

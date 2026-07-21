@@ -25,9 +25,11 @@ const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
       { src: "vkmovie", label: "Плеер 3" },
     ];
 
-export function PlayerSwitcher() {
+export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | "tv" }) {
   const { isPro, loading } = useSubscription();
   const [cur, setCur] = useState<KinoSource | null>(null);
+  // VkMovie = только фильмы → на страницах сериалов прячем этот плеер.
+  const players = mediaType === "tv" ? PLAYERS.filter((p) => p.src !== "vkmovie") : PLAYERS;
   useEffect(() => {
     const read = () => setCur(getSource());
     read();
@@ -48,7 +50,7 @@ export function PlayerSwitcher() {
       <span className="hidden sm:inline text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70 mr-0.5">Плеер</span>
       {/* На мобиле 3 равные пилюли в один ряд (flex-1), на десктопе — по контенту. */}
       <div className="flex w-full sm:w-auto gap-2">
-        {PLAYERS.map((p) => {
+        {players.map((p) => {
           const active = cur === p.src;
           return (
             <button
