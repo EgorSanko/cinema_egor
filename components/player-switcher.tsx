@@ -17,10 +17,12 @@ const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
       { src: "hdrezka", label: "Плеер 1" },
       { src: "alloha", label: "Плеер 2" },
       { src: "kinopub", label: "Плеер 3" },
+      { src: "vkmovie", label: "Плеер 4" },
     ]
   : [
       { src: "alloha", label: "Плеер 1" },
       { src: "kinopub", label: "Плеер 2" },
+      { src: "vkmovie", label: "Плеер 3" },
     ];
 
 export function PlayerSwitcher() {

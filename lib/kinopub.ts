@@ -46,7 +46,7 @@ export const HDREZKA_UP = false;
 
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
-export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha";
+export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie";
 
 export function getSource(): KinoSource {
   // Дефолт для ВСЕХ — zenithjs (бесплатный источник). Явный выбор HDRezka/kino.pub
@@ -54,7 +54,7 @@ export function getSource(): KinoSource {
   // zenithjs. alloha — тест-источник, тумблер виден только админам.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" ? v : "zenithjs";
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" ? v : "zenithjs";
   } catch {
     return "zenithjs";
   }
@@ -73,8 +73,8 @@ export function isIframeSource(s?: KinoSource): boolean {
 export function playerLabel(s?: KinoSource): string {
   const src = s || getSource();
   const order: KinoSource[] = HDREZKA_UP
-    ? ["hdrezka", "alloha", "kinopub"]
-    : ["alloha", "kinopub"];
+    ? ["hdrezka", "alloha", "kinopub", "vkmovie"]
+    : ["alloha", "kinopub", "vkmovie"];
   const i = order.indexOf(src);
   return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
 }
@@ -110,6 +110,24 @@ export function pickAllohaStream(a: AllohaHls, trIdx: number, quality: string): 
   for (const k of ALLOHA_Q_ORDER) if (q[k]) return { url: q[k], quality: k };
   const keys = Object.keys(q);
   return keys.length ? { url: q[keys[0]], quality: keys[0] } : null;
+}
+
+/** Нативный резолв VkMovie → прямые mp4 до 4K с VK (RU-хостинг, RKN не блочит,
+ *  не банят) через наш бэкенд /api/vkmovie (поиск по названию+году → «версии»-
+ *  загрузки VK как озвучки, качества проксированы). ТОЛЬКО фильмы. Форма ==
+ *  AllohaHls, поэтому играется нашей нативной машинерией. null при промахе. */
+export async function resolveVkMovie(
+  title: string, year: string | number, otitle?: string,
+): Promise<AllohaHls | null> {
+  try {
+    const p = new URLSearchParams({ title: title || "", year: String(year || ""), type: "movie" });
+    if (otitle && otitle !== title) p.set("otitle", otitle);
+    const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/vkmovie?${p.toString()}`).then((r) => r.json());
+    if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
+    return d as AllohaHls;
+  } catch {
+    return null;
+  }
 }
 
 // Alloha (VK Video cloud, 4K, все озвучки) — тест-источник. Резолвим imdb из

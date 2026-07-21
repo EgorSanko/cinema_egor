@@ -98,8 +98,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
   );
-  // Нативный резолв Alloha в наш ArtPlayer.
+  // Нативный резолв Alloha в наш ArtPlayer. VkMovie = ТОЛЬКО фильмы → для сериала
+  // недоступен (покажем «недоступно на Плеере N»).
   const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
+    if (getSource() === "vkmovie") return false;
     const defQ = "1080";
     const a = await resolveAllohaHls(show.id, "tv", season, episode);
     if (!a) return false;
@@ -136,7 +138,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const onSourceChange = () => {
       check();
       if (startedRef.current) return;
-      if (getSource() === "alloha") {
+      if ((getSource() === "alloha" || getSource() === "vkmovie")) {
         setStreamData(null);
         resolveAllohaNative(selectedSeason, selectedEpisode);
       } else if (isIframeSource()) {
@@ -359,7 +361,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
     // player handles seasons/episodes/dubs itself).
     // Alloha — нативный резолв этой серии (VK m3u8 в наш ArtPlayer).
-    if (getSource() === "alloha") {
+    if ((getSource() === "alloha" || getSource() === "vkmovie")) {
       (async () => { if (alive) await resolveAllohaNative(selectedSeason, selectedEpisode); })();
       return () => { alive = false; };
     }
@@ -467,7 +469,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // selectedTranslator — из-за гейта смена серии падала в HDRezka и возвращала
     // наш ArtPlayer. При source=zenithjs всегда остаёмся на iframe.
     // Alloha — нативный резолв этой серии в наш ArtPlayer.
-    if (getSource() === "alloha" && _attempt === 0) {
+    if ((getSource() === "alloha" || getSource() === "vkmovie") && _attempt === 0) {
       const ok = await resolveAllohaNative(season, episode);
       if (!ok) setError(`Этой серии нет на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);
