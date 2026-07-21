@@ -68,6 +68,17 @@ export function isIframeSource(s?: KinoSource): boolean {
   return x === "zenithjs";
 }
 
+// Человекочитаемая метка выбранного движка ("Плеер 2") — та же нумерация, что в
+// player-switcher (зависит от HDREZKA_UP). Для сообщений «недоступно на Плеере N».
+export function playerLabel(s?: KinoSource): string {
+  const src = s || getSource();
+  const order: KinoSource[] = HDREZKA_UP
+    ? ["hdrezka", "alloha", "filmix", "kinopub"]
+    : ["alloha", "filmix", "kinopub"];
+  const i = order.indexOf(src);
+  return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
+}
+
 export interface AllohaTranslation { name: string; quality: Record<string, string>; }
 export interface AllohaHls { skipTime?: string; translations: AllohaTranslation[]; }
 

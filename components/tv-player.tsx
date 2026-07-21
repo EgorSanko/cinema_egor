@@ -32,7 +32,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveFilmix, pickAllohaStream, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveFilmix, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -97,9 +97,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
   );
-  // Нативный резолв Alloha ИЛИ Filmix (общий плеер). ⚠️ Filmix-сериалы пока
-  // возвращают пусто (их player-data отдаёт season/episode-дерево иначе) —
-  // резолв вернёт false, сработает штатный фолбэк/ошибка. TODO: серии Filmix.
+  // Нативный резолв Alloha ИЛИ Filmix (общий плеер). Filmix-сериалы резолвятся
+  // через message.links (структура скачивания: voice→сезон→серия→качество,
+  // прямые mp4, без скрембла) — бэкенд /api/filmix?type=tv&season&episode.
   const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
     let a: AllohaHls | null;
     let defQ = "1080";
@@ -477,7 +477,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // Alloha — нативный резолв этой серии в наш ArtPlayer.
     if ((getSource() === "alloha" || getSource() === "filmix") && _attempt === 0) {
       const ok = await resolveAllohaNative(season, episode);
-      if (!ok) setError("Этой серии нет в Alloha.");
+      if (!ok) setError(`Этой серии нет на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);
       return;
     }

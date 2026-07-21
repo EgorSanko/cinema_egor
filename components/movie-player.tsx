@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveFilmix, pickAllohaStream, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveFilmix, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { PreRollAd } from "./pre-roll-ad";
@@ -366,7 +366,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     // Alloha — нативный резолв в наш ArtPlayer.
     if ((getSource() === "alloha" || getSource() === "filmix") && _attempt === 0) {
       const ok = await resolveAllohaNative();
-      if (!ok) setError("Этого тайтла нет в Alloha.");
+      if (!ok) setError(`Недоступно на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);
       return;
     }
