@@ -39,6 +39,8 @@ const AD_SEQUENCE = [
 
 interface MoviePlayerProps {
   movie: MovieDetails;
+  // "deeplex" — обкатка нового дизайна hero (пока только на одном фильме).
+  variant?: "deeplex";
 }
 
 interface Translator {
@@ -47,7 +49,8 @@ interface Translator {
   is_premium?: boolean;
 }
 
-export function MoviePlayer({ movie }: MoviePlayerProps) {
+export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
+  const dx = variant === "deeplex";
   const requireAuth = useAuthGate();
   const [showPlayer, setShowPlayer] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -825,6 +828,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   }} />
                 </div>
 
+                {dx && (movie as any).original_title && (movie as any).original_title !== movie.title && (
+                  <p className="-mt-2 text-foreground/55 text-[16px] sm:text-[20px] font-semibold">{(movie as any).original_title}</p>
+                )}
                 {/* Watch status — Хочу / Просмотрел toggle pills */}
                 <StatusButtons
                   id={movie.id}
@@ -834,13 +840,23 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   vote_average={movie.vote_average}
                 />
 
+                {dx && (
+                  <div className="flex gap-6 pt-0.5">
+                    <div className="flex flex-col">
+                      <span className="text-[24px] sm:text-[27px] font-extrabold text-emerald-400 leading-none tabular-nums">{movie.vote_average.toFixed(1)}</span>
+                      <span className="mt-1.5 text-[10px] uppercase tracking-[0.09em] text-foreground/45 font-bold">TMDB</span>
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13.5px] tabular-nums">
-                  <span className="inline-flex items-center gap-1.5 font-bold text-amber-300">
-                    <Star size={15} className="text-amber-400" fill="currentColor" />
-                    {movie.vote_average.toFixed(1)}
-                  </span>
+                  {!dx && (
+                    <span className="inline-flex items-center gap-1.5 font-bold text-amber-300">
+                      <Star size={15} className="text-amber-400" fill="currentColor" />
+                      {movie.vote_average.toFixed(1)}
+                    </span>
+                  )}
                   {movie.release_date && (
-                    <><span className="w-1 h-1 rounded-full bg-foreground/25" /><span className="text-foreground/70 font-medium">{new Date(movie.release_date).getFullYear()}</span></>
+                    <>{!dx && <span className="w-1 h-1 rounded-full bg-foreground/25" />}<span className="text-foreground/70 font-medium">{new Date(movie.release_date).getFullYear()}</span></>
                   )}
                   {movie.runtime > 0 && (
                     <><span className="w-1 h-1 rounded-full bg-foreground/25" /><span className="text-foreground/70 font-medium">{movie.runtime >= 60 ? `${Math.floor(movie.runtime / 60)} ч ${movie.runtime % 60} мин` : `${movie.runtime} мин`}</span></>
@@ -856,6 +872,9 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
                   ) : null}
                 </div>
 
+                {dx && (movie as any).tagline && (
+                  <p className="italic text-foreground/90 text-[15px] sm:text-[17px] border-l-2 border-primary pl-3.5 font-medium">{"«" + (movie as any).tagline + "»"}</p>
+                )}
                 {movie.overview && (
                   <ExpandableText
                     text={movie.overview}
