@@ -25,6 +25,7 @@ import { ArtPlayerView, type ArtSubtitle } from "./art-player";
 import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
+import { ProblemReport } from "./problem-report";
 import { PreRollAd } from "./pre-roll-ad";
 import { useSubscription } from "@/hooks/use-subscription";
 
@@ -789,6 +790,13 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
 
         {/* Переключатель плеера (Про) — под плеером, не поверх видео. */}
         {!cssFullscreen && <div className="order-3"><PlayerSwitcher /></div>}
+
+        {/* «Сообщить о проблеме» — под плеером, для всех (не только Про). */}
+        {!cssFullscreen && (
+          <div className="order-3 flex justify-center sm:justify-start pt-1">
+            <ProblemReport mediaType="movie" mediaId={movie.id} title={movie.title} />
+          </div>
+        )}
 
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
         {!isPro && !subLoading && !cssFullscreen && <div className="order-3"><ProUpsell /></div>}

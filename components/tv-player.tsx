@@ -20,6 +20,7 @@ import { SkipOverlays } from "./skip-overlays";
 import { PlayerEpisodeBar } from "./player-episode-bar";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
+import { ProblemReport } from "./problem-report";
 import { PreRollAd } from "./pre-roll-ad";
 import { useSubscription } from "@/hooks/use-subscription";
 
@@ -1165,6 +1166,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
 
         {/* Апселл на Про — под бесплатным (zenithjs) плеером */}
         {!cssFullscreen && <div className="order-3"><PlayerSwitcher /></div>}
+        {!cssFullscreen && (
+          <div className="order-3 flex justify-center sm:justify-start pt-1">
+            <ProblemReport mediaType="tv" mediaId={show.id} title={show.name || ""} season={selectedSeason} episode={selectedEpisode} />
+          </div>
+        )}
         {!isPro && !subLoading && !cssFullscreen && <div className="order-3"><ProUpsell /></div>}
 
         {!cssFullscreen && (
