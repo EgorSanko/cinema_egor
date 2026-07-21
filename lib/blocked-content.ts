@@ -33,6 +33,8 @@ export const BLOCKED_MOVIE_IDS = new Set<number>([
   // 2026-07-01 — copyright claim via Beget (ООО "Исола Динамикс" / isola-dynamics.com):
   // movie/1279493 «Ночной бизнес» / The Get Out (2026) — cited OUR url in the notice
   1279493,
+  // 2026-07-21 — takedown notice #12330615: movie/1212763
+  1212763,
 ]);
 
 export const BLOCKED_TV_IDS = new Set<number>([]);
