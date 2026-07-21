@@ -46,7 +46,7 @@ export const HDREZKA_UP = false;
 
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
-export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha";
+export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "filmix";
 
 export function getSource(): KinoSource {
   // Дефолт для ВСЕХ — zenithjs (бесплатный источник). Явный выбор HDRezka/kino.pub
@@ -54,7 +54,7 @@ export function getSource(): KinoSource {
   // zenithjs. alloha — тест-источник, тумблер виден только админам.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" ? v : "zenithjs";
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "filmix" ? v : "zenithjs";
   } catch {
     return "zenithjs";
   }
@@ -92,13 +92,35 @@ export async function resolveAllohaHls(
 
 /** Порядок качеств от высшего к низшему для выбора дефолта/сортировки. */
 export const ALLOHA_Q_ORDER = ["2160", "1440", "1080", "720", "480", "360"];
-/** Выбирает URL для озвучки+качества; если качества нет — берёт ближайшее высшее. */
+/** Filmix отдаёт качества метками PlayerJS. Порядок от высшего к низшему. */
+export const FILMIX_Q_ORDER = ["4K UHD", "1080p Ultra+", "1080p", "720p", "480p"];
+/** Выбирает URL для озвучки+качества; если качества нет — берёт ближайшее высшее.
+ *  Форма ответа Filmix == Alloha, поэтому один pick на оба (фолбэк по обоим порядкам). */
 export function pickAllohaStream(a: AllohaHls, trIdx: number, quality: string): { url: string; quality: string } | null {
   const q = a.translations[trIdx]?.quality || {};
   if (q[quality]) return { url: q[quality], quality };
-  for (const k of ALLOHA_Q_ORDER) if (q[k]) return { url: q[k], quality: k };
+  for (const k of [...ALLOHA_Q_ORDER, ...FILMIX_Q_ORDER]) if (q[k]) return { url: q[k], quality: k };
   const keys = Object.keys(q);
   return keys.length ? { url: q[keys[0]], quality: keys[0] } : null;
+}
+
+/** Нативный резолв Filmix → прямой MP4/HLS (cdnsqu.com, RU-доступны) через наш
+ *  бэкенд /api/filmix (поиск по названию+году → filmix-id → озвучки/качества,
+ *  уже отвалидированные на воспроизведение). Форма == AllohaHls. null при промахе. */
+export async function resolveFilmix(
+  title: string, year: string | number, type: "movie" | "tv",
+  otitle?: string, season?: number, episode?: number,
+): Promise<AllohaHls | null> {
+  try {
+    const p = new URLSearchParams({ title: title || "", year: String(year || ""), type });
+    if (otitle && otitle !== title) p.set("otitle", otitle);
+    if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+    const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/filmix?${p.toString()}`).then((r) => r.json());
+    if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
+    return d as AllohaHls;
+  } catch {
+    return null;
+  }
 }
 
 // Alloha (VK Video cloud, 4K, все озвучки) — тест-источник. Резолвим imdb из

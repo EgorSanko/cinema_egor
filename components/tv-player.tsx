@@ -32,7 +32,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveFilmix, pickAllohaStream, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -97,10 +97,21 @@ export function TVPlayer({ show }: TVPlayerProps) {
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
   );
+  // Нативный резолв Alloha ИЛИ Filmix (общий плеер). ⚠️ Filmix-сериалы пока
+  // возвращают пусто (их player-data отдаёт season/episode-дерево иначе) —
+  // резолв вернёт false, сработает штатный фолбэк/ошибка. TODO: серии Filmix.
   const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
-    const a = await resolveAllohaHls(show.id, "tv", season, episode);
+    let a: AllohaHls | null;
+    let defQ = "1080";
+    if (getSource() === "filmix") {
+      const yr = show.first_air_date ? new Date(show.first_air_date).getFullYear() : "";
+      a = await resolveFilmix(show.name || "", yr, "tv", (show as any).original_name, season, episode);
+      defQ = "1080p";
+    } else {
+      a = await resolveAllohaHls(show.id, "tv", season, episode);
+    }
     if (!a) return false;
-    const pick = pickAllohaStream(a, 0, "1080");
+    const pick = pickAllohaStream(a, 0, defQ);
     if (!pick) return false;
     setAllohaHls(a); setAllohaTr(0); setAllohaQ(pick.quality);
     setStreamData({ stream: pick.url, alloha: true });
@@ -133,7 +144,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const onSourceChange = () => {
       check();
       if (startedRef.current) return;
-      if (getSource() === "alloha") {
+      if ((getSource() === "alloha" || getSource() === "filmix")) {
         setStreamData(null);
         resolveAllohaNative(selectedSeason, selectedEpisode);
       } else if (isIframeSource()) {
@@ -356,7 +367,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
     // player handles seasons/episodes/dubs itself).
     // Alloha — нативный резолв этой серии (VK m3u8 в наш ArtPlayer).
-    if (getSource() === "alloha") {
+    if ((getSource() === "alloha" || getSource() === "filmix")) {
       (async () => { if (alive) await resolveAllohaNative(selectedSeason, selectedEpisode); })();
       return () => { alive = false; };
     }
@@ -464,7 +475,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // selectedTranslator — из-за гейта смена серии падала в HDRezka и возвращала
     // наш ArtPlayer. При source=zenithjs всегда остаёмся на iframe.
     // Alloha — нативный резолв этой серии в наш ArtPlayer.
-    if (getSource() === "alloha" && _attempt === 0) {
+    if ((getSource() === "alloha" || getSource() === "filmix") && _attempt === 0) {
       const ok = await resolveAllohaNative(season, episode);
       if (!ok) setError("Этой серии нет в Alloha.");
       setLoading(false);
