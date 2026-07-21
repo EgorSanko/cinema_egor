@@ -86,7 +86,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
       />
       <Navbar />
       <main className="bg-background min-h-screen pb-20 sm:pb-0 overflow-x-clip">
-        <MoviePlayer movie={movie} variant={movieId === 157336 ? "deeplex" : undefined} />
+        <MoviePlayer movie={movie} variant="deeplex" />
 
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pb-12">
           {/* Cast — clickable actors → /person/[id] filmography */}
@@ -99,9 +99,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
           {relatedMovies.length > 0 && (
             <section className="mt-10">
               <h2 className="text-[22px] sm:text-2xl font-extrabold text-foreground tracking-[-0.01em] mb-5">Похожие фильмы</h2>
-              <div className={movieId === 157336
-                ? "flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>a]:flex-none [&>a]:w-[132px] sm:[&>a]:w-[160px] [&>a]:snap-start"
-                : "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4"}>
+              <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>a]:flex-none [&>a]:w-[132px] sm:[&>a]:w-[160px] [&>a]:snap-start">
                 {relatedMovies.map(r => (
                   <Link key={r.id} href={`/movie/${r.id}`} className="group block">
                     <div className="relative aspect-[2/3] rounded-xl overflow-hidden ring-1 ring-white/[0.06] bg-foreground/[0.04] shadow-md shadow-black/30 transition-all duration-300 group-hover:ring-white/15 group-hover:-translate-y-0.5 group-hover:shadow-xl group-hover:shadow-black/50">
