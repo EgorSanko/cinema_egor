@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveFilmix, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { PreRollAd } from "./pre-roll-ad";
@@ -74,17 +74,10 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
   );
-  // Нативный резолв Alloha ИЛИ Filmix (форма ответа одинаковая, плеер общий).
+  // Нативный резолв Alloha в наш ArtPlayer.
   const resolveAllohaNative = useCallback(async (): Promise<boolean> => {
-    let a: AllohaHls | null;
-    let defQ = "1080";
-    if (getSource() === "filmix") {
-      const yr = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
-      a = await resolveFilmix(movie.title || "", yr, "movie", (movie as any).original_title);
-      defQ = "1080p";
-    } else {
-      a = await resolveAllohaHls(movie.id, "movie");
-    }
+    const defQ = "1080";
+    const a = await resolveAllohaHls(movie.id, "movie");
     if (!a) return false;
     const pick = pickAllohaStream(a, 0, defQ);
     if (!pick) return false;
@@ -102,7 +95,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     const onSourceChange = () => {
       check();
       if (startedRef.current) return;
-      if ((getSource() === "alloha" || getSource() === "filmix")) {
+      if (getSource() === "alloha") {
         setStreamData(null);
         resolveAllohaNative();
       } else if (isIframeSource()) {
@@ -200,7 +193,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     // Collaps (=LordFilm) source: resolve the iframe embed URL (their own player).
     // No pre-buffering — the iframe loads on play. We just resolve the URL early.
     // Alloha — нативный резолв (VK m3u8 в наш ArtPlayer).
-    if ((getSource() === "alloha" || getSource() === "filmix")) {
+    if (getSource() === "alloha") {
       (async () => { if (alive) await resolveAllohaNative(); })();
       return () => { alive = false; };
     }
@@ -364,7 +357,7 @@ export function MoviePlayer({ movie }: MoviePlayerProps) {
     // Zenithjs source — resolve the iframe embed (их плеер сам держит озвучки).
     // НЕ гейтим по translatorId (иначе падало бы в HDRezka).
     // Alloha — нативный резолв в наш ArtPlayer.
-    if ((getSource() === "alloha" || getSource() === "filmix") && _attempt === 0) {
+    if (getSource() === "alloha" && _attempt === 0) {
       const ok = await resolveAllohaNative();
       if (!ok) setError(`Недоступно на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);
