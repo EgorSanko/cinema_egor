@@ -21,10 +21,13 @@ interface Props {
 
 export function PosterImage({ src, alt, className, sizes, priority }: Props) {
   const [retry, setRetry] = useState(0);
+  // На ретрае добавляем cache-bust — обойти уже закэшированный браузером/CF 403
+  // (до фикса nginx их вешали immutable). TMDB игнорит лишний query.
+  const effSrc = retry === 0 ? src : src + (src.includes("?") ? "&" : "?") + "v=" + retry;
   return (
     <Image
       key={retry}
-      src={src}
+      src={effSrc}
       alt={alt}
       fill
       priority={priority}
