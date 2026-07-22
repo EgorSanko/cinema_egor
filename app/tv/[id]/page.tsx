@@ -2,6 +2,7 @@ import { Navbar } from "@/components/navbar";
 import { TVPlayer } from "@/components/tv-player";
 import { CastStrip } from "@/components/cast-strip";
 import { DetailsMeta } from "@/components/details-meta";
+import { KpReviews } from "@/components/kp-reviews";
 import { Comments } from "@/components/comments";
 import { getTVDetails, getTVRecommendations } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
@@ -97,6 +98,9 @@ export default async function TVPage({ params }: TVPageProps) {
 
           {/* О сериале — creators/country/age + full synopsis */}
           <DetailsMeta type="tv" data={show} />
+
+          {/* Отзывы с Кинопоиска */}
+          <KpReviews tmdbId={show.id} type="tv" />
 
           {/* Recommendations */}
           {recs.length > 0 && (

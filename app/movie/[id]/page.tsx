@@ -3,6 +3,7 @@ import { Navbar } from "@/components/navbar";
 import { CastStrip } from "@/components/cast-strip";
 import { DetailsMeta } from "@/components/details-meta";
 import { Comments } from "@/components/comments";
+import { KpReviews } from "@/components/kp-reviews";
 import { getImageUrl, getMovieDetails, getMoviesByGenre, getMovieRecommendations } from "@/lib/tmdb";
 import { isBlockedMovie } from "@/lib/blocked-content";
 import { clean, movieSchema } from "@/lib/schema";
@@ -94,6 +95,9 @@ export default async function MoviePage({ params }: MoviePageProps) {
 
           {/* О фильме — director/country/age/tagline + full synopsis + franchise */}
           <DetailsMeta type="movie" data={movie} />
+
+          {/* Отзывы с Кинопоиска */}
+          <KpReviews tmdbId={movie.id} type="movie" />
 
           {/* Recommendations */}
           {relatedMovies.length > 0 && (
