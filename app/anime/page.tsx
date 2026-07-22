@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { Navbar } from "@/components/navbar";
 import { AnimeCard } from "@/components/anime-card";
 import { aniCatalog, aniSearch, type AniRelease } from "@/lib/anilibria";
+import { getAnimeContinue, type AnimeHistoryItem } from "@/lib/anime-storage";
 
 // Вкладка «Аниме» — отдельная секция вне TMDB (аниме там не мэпится). Источник —
 // Anilibria (CORS открыт, фронт напрямую). Дизайн в духе jut-su, но в бренде:
@@ -15,11 +17,20 @@ export default function AnimePage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [searching, setSearching] = useState(false);
+  const [cont, setCont] = useState<AnimeHistoryItem[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Начальный каталог
   useEffect(() => {
     (async () => { setLoading(true); setItems(await aniCatalog(1, 30)); setLoading(false); })();
+  }, []);
+
+  // «Продолжить смотреть» (аниме-история)
+  useEffect(() => {
+    const read = () => setCont(getAnimeContinue().slice(0, 12));
+    read();
+    window.addEventListener("anime-history-changed", read);
+    return () => window.removeEventListener("anime-history-changed", read);
   }, []);
 
   // Живой поиск (debounce 400мс). Пустой запрос → вернуть каталог.
@@ -77,6 +88,37 @@ export default function AnimePage() {
             </div>
           </div>
         </div>
+
+        {/* Продолжить смотреть */}
+        {!searching && cont.length > 0 && (
+          <div className="mb-7">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="w-1 h-5 rounded-full bg-gradient-to-b from-fuchsia-500 to-lime-400" />
+              <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">Продолжить смотреть</h2>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+              {cont.map((h) => {
+                const pct = h.duration ? Math.min(100, Math.round((h.progress / h.duration) * 100)) : 0;
+                return (
+                  <Link key={h.id + "-" + h.ordinal} href={`/anime/${h.id}`} className="group shrink-0 w-[150px]">
+                    <div className="relative aspect-video rounded-lg overflow-hidden ring-1 ring-white/[0.07] group-hover:ring-fuchsia-400/50 transition-all bg-black">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={h.poster} alt={h.title} loading="lazy" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 grid place-items-center bg-black/25 opacity-0 group-hover:opacity-100 transition">
+                        <svg width="30" height="30" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z" /></svg>
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/15">
+                        <div className="h-full bg-gradient-to-r from-lime-400 to-fuchsia-400" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[12px] font-medium text-foreground/85 line-clamp-1">{h.title}</div>
+                    <div className="text-[10.5px] text-muted-foreground">серия {h.ordinal} · {pct}%</div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Заголовок секции */}
         <div className="mb-4 flex items-center gap-2">

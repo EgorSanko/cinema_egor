@@ -43,12 +43,12 @@ export interface AniEpisode {
 export interface AniMember { nickname?: string; name?: string | null; role?: { value: string; description?: string } | null; }
 export interface AniReleaseFull extends AniRelease { episodes: AniEpisode[]; members?: AniMember[]; }
 
-/** Абсолютный URL постера. thumb = вебп-миниатюра для карточек, full = крупный. */
-export function aniPoster(p?: AniPoster | null, size: "thumb" | "full" = "thumb"): string {
+/** Абсолютный URL постера. ВАЖНО: у Anilibria `thumbnail` отдаёт 0КБ (битый) —
+ *  всегда берём `optimized.src` (резкий webp ~58КБ) → `src` (jpg). size игнори-
+ *  руется (оставлен для обратной совместимости вызовов). */
+export function aniPoster(p?: AniPoster | null, _size?: "thumb" | "full"): string {
   if (!p) return "";
-  const rel = size === "thumb"
-    ? (p.optimized?.thumbnail || p.thumbnail || p.optimized?.src || p.src)
-    : (p.optimized?.src || p.src || p.optimized?.thumbnail || p.thumbnail);
+  const rel = p.optimized?.src || p.src || p.optimized?.preview || p.preview;
   return rel ? IMG_BASE + rel : "";
 }
 
@@ -79,6 +79,19 @@ export async function aniSearch(query: string): Promise<AniRelease[]> {
 /** Полные детали релиза (эпизоды + HLS + команда озвучки). */
 export async function aniRelease(id: number | string): Promise<AniReleaseFull | null> {
   return aget<AniReleaseFull>(`/anime/releases/${id}`);
+}
+
+export interface AniFranchiseRelease { release_id: number; sort_order: number; release: AniRelease; }
+export interface AniFranchise {
+  id: string; name: string; name_english?: string;
+  first_year?: number; last_year?: number; total_releases?: number;
+  franchise_releases: AniFranchiseRelease[];
+}
+
+/** Франшиза релиза (связанные сезоны/фильмы). null если релиз вне франшизы. */
+export async function aniFranchise(id: number | string): Promise<AniFranchise | null> {
+  const d = await aget<AniFranchise[]>(`/anime/franchises/release/${id}`);
+  return (Array.isArray(d) && d.length) ? d[0] : null;
 }
 
 /** episode → {качество: hlsUrl}, только непустые, высшее первым (1080→480). */

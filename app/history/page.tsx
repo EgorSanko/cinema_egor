@@ -3,6 +3,7 @@
 import { Navbar } from "@/components/navbar";
 import { getImageUrl } from "@/lib/tmdb";
 import { getHistory, clearHistory, type HistoryItem } from "@/lib/storage";
+import { getAnimeHistory, clearAnimeHistory, type AnimeHistoryItem } from "@/lib/anime-storage";
 import { Clock, Trash2, Play } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -29,17 +30,19 @@ function timeAgo(ts: number): string {
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [animeHist, setAnimeHist] = useState<AnimeHistoryItem[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  const load = () => { setHistory(getHistory()); setLoaded(true); };
+  const load = () => { setHistory(getHistory()); setAnimeHist(getAnimeHistory()); setLoaded(true); };
   useEffect(() => {
     load();
     const onSync = () => load();
     window.addEventListener("sync-complete", onSync);
-    return () => window.removeEventListener("sync-complete", onSync);
+    window.addEventListener("anime-history-changed", onSync);
+    return () => { window.removeEventListener("sync-complete", onSync); window.removeEventListener("anime-history-changed", onSync); };
   }, []);
 
-  const clearAll = () => { if (confirm("Очистить всю историю?")) { clearHistory(); load(); } };
+  const clearAll = () => { if (confirm("Очистить всю историю?")) { clearHistory(); clearAnimeHistory(); load(); } };
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
@@ -60,16 +63,16 @@ export default function HistoryPage() {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-4xl font-bold text-foreground mb-2">🕐 История просмотра</h1>
-              <p className="text-muted-foreground">{history.length > 0 ? `${history.length} записей` : "Пока пусто"}</p>
+              <p className="text-muted-foreground">{(history.length + animeHist.length) > 0 ? `${history.length + animeHist.length} записей` : "Пока пусто"}</p>
             </div>
-            {history.length > 0 && (
+            {(history.length + animeHist.length) > 0 && (
               <button onClick={clearAll} className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-xl text-sm font-medium transition-colors">
                 <Trash2 size={16} /> Очистить
               </button>
             )}
           </div>
 
-          {loaded && history.length === 0 && (
+          {loaded && history.length === 0 && animeHist.length === 0 && (
             <div className="text-center py-20">
               <Clock size={64} className="mx-auto text-muted-foreground/30 mb-4" />
               <p className="text-xl text-muted-foreground mb-2">История пуста</p>
@@ -120,6 +123,43 @@ export default function HistoryPage() {
                 </div>
               </section>
             ))}
+
+            {animeHist.length > 0 && (
+              <section>
+                <h2 className="text-lg font-semibold text-muted-foreground mb-4">🎌 Аниме</h2>
+                <div className="space-y-3">
+                  {animeHist.map((item, idx) => {
+                    const progress = item.duration > 0 ? (item.progress / item.duration) * 100 : 0;
+                    return (
+                      <Link key={`anime-${item.id}-${item.ordinal}-${idx}`} href={`/anime/${item.id}`}>
+                        <div className="flex items-center gap-4 p-3 bg-card border border-border rounded-xl hover:border-fuchsia-400/50 transition-all group cursor-pointer">
+                          <div className="relative w-16 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={item.poster} alt={item.title} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Play size={20} className="text-white" fill="white" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-foreground font-medium text-sm line-clamp-1 group-hover:text-fuchsia-300 transition-colors">{item.title}</h3>
+                            <p className="text-muted-foreground text-xs mt-1">Аниме · серия {item.ordinal}</p>
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-lime-400 to-fuchsia-400 rounded-full" style={{ width: `${Math.min(progress, 100)}%` }} />
+                              </div>
+                              <span className="text-[11px] text-muted-foreground whitespace-nowrap">{formatTime(item.progress)} / {formatTime(item.duration)}</span>
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 text-right">
+                            <p className="text-xs text-muted-foreground">{timeAgo(item.watchedAt)}</p>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
           </div>
         </div>
       </main>
