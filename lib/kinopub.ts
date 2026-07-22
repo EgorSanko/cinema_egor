@@ -46,7 +46,7 @@ export const HDREZKA_UP = false;
 
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
-export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub";
+export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
 
 export function getSource(): KinoSource {
   // Дефолт для ВСЕХ — zenithjs (бесплатный источник). Явный выбор HDRezka/kino.pub
@@ -54,7 +54,7 @@ export function getSource(): KinoSource {
   // zenithjs. alloha — тест-источник, тумблер виден только админам.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" ? v : "zenithjs";
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "zenithjs";
   } catch {
     return "zenithjs";
   }
@@ -73,8 +73,8 @@ export function isIframeSource(s?: KinoSource): boolean {
 export function playerLabel(s?: KinoSource): string {
   const src = s || getSource();
   const order: KinoSource[] = HDREZKA_UP
-    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub"]
-    : ["alloha", "kinopub", "vkmovie", "cdnhub"];
+    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub", "rutube"]
+    : ["alloha", "kinopub", "vkmovie", "cdnhub", "rutube"];
   const i = order.indexOf(src);
   return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
 }
@@ -143,6 +143,23 @@ export async function resolveCdnHub(
     const p = new URLSearchParams({ imdb, type });
     if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
     const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/cdnhub?${p.toString()}`).then((r) => r.json());
+    if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
+    return d as AllohaHls;
+  } catch {
+    return null;
+  }
+}
+
+/** Нативный резолв RutubeMovie → прямой адаптивный HLS с Rutube (RU-хостинг, RKN
+ *  не блочит) через наш бэкенд /api/rutube (поиск по названию+году → загрузки
+ *  Rutube как «версии», m3u8 проксирован). ТОЛЬКО фильмы. Форма == AllohaHls. */
+export async function resolveRutube(
+  title: string, year: string | number, otitle?: string,
+): Promise<AllohaHls | null> {
+  try {
+    const p = new URLSearchParams({ title: title || "", year: String(year || ""), type: "movie" });
+    if (otitle && otitle !== title) p.set("otitle", otitle);
+    const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/rutube?${p.toString()}`).then((r) => r.json());
     if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
     return d as AllohaHls;
   } catch {

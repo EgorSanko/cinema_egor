@@ -19,19 +19,21 @@ const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
       { src: "kinopub", label: "Плеер 3" },
       { src: "vkmovie", label: "Плеер 4" },
       { src: "cdnhub", label: "Плеер 5" },
+      { src: "rutube", label: "Плеер 6" },
     ]
   : [
       { src: "alloha", label: "Плеер 1" },
       { src: "kinopub", label: "Плеер 2" },
       { src: "vkmovie", label: "Плеер 3" },
       { src: "cdnhub", label: "Плеер 4" },
+      { src: "rutube", label: "Плеер 5" },
     ];
 
 export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | "tv" }) {
   const { isPro, loading } = useSubscription();
   const [cur, setCur] = useState<KinoSource | null>(null);
   // VkMovie = только фильмы → на страницах сериалов прячем этот плеер.
-  const players = mediaType === "tv" ? PLAYERS.filter((p) => p.src !== "vkmovie") : PLAYERS;
+  const players = mediaType === "tv" ? PLAYERS.filter((p) => p.src !== "vkmovie" && p.src !== "rutube") : PLAYERS;
   useEffect(() => {
     const read = () => setCur(getSource());
     read();

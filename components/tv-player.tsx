@@ -144,7 +144,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const onSourceChange = () => {
       check();
       if (startedRef.current) return;
-      if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub")) {
+      if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube")) {
         setStreamData(null);
         resolveAllohaNative(selectedSeason, selectedEpisode);
       } else if (isIframeSource()) {
@@ -367,7 +367,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
     // player handles seasons/episodes/dubs itself).
     // Alloha — нативный резолв этой серии (VK m3u8 в наш ArtPlayer).
-    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub")) {
+    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube")) {
       (async () => { if (alive) await resolveAllohaNative(selectedSeason, selectedEpisode); })();
       return () => { alive = false; };
     }
@@ -475,7 +475,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // selectedTranslator — из-за гейта смена серии падала в HDRezka и возвращала
     // наш ArtPlayer. При source=zenithjs всегда остаёмся на iframe.
     // Alloha — нативный резолв этой серии в наш ArtPlayer.
-    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub") && _attempt === 0) {
+    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube") && _attempt === 0) {
       const ok = await resolveAllohaNative(season, episode);
       if (!ok) setError(`Этой серии нет на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);
