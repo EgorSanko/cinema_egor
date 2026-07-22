@@ -46,7 +46,7 @@ export const HDREZKA_UP = false;
 
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
-export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie";
+export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub";
 
 export function getSource(): KinoSource {
   // Дефолт для ВСЕХ — zenithjs (бесплатный источник). Явный выбор HDRezka/kino.pub
@@ -54,7 +54,7 @@ export function getSource(): KinoSource {
   // zenithjs. alloha — тест-источник, тумблер виден только админам.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" ? v : "zenithjs";
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" ? v : "zenithjs";
   } catch {
     return "zenithjs";
   }
@@ -73,8 +73,8 @@ export function isIframeSource(s?: KinoSource): boolean {
 export function playerLabel(s?: KinoSource): string {
   const src = s || getSource();
   const order: KinoSource[] = HDREZKA_UP
-    ? ["hdrezka", "alloha", "kinopub", "vkmovie"]
-    : ["alloha", "kinopub", "vkmovie"];
+    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub"]
+    : ["alloha", "kinopub", "vkmovie", "cdnhub"];
   const i = order.indexOf(src);
   return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
 }
@@ -123,6 +123,26 @@ export async function resolveVkMovie(
     const p = new URLSearchParams({ title: title || "", year: String(year || ""), type: "movie" });
     if (otitle && otitle !== title) p.set("otitle", otitle);
     const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/vkmovie?${p.toString()}`).then((r) => r.json());
+    if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
+    return d as AllohaHls;
+  } catch {
+    return null;
+  }
+}
+
+/** Нативный резолв CDNvideohub → прямые mp4 до 4K с okcdn/VK (RU-хостинг, RKN не
+ *  блочит) через наш бэкенд /api/cdnhub. Ключ по imdb (точный матч). ФИЛЬМЫ И
+ *  СЕРИАЛЫ (season/episode → озвучки для серии). Форма == AllohaHls, играется
+ *  нашей нативной машинерией. null при промахе. */
+export async function resolveCdnHub(
+  tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
+): Promise<AllohaHls | null> {
+  try {
+    const imdb = await fetchImdb(tmdbId, type);
+    if (!imdb) return null;
+    const p = new URLSearchParams({ imdb, type });
+    if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+    const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/cdnhub?${p.toString()}`).then((r) => r.json());
     if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
     return d as AllohaHls;
   } catch {

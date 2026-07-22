@@ -33,7 +33,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -102,8 +102,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Плеер 3 скрыт в switcher, а если он всё же выбран (был persisted) — тихо
   // резолвим через Alloha (не показываем ошибку).
   const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
-    const defQ = "1080";
-    const a = await resolveAllohaHls(show.id, "tv", season, episode);
+    let defQ = "1080";
+    let a: AllohaHls | null;
+    if (getSource() === "cdnhub") {
+      a = await resolveCdnHub(show.id, "tv", season, episode);
+      defQ = "1080p";
+    } else {
+      a = await resolveAllohaHls(show.id, "tv", season, episode);
+    }
     if (!a) return false;
     const pick = pickAllohaStream(a, 0, defQ);
     if (!pick) return false;
@@ -138,7 +144,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const onSourceChange = () => {
       check();
       if (startedRef.current) return;
-      if ((getSource() === "alloha" || getSource() === "vkmovie")) {
+      if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub")) {
         setStreamData(null);
         resolveAllohaNative(selectedSeason, selectedEpisode);
       } else if (isIframeSource()) {
@@ -361,7 +367,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
     // player handles seasons/episodes/dubs itself).
     // Alloha — нативный резолв этой серии (VK m3u8 в наш ArtPlayer).
-    if ((getSource() === "alloha" || getSource() === "vkmovie")) {
+    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub")) {
       (async () => { if (alive) await resolveAllohaNative(selectedSeason, selectedEpisode); })();
       return () => { alive = false; };
     }
@@ -469,7 +475,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // selectedTranslator — из-за гейта смена серии падала в HDRezka и возвращала
     // наш ArtPlayer. При source=zenithjs всегда остаёмся на iframe.
     // Alloha — нативный резолв этой серии в наш ArtPlayer.
-    if ((getSource() === "alloha" || getSource() === "vkmovie") && _attempt === 0) {
+    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub") && _attempt === 0) {
       const ok = await resolveAllohaNative(season, episode);
       if (!ok) setError(`Этой серии нет на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);
