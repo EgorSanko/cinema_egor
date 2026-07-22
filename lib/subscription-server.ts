@@ -120,9 +120,13 @@ export function extendTribute(telegramId: number, days: number): { email: string
   const users = readUsers();
   const u = users[email];
   if (!u) return null;
-  const wasActive = (u.subscription?.until ?? 0) > Date.now();
-  const target = Date.now() + days * 24 * 3600 * 1000;
-  if ((u.subscription?.until ?? 0) < target) {
+  const now = Date.now();
+  const wasActive = (u.subscription?.until ?? 0) > now;
+  const target = now + days * 24 * 3600 * 1000;
+  // Пишем только если осталось меньше (days-1) — иначе частая сверка (раз в 3
+  // мин) дёргала бы users.json каждый цикл. Так обновление ~раз в сутки.
+  const refreshBelow = now + (days - 1) * 24 * 3600 * 1000;
+  if ((u.subscription?.until ?? 0) < refreshBelow) {
     u.subscription = { until: target, plan: "tribute", lastPaymentId: u.subscription?.lastPaymentId };
     writeUsers(users);
   }
