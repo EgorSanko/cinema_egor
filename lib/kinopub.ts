@@ -46,7 +46,7 @@ export const HDREZKA_UP = false;
 
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
-export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
+export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube" | "lampac";
 
 export function getSource(): KinoSource {
   // Дефолт для ВСЕХ — zenithjs (бесплатный источник). Явный выбор HDRezka/kino.pub
@@ -54,7 +54,7 @@ export function getSource(): KinoSource {
   // zenithjs. alloha — тест-источник, тумблер виден только админам.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "zenithjs";
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" || v === "lampac" ? v : "zenithjs";
   } catch {
     return "zenithjs";
   }
@@ -73,8 +73,8 @@ export function isIframeSource(s?: KinoSource): boolean {
 export function playerLabel(s?: KinoSource): string {
   const src = s || getSource();
   const order: KinoSource[] = HDREZKA_UP
-    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub", "rutube"]
-    : ["alloha", "kinopub", "vkmovie", "cdnhub", "rutube"];
+    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub", "rutube", "lampac"]
+    : ["alloha", "kinopub", "vkmovie", "cdnhub", "rutube", "lampac"];
   const i = order.indexOf(src);
   return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
 }
@@ -160,6 +160,26 @@ export async function resolveRutube(
     const p = new URLSearchParams({ title: title || "", year: String(year || ""), type: "movie" });
     if (otitle && otitle !== title) p.set("otitle", otitle);
     const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/rutube?${p.toString()}`).then((r) => r.json());
+    if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
+    return d as AllohaHls;
+  } catch {
+    return null;
+  }
+}
+
+/** Lampac мета-источник → движок 70+ балансёров (HDVB, Vibix, Kodik, Filmix,
+ *  Kinogo и т.д.) на нашем КиТ. Бэкенд /api/lampac перебирает источники и отдаёт
+ *  первый рабочий поток в форме AllohaHls. ФИЛЬМЫ И СЕРИАЛЫ. Ловит то, чего нет
+ *  в наших нативных плеерах. null при промахе. */
+export async function resolveLampac(
+  tmdbId: number, type: "movie" | "tv", title: string, year: string | number,
+  season?: number, episode?: number,
+): Promise<AllohaHls | null> {
+  try {
+    const imdb = await fetchImdb(tmdbId, type);
+    const p = new URLSearchParams({ tmdb: String(tmdbId), imdb: imdb || "", title: title || "", year: String(year || ""), type });
+    if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+    const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/lampac?${p.toString()}`).then((r) => r.json());
     if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
     return d as AllohaHls;
   } catch {

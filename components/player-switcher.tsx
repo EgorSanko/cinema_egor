@@ -20,6 +20,7 @@ const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
       { src: "vkmovie", label: "Плеер 4" },
       { src: "cdnhub", label: "Плеер 5" },
       { src: "rutube", label: "Плеер 6" },
+      { src: "lampac", label: "Плеер 7" },
     ]
   : [
       { src: "alloha", label: "Плеер 1" },
@@ -27,6 +28,7 @@ const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
       { src: "vkmovie", label: "Плеер 3" },
       { src: "cdnhub", label: "Плеер 4" },
       { src: "rutube", label: "Плеер 5" },
+      { src: "lampac", label: "Плеер 6" },
     ];
 
 export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | "tv" }) {
