@@ -33,7 +33,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -136,6 +136,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
     setAllohaQ(pick.quality);
     setStreamData((prev: any) => (prev ? { ...prev, stream: pick.url } : prev));
   };
+  // На сериалах источники «только фильмы» (vkmovie=Плеер 3, rutube) невалидны —
+  // их нет в переключателе, из-за чего активный плеер не подсвечивался, а резолв
+  // мог падать в пустоту. Сбрасываем на Alloha → плеер играет, переключатель
+  // подсвечивает активный. (На фильмах эти источники валидны, там не трогаем.)
+  useEffect(() => {
+    const s = getSource();
+    if (s === "vkmovie" || s === "rutube") setSource("alloha");
+  }, []);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
@@ -368,7 +376,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // player handles seasons/episodes/dubs itself).
     // Alloha — нативный резолв этой серии (VK m3u8 в наш ArtPlayer).
     if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube")) {
-      (async () => { if (alive) await resolveAllohaNative(selectedSeason, selectedEpisode); })();
+      (async () => {
+        if (!alive) return;
+        const ok = await resolveAllohaNative(selectedSeason, selectedEpisode);
+        // Про-источник не нашёл серию → откат на бесплатный embed, чтобы что-то
+        // играло (а не чёрный экран). Только если просмотр ещё не начат.
+        if (alive && !ok && !startedRef.current) {
+          const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: true });
+          if (alive && embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed });
+        }
+      })();
       return () => { alive = false; };
     }
     if (isIframeSource()) {
