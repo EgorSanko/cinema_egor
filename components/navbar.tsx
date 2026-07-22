@@ -7,7 +7,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
   Home, Tv, Layers, Users, LayoutGrid,
-  Bookmark, ChevronDown, Heart, Clock, Send, Radio, Crown, Tv2, Sparkles,
+  Bookmark, ChevronDown, Heart, Clock, Send, Radio, Crown, Tv2,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,7 +23,6 @@ const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
   { label: "Главная", href: "/", Icon: Home },
   { label: "Сериалы", href: "/tv", Icon: Tv },
   { label: "Подборки", href: "/collections", Icon: Layers },
-  { label: "Аниме", href: "/anime", Icon: Sparkles },
   { label: "Вместе", href: "/watch", Icon: Users },
   { label: "Жанры", href: "/genres", Icon: LayoutGrid },
 ];

@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Tv, Heart, Clock, Grid3X3, Users, Sparkles } from "lucide-react";
+import { Home, Tv, Heart, Clock, Grid3X3, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -11,7 +11,6 @@ const tabs = [
   { href: "/tv", icon: Tv, label: "Сериалы" },
   { href: "/watch", icon: Users, label: "Вместе" },
   { href: "/collections", icon: Grid3X3, label: "Подборки" },
-  { href: "/anime", icon: Sparkles, label: "Аниме" },
   { href: "/favorites", icon: Heart, label: "Избранное" },
 ];
 
