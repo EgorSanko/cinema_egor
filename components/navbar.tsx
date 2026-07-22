@@ -7,7 +7,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
   Home, Tv, Layers, Users, LayoutGrid,
-  Bookmark, ChevronDown, Heart, Clock, Send, Radio, Crown, Tv2,
+  Bookmark, ChevronDown, Heart, Clock, Send, Radio, Crown, Tv2, Sparkles,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,6 +23,7 @@ const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
   { label: "Главная", href: "/", Icon: Home },
   { label: "Сериалы", href: "/tv", Icon: Tv },
   { label: "Подборки", href: "/collections", Icon: Layers },
+  { label: "Аниме", href: "/anime", Icon: Sparkles },
   { label: "Вместе", href: "/watch", Icon: Users },
   { label: "Жанры", href: "/genres", Icon: LayoutGrid },
 ];
@@ -64,8 +65,8 @@ export function Navbar() {
     // Тариф определяем по isPro, НЕ по источнику: free теперь на alloha (не
     // zenithjs), поэтому source больше не отличает free от Pro.
     let links = !isPro ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
-    // Спорт (kino.pub live TV) — Pro-фича, от выбранного плеера не зависит.
-    if (isPro) links = [...links, { label: "Спорт", href: "/sport", Icon: Radio }];
+    // Спорт скрыт по просьбе (2026-07). Код оставлен на случай возврата.
+    // if (isPro) links = [...links, { label: "Спорт", href: "/sport", Icon: Radio }];
     // Вкладка «Про»: у free — апселл подписки; у Pro — управление подпиской. Всегда.
     links = [...links, { label: "Про", href: "/pro", Icon: Crown }];
     return links;
