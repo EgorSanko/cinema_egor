@@ -14,6 +14,7 @@ export type StoredSub = { until: number; plan?: string; lastPaymentId?: string }
 type StoredUser = {
   email: string; password: string; name: string; verified?: boolean;
   subscription?: StoredSub;
+  telegramId?: number; // привязка Telegram (для Tribute-моста)
 };
 
 function readUsers(): Record<string, StoredUser> {
@@ -68,6 +69,78 @@ export function grantSubscription(email: string, months: number, plan?: string, 
   u.subscription = { until, plan, lastPaymentId: paymentId };
   writeUsers(users);
   return { active: true, until, plan: plan ?? null };
+}
+
+// ── Tribute-мост: привязка Telegram ↔ почта ──
+/** Привязать Telegram ID к аккаунту (по почте). Если аккаунта ещё нет —
+ *  создаём shadow-запись (как в grantSubscription), чтобы привязка не потерялась
+ *  до регистрации. Возвращает почту (нормализованную) или null. */
+export function linkTelegram(email: string, telegramId: number): string | null {
+  if (!email || !telegramId) return null;
+  const users = readUsers();
+  const key = norm(email);
+  if (!users[key]) {
+    users[key] = { email: key, password: "", name: key.split("@")[0], verified: false } as any;
+  }
+  // Снимаем этот telegramId с других аккаунтов (один TG = один аккаунт).
+  for (const [k, u] of Object.entries(users)) {
+    if (k !== key && u.telegramId === telegramId) delete u.telegramId;
+  }
+  users[key].telegramId = telegramId;
+  writeUsers(users);
+  return key;
+}
+
+/** Найти почту аккаунта по Telegram ID (обратный поиск для вебхука бота). */
+export function findEmailByTelegram(telegramId: number): string | null {
+  if (!telegramId) return null;
+  const users = readUsers();
+  for (const [k, u] of Object.entries(users)) if (u.telegramId === telegramId) return k;
+  return null;
+}
+
+/** Все привязанные Telegram (для почасовой сверки членства бот↔канал). */
+export function listLinked(): { telegramId: number; email: string; active: boolean }[] {
+  const users = readUsers();
+  const out: { telegramId: number; email: string; active: boolean }[] = [];
+  for (const [k, u] of Object.entries(users)) {
+    if (u.telegramId) out.push({ telegramId: u.telegramId, email: k, active: (u.subscription?.until ?? 0) > Date.now() });
+  }
+  return out;
+}
+
+/** Продлить/включить Tribute-подписку до now+days. ИДЕМПОТЕНТНО: если уже
+ *  активна дольше цели — не трогаем (не портим оплаченную YooKassa-подписку и не
+ *  раздуваем срок при почасовой сверке). Возвращает {email, activated}, где
+ *  activated=true только когда была НЕактивной и стала активной (для уведомления
+ *  админам — чтобы не спамить на каждой сверке). */
+export function extendTribute(telegramId: number, days: number): { email: string; activated: boolean } | null {
+  const email = findEmailByTelegram(telegramId);
+  if (!email) return null;
+  const users = readUsers();
+  const u = users[email];
+  if (!u) return null;
+  const wasActive = (u.subscription?.until ?? 0) > Date.now();
+  const target = Date.now() + days * 24 * 3600 * 1000;
+  if ((u.subscription?.until ?? 0) < target) {
+    u.subscription = { until: target, plan: "tribute", lastPaymentId: u.subscription?.lastPaymentId };
+    writeUsers(users);
+  }
+  return { email, activated: !wasActive };
+}
+
+/** Снять Tribute-подписку при выходе из PRO-канала. Гасим ТОЛЬКО подписки с
+ *  plan="tribute" (базовые/оплаченные иначе — не трогаем). Возвращает почту. */
+export function revokeTribute(telegramId: number): string | null {
+  const email = findEmailByTelegram(telegramId);
+  if (!email) return null;
+  const users = readUsers();
+  const u = users[email];
+  if (u?.subscription?.plan === "tribute" && (u.subscription.until ?? 0) > Date.now()) {
+    u.subscription.until = Date.now(); // мгновенно гасим
+    writeUsers(users);
+  }
+  return email;
 }
 
 /** Уже обработан этот платёж? (идемпотентность вебхука — YooKassa может

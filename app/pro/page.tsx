@@ -47,7 +47,7 @@ const COMPARE: { label: string; free: boolean | string; pro: boolean | string }[
 ];
 
 const FAQ: { q: string; a: string }[] = [
-  { q: "Как оплатить?", a: "Банковской картой или через СБП — быстро и безопасно. Доступ открывается сразу после оплаты." },
+  { q: "Как оплатить?", a: "Нажми «Оформить» — откроется наш Telegram-бот. Привяжи аккаунт одной кнопкой и оплати картой или криптовалютой через защищённый сервис. Доступ включится автоматически за минуту." },
   { q: "Как работает продление?", a: "Подписка разовая — на 1 месяц. Автосписаний нет: по истечении месяца доступ просто заканчивается. Захочешь дальше — оплатишь ещё месяц вручную." },
   { q: "На скольких устройствах работает?", a: "На всех — телефон, планшет, компьютер, ТВ. Один аккаунт, никаких ограничений по количеству устройств." },
   { q: "А если нужного фильма нет?", a: "Каталог постоянно расширяется. Если чего-то не хватает — напиши нам, и мы постараемся добавить." },
@@ -74,18 +74,17 @@ export default function ProPage() {
     setPaying(true);
     setNotice(null);
     try {
-      const r = await fetch("/api/pay/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, planId: plan.id }),
-      });
+      // Оплата через Tribute-мост: открываем нашего Telegram-бота со связкой
+      // аккаунта (короткий id → почта). Бот привяжет Telegram и даст ссылку на
+      // оплату. После оплаты (вступление в PRO-канал) подписка включится сама.
+      const r = await fetch(`/api/tribute/paylink?email=${encodeURIComponent(user.email)}`);
       const d = await r.json();
-      if (d.confirmationUrl) {
-        try { localStorage.setItem("kino_pending_payment", d.paymentId || ""); } catch {}
-        window.location.href = d.confirmationUrl; // редирект на оплату YooKassa
+      if (d.ok && d.botUrl) {
+        setNotice("Открываем Telegram: привяжи аккаунт и оплати подписку. Про включится автоматически — вернись сюда через минуту после оплаты.");
+        window.open(d.botUrl, "_blank", "noopener");
         return;
       }
-      setNotice(d.error || "Не удалось создать платёж. Попробуйте позже.");
+      setNotice(d.error || "Не удалось создать ссылку на оплату. Попробуйте позже.");
     } catch {
       setNotice("Ошибка сети. Попробуйте ещё раз.");
     } finally {
