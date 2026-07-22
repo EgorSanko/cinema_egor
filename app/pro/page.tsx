@@ -80,8 +80,10 @@ export default function ProPage() {
       const r = await fetch(`/api/tribute/paylink?email=${encodeURIComponent(user.email)}`);
       const d = await r.json();
       if (d.ok && d.botUrl) {
-        setNotice("Открываем Telegram: привяжи аккаунт и оплати подписку. Про включится автоматически — вернись сюда через минуту после оплаты.");
-        window.open(d.botUrl, "_blank", "noopener");
+        // Прямая навигация (не window.open) — иначе браузер блокирует открытие
+        // окна после await (потерян user-gesture). t.me-ссылку Telegram сам
+        // перехватит и откроет бота — и в обычном браузере, и внутри TG.
+        window.location.href = d.botUrl;
         return;
       }
       setNotice(d.error || "Не удалось создать ссылку на оплату. Попробуйте позже.");
