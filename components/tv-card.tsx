@@ -2,9 +2,9 @@
 
 import type { TVShow } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
-import Image from "next/image";
 import Link from "next/link";
 import { FavoriteButton } from "./favorite-button";
+import { PosterImage } from "./poster-image";
 
 interface TVCardProps {
   show: TVShow;
@@ -17,10 +17,9 @@ export function TVCard({ show }: TVCardProps) {
     <Link href={`/tv/${show.id}`}>
       <div className="group cursor-pointer h-full">
         <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-card">
-          <Image
+          <PosterImage
             src={getImageUrl(show.poster_path, "w342") || "/placeholder.svg"}
             alt={show.name}
-            fill
             className="object-cover group-hover:scale-110 transition-all duration-300 ease-in-out"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           />

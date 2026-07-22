@@ -2,9 +2,9 @@
 
 import type { Movie } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
-import Image from "next/image";
 import Link from "next/link";
 import { FavoriteButton } from "./favorite-button";
+import { PosterImage } from "./poster-image";
 
 interface MovieCardProps {
   movie: Movie;
@@ -17,10 +17,9 @@ export function MovieCard({ movie }: MovieCardProps) {
     <Link href={`/movie/${movie.id}`}>
       <div className="group cursor-pointer h-full">
         <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-card">
-          <Image
+          <PosterImage
             src={getImageUrl(movie.poster_path, "w342") || "/placeholder.svg"}
             alt={movie.title}
-            fill
             className="object-cover group-hover:scale-110 transition-all duration-300 ease-in-out"
             sizes="(max-width: 640px) 45vw, (max-width: 1024px) 25vw, 185px"
           />
