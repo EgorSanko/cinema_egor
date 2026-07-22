@@ -52,8 +52,10 @@ export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | 
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2">
       <span className="hidden sm:inline text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70 mr-0.5">Плеер</span>
-      {/* На мобиле 3 равные пилюли в один ряд (flex-1), на десктопе — по контенту. */}
-      <div className="flex w-full sm:w-auto gap-2">
+      {/* Мобила: горизонтальный скролл (свайп) — при 5-6 плеерах пилюли не
+          влезают, поэтому не сжимаем/не обрезаем, а прокручиваем. Десктоп:
+          обычный перенос по строкам. Скроллбар скрыт. */}
+      <div className="flex w-full sm:w-auto gap-2 overflow-x-auto sm:overflow-visible sm:flex-wrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {players.map((p) => {
           const active = cur === p.src;
           return (
@@ -61,7 +63,7 @@ export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | 
               key={p.src}
               onClick={() => switchTo(p.src)}
               className={
-                "flex-1 sm:flex-none inline-flex items-center justify-center sm:justify-start gap-2 h-9 px-3 sm:px-4 rounded-full text-[13px] font-semibold border transition-all " +
+                "shrink-0 inline-flex items-center justify-center gap-2 h-9 px-4 rounded-full text-[13px] font-semibold border transition-all " +
                 (active
                   ? "border-primary/45 bg-primary/12 text-primary shadow-sm shadow-primary/10"
                   : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:border-white/20 hover:text-foreground hover:bg-white/[0.06]")
