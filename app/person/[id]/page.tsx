@@ -28,12 +28,22 @@ export default async function PersonPage({ params }: PersonPageProps) {
 	if (!data || !data.details || !data.details.id) notFound();
 
 	const { details, credits } = data;
-	// Most popular roles first, then cap — sorting before slicing keeps the
-	// actor's famous titles instead of an arbitrary 60 from TMDB's order.
+	// Полная фильмография. combined_credits плодит дубли (один тайтл повторяется
+	// по ролям/сезонам) → дедуп по media_type+id, иначе дубли раньше «съедали»
+	// слоты. Раньше стоял .slice(0,100) — у плодовитых актёров резал реальные
+	// фильмы, хотя в каталоге они есть (каталог = вся TMDB, любой тайтл
+	// открывается). Потолок 500 — защита от патологий, для актёра = вся карьера.
+	const seen = new Set<string>();
 	const cast = (credits.cast || [])
-		.filter((c: any) => c.poster_path)
+		.filter((c: any) => {
+			if (!c.poster_path) return false;
+			const key = `${c.media_type}-${c.id}`;
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		})
 		.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0))
-		.slice(0, 100);
+		.slice(0, 500);
 
 	const movies = cast.filter((c: any) => c.media_type === "movie").map((m: any) => ({
 		id: m.id, title: m.title, poster_path: m.poster_path,
