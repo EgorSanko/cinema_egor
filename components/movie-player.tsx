@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, resolveKinobd, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { ProblemReport } from "./problem-report";
@@ -93,6 +93,9 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
       const yr = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
       a = await resolveRutube(movie.title || "", yr, (movie as any).original_title);
       defQ = "Авто";
+    } else if (getSource() === "kinobd") {
+      a = await resolveKinobd(movie.id, "movie");
+      defQ = "1080";
     } else {
       a = await resolveAllohaHls(movie.id, "movie");
     }
@@ -113,7 +116,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     const onSourceChange = () => {
       check();
       if (startedRef.current) return;
-      if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube")) {
+      if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube" || getSource() === "kinobd")) {
         setStreamData(null);
         resolveAllohaNative();
       } else if (isIframeSource()) {
@@ -211,7 +214,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     // Collaps (=LordFilm) source: resolve the iframe embed URL (their own player).
     // No pre-buffering — the iframe loads on play. We just resolve the URL early.
     // Alloha — нативный резолв (VK m3u8 в наш ArtPlayer).
-    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube")) {
+    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube" || getSource() === "kinobd")) {
       (async () => { if (alive) await resolveAllohaNative(); })();
       return () => { alive = false; };
     }
@@ -375,7 +378,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     // Zenithjs source — resolve the iframe embed (их плеер сам держит озвучки).
     // НЕ гейтим по translatorId (иначе падало бы в HDRezka).
     // Alloha — нативный резолв в наш ArtPlayer.
-    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube") && _attempt === 0) {
+    if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube" || getSource() === "kinobd") && _attempt === 0) {
       const ok = await resolveAllohaNative();
       if (!ok) setError(`Недоступно на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);

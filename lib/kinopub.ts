@@ -46,7 +46,7 @@ export const HDREZKA_UP = false;
 
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
-export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
+export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube" | "kinobd";
 
 export function getSource(): KinoSource {
   // Дефолт для ВСЕХ — zenithjs (бесплатный источник). Явный выбор HDRezka/kino.pub
@@ -54,7 +54,7 @@ export function getSource(): KinoSource {
   // zenithjs. alloha — тест-источник, тумблер виден только админам.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "zenithjs";
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" || v === "kinobd" ? v : "zenithjs";
   } catch {
     return "zenithjs";
   }
@@ -73,8 +73,8 @@ export function isIframeSource(s?: KinoSource): boolean {
 export function playerLabel(s?: KinoSource): string {
   const src = s || getSource();
   const order: KinoSource[] = HDREZKA_UP
-    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub", "rutube"]
-    : ["alloha", "kinopub", "vkmovie", "cdnhub", "rutube"];
+    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub", "rutube", "kinobd"]
+    : ["alloha", "kinopub", "vkmovie", "cdnhub", "rutube", "kinobd"];
   const i = order.indexOf(src);
   return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
 }
@@ -162,6 +162,27 @@ export async function resolveRutube(
     const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/rutube?${p.toString()}`).then((r) => r.json());
     if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
     return d as AllohaHls;
+  } catch {
+    return null;
+  }
+}
+
+/** Нативный резолв kinobd (свой CDN мульти-балансёра kinobd.net) → чистый HLS
+ *  360-1080p БЕЗ рекламы через наш бэкенд /api/kinobd (imdb → master.m3u8,
+ *  проксирован). ТОЛЬКО фильмы (у kinobd-CDN сериалы почти не покрыты). Одна
+ *  аудиодорожка (без переключателя озвучек). Оборачиваем в форму AllohaHls —
+ *  master адаптивный, hls.js сам выберет качество. Разбор: reference kinobd. */
+export async function resolveKinobd(
+  tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
+): Promise<AllohaHls | null> {
+  try {
+    const imdb = await fetchImdb(tmdbId, type);
+    if (!imdb) return null;
+    const p = new URLSearchParams({ imdb, type });
+    if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+    const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/kinobd?${p.toString()}`).then((r) => r.json());
+    if (!d || d.error || !d.hls) return null;
+    return { translations: [{ name: "kinobd", quality: { "1080": d.hls } }] };
   } catch {
     return null;
   }
