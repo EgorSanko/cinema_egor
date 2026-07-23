@@ -81,16 +81,35 @@ export function PreRollAd({ ads, onDone, tvMode = false }: { ads: AdClip[]; onDo
     if (p && typeof p.catch === "function") {
       p.catch(() => { try { v.muted = true; setMuted(true); v.play().catch(() => {}); } catch {} });
     }
+    // FAILSAFE: AdBlock/AdGuard-DNS может зарезать запрос ролика → onEnded не
+    // наступит НИКОГДА (для непропускаемого = вечный чёрный экран «реклама не
+    // заканчивается»). Поэтому: ошибка загрузки ИЛИ нет прогресса воспроизведения
+    // за 5с → авто-пропуск ролика. Реклама не важнее просмотра.
+    const onError = () => nextRef.current();
+    v.addEventListener("error", onError);
+    const wd0 = performance.now();
+    const watchdog = setInterval(() => {
+      const el = videoRef.current;
+      if (!el) return;
+      if (el.currentTime > 0.2) { clearInterval(watchdog); return; } // играет — всё ок
+      if (performance.now() - wd0 > 5000) { clearInterval(watchdog); nextRef.current(); }
+    }, 500);
     // Отсчёт «Пропустить» только для пропускаемого ролика (по performance.now).
-    if (!cur?.skippable) return;
-    setLeft(SKIP_AFTER);
-    const t0 = performance.now();
-    const iv = setInterval(() => {
-      const rem = Math.max(0, Math.ceil(SKIP_AFTER - (performance.now() - t0) / 1000));
-      setLeft(rem);
-      if (rem <= 0) clearInterval(iv);
-    }, 250);
-    return () => clearInterval(iv);
+    let iv: ReturnType<typeof setInterval> | null = null;
+    if (cur?.skippable) {
+      setLeft(SKIP_AFTER);
+      const t0 = performance.now();
+      iv = setInterval(() => {
+        const rem = Math.max(0, Math.ceil(SKIP_AFTER - (performance.now() - t0) / 1000));
+        setLeft(rem);
+        if (rem <= 0 && iv) clearInterval(iv);
+      }, 250);
+    }
+    return () => {
+      v.removeEventListener("error", onError);
+      clearInterval(watchdog);
+      if (iv) clearInterval(iv);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx]);
 
