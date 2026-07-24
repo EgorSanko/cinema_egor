@@ -73,19 +73,16 @@ export function SubscriptionEnforcer() {
     const cur = getSource();
     if (isPro) {
       wasPro.current = true;
-      // HDRezka лежит → уводим Pro с недоступного hdrezka на Alloha (нативный, 4K).
-      if (!HDREZKA_UP && cur === "hdrezka") {
-        setSource("alloha");
-      } else {
-        // Разовый дефолт при первом Про-заходе с бесплатного. Пока HDRezka лежит —
-        // дефолт Alloha (иначе был бы hdrezka). Явный выбор Pro НЕ перебиваем.
-        try {
-          if (!localStorage.getItem(PRO_DEFAULT_FLAG)) {
-            localStorage.setItem(PRO_DEFAULT_FLAG, "1");
-            if (cur === "zenithjs") setSource(HDREZKA_UP ? "hdrezka" : "alloha");
-          }
-        } catch {}
+      // Pro НИКОГДА не должен сидеть на zenithjs — это бесплатный источник, его
+      // даже нет в переключателе → «ни один плеер не выбран» + бесплатный плеер.
+      // Баг (переход из ТГ-канала в свежем контексте / с уже выставленным флагом):
+      // cur=zenithjs у Про не поднимался, т.к. bump был ЗА флагом. Теперь
+      // поднимаем ВСЕГДА (zenithjs или недоступный hdrezka → alloha). Явный
+      // Pro-выбор (kinopub/alloha/…) не трогаем.
+      if (cur === "zenithjs" || (cur === "hdrezka" && !HDREZKA_UP)) {
+        setSource(HDREZKA_UP ? "hdrezka" : "alloha");
       }
+      try { localStorage.setItem(PRO_DEFAULT_FLAG, "1"); } catch {}
     } else {
       // Уже был Pro в этой сессии → транзиент, НЕ понижаем.
       if (wasPro.current) return;
