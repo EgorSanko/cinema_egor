@@ -1,49 +1,44 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 
+// Ненавязчивый дисклеймер снизу — НЕ блокирует сайт. Раньше был полноэкранный
+// оверлей с обязательным «Принимаю»: пока не нажмёшь — внутрь не попасть. Из-за
+// него проверяющие/трафик «упирались» и не могли провалиться к контенту. Теперь
+// сайт открывается сразу, а плашка просто висит снизу и закрывается по «Понятно».
+// Полные условия — на /rules.
 export function TermsModal() {
-const [show, setShow] = useState(false);
+  const [show, setShow] = useState(false);
 
-useEffect(() => {
-const accepted = localStorage.getItem("terms_accepted");
-if (!accepted) setShow(true);
-}, []);
+  useEffect(() => {
+    try { if (!localStorage.getItem("terms_accepted")) setShow(true); } catch {}
+  }, []);
 
-const accept = () => {
-localStorage.setItem("terms_accepted", "true");
-setShow(false);
-};
+  const accept = () => {
+    try { localStorage.setItem("terms_accepted", "true"); } catch {}
+    setShow(false);
+  };
 
-if (!show) return null;
+  if (!show) return null;
 
-return (
-<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-<div className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-<h2 className="text-xl font-bold text-foreground">Условия использования</h2>
-<div className="text-sm text-muted-foreground space-y-3 max-h-[300px] overflow-y-auto">
-<p>
-sapkeflykino не хранит контент на своих серверах. Все данные о фильмах,
-постеры и метаданные предоставлены The Movie Database (TMDB).
-</p>
-<p>
-Видеоконтент встроен из внешних источников. Мы не несём ответственности
-за контент, размещённый на сторонних сайтах.
-</p>
-<p>
-sapkeflykino уважает интеллектуальную собственность. Мы предоставляем
-ссылки на внешние источники и не контролируем их содержание.
-</p>
-<p>
-Используя sapkeflykino, вы соглашаетесь соблюдать все применимые законы
-и правила вашей юрисдикции.
-</p>
-</div>
-<button onClick={accept}
-className="w-full py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors">
-Принимаю
-</button>
-</div>
-</div>
-);
+  return (
+    // pointer-events-none на обёртке + auto на плашке → остальной сайт полностью
+    // кликабелен, ловит клики только сама плашка. Никакого блокирующего фона.
+    <div className="fixed bottom-0 inset-x-0 z-40 p-3 sm:p-4 pointer-events-none">
+      <div className="pointer-events-auto mx-auto max-w-3xl rounded-2xl bg-card/95 backdrop-blur ring-1 ring-border shadow-2xl px-4 py-3 flex flex-col sm:flex-row items-center gap-3">
+        <p className="text-[12.5px] text-muted-foreground leading-snug text-center sm:text-left flex-1">
+          Продолжая пользоваться сайтом, вы соглашаетесь с{" "}
+          <Link href="/rules" className="text-primary hover:underline">условиями использования</Link>.
+          Контент не хранится на наших серверах, метаданные — TMDB.
+        </p>
+        <button
+          onClick={accept}
+          className="shrink-0 h-9 px-5 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground text-[13px] font-semibold transition-colors"
+        >
+          Понятно
+        </button>
+      </div>
+    </div>
+  );
 }
