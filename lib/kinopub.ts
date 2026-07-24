@@ -49,14 +49,16 @@ const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloh
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
 
 export function getSource(): KinoSource {
-  // Дефолт для ВСЕХ — zenithjs (бесплатный источник). Явный выбор HDRezka/kino.pub
-  // /alloha в профиле уважается; всё остальное (не задано / старые значения) →
-  // zenithjs. alloha — тест-источник, тумблер виден только админам.
+  // Дефолт для ВСЕХ — alloha (бесплатный = Alloha + пре-ролл; для Про — без рекламы).
+  // zenithjs (Collaps, «джетикс») БОЛЬШЕ НЕ основной источник и не показывается как
+  // плеер — он остался ТОЛЬКО тихим фолбэком (allohaFallbackToZenith), когда Alloha
+  // не нашла тайтл. Поэтому zenithjs даже не в списке валидных значений: любое
+  // старое/неизвестное значение → alloha.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "zenithjs";
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "alloha";
   } catch {
-    return "zenithjs";
+    return "alloha";
   }
 }
 

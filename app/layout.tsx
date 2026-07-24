@@ -66,15 +66,16 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`dark ${geist.variable} ${righteous.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
-        {/* Разовая принудительная миграция ВСЕХ на бесплатный источник (zenithjs)
-            — перекрывает и явно выбранный ранее HDRezka/kino.pub. Запускается до
-            гидрации, поэтому навбар/плеер сразу читают уже zenithjs. Флаг не даёт
-            переставлять повторно — после этого профиль-тумблер снова свободен. */}
+        {/* Миграция застрявших на zenithjs («джетикс») → Alloha. Джетикс больше не
+            основной источник (только тихий фолбэк). Двигаем ТОЛЬКО zenithjs/пустое,
+            явный выбор Про (hdrezka/kino.pub) не трогаем. До гидрации, чтобы навбар/
+            плеер сразу читали alloha. Новый флаг v2 — чтобы прогнать всех разово. */}
         <Script id="force-free-source" strategy="beforeInteractive">{`
           try {
-            if (!localStorage.getItem('kino_src_force_v1')) {
-              localStorage.setItem('kino_source','zenithjs');
-              localStorage.setItem('kino_src_force_v1','1');
+            if (!localStorage.getItem('kino_src_force_v2')) {
+              var s = localStorage.getItem('kino_source');
+              if (!s || s === 'zenithjs') localStorage.setItem('kino_source','alloha');
+              localStorage.setItem('kino_src_force_v2','1');
             }
           } catch (e) {}
         `}</Script>
