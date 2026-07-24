@@ -130,6 +130,19 @@ html:not(.dark) a[href^="/person/"]:hover {
 	--sidebar-ring: oklch(0.439 0 0);
 }
 
+/* Живой фон кинотеатра — динамичное lime/violet свечение (сгенерён под палитру).
+   Фикс-слой ЗА всем контентом. body::before, НЕ background-attachment:fixed
+   (глючит на iOS). Центр картинки тёмный → постеры и текст поверх читаются.
+   Только тёмная тема (сайт всегда .dark). Базовый --background — фолбэк. */
+.dark body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	background: url(/site-bg.webp) center center / cover no-repeat;
+	pointer-events: none;
+}
+
 @theme inline {
 	/* Geist — clean geometric grotesk, closest free analogue to SF Pro.
 	   Wired via geist.variable (--font-geist) on <html> in layout.tsx. */
