@@ -131,17 +131,15 @@ html:not(.dark) a[href^="/person/"]:hover {
 }
 
 /* Живой фон кинотеатра — динамичное lime/violet свечение (сгенерён под палитру).
-   Фикс-слой ЗА всем контентом. body::before, НЕ background-attachment:fixed
-   (глючит на iOS). Центр картинки тёмный → постеры и текст поверх читаются.
-   Только тёмная тема (сайт всегда .dark). Базовый --background — фолбэк. */
-.dark body::before {
-	content: "";
-	position: fixed;
-	inset: 0;
-	z-index: -1;
-	background: url(/site-bg.webp) center center / cover no-repeat;
-	pointer-events: none;
+   Кладём на html (холст страницы) fixed. КЛЮЧЕВОЕ: body И main.bg-background
+   делаем ПРОЗРАЧНЫМИ — иначе их непрозрачный #0a0a0b перекрывает фон и его не
+   видно (это и была причина). Постеры/контент сверху читаются; центр картинки
+   тёмный. Только тёмная тема (сайт всегда .dark). #0a0a0b — фолбэк если webp не загрузится. */
+html.dark {
+	background: #0a0a0b url(/site-bg.webp) center center / cover no-repeat fixed;
 }
+.dark body { background-color: transparent; }
+.dark main.bg-background { background-color: transparent; }
 
 @theme inline {
 	/* Geist — clean geometric grotesk, closest free analogue to SF Pro.
