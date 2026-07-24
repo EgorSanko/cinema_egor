@@ -9,7 +9,6 @@ import { enrichHistoryWithGenres } from "@/lib/genre-enrich";
 import { getCanon, setCanon, getCanonCandidates, type CanonPick } from "@/lib/canon";
 import { getAllByStatus, type WatchStatus } from "@/lib/status";
 import { getLists, createList, type UserList } from "@/lib/lists";
-import { getSource, setSource, type KinoSource } from "@/lib/kinopub";
 import { useSubscription } from "@/hooks/use-subscription";
 import { canFreezeNow, freezeDay, getFrozenDays, daysUntilNextFreeze } from "@/lib/streak-freeze";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -609,7 +608,7 @@ export default function ProfilePage() {
             <StatusAndListsSection favorites={favorites} history={history} />
           </section>
           <section>
-            <SourceSetting />
+            <YearInCinema history={enrichedHistory} favorites={favorites} genreLookup={genreLookup} />
           </section>
         </div>
       </main>
@@ -617,56 +616,73 @@ export default function ProfilePage() {
   );
 }
 
-/* ── Источник просмотра. Названия движков НЕ раскрываем (только «качество»).
-   Переключение доступно только на Про; на Free выбор залочен на «Бесплатный». ── */
-function SourceSetting() {
-  const { isPro } = useSubscription();
-  const [src, setSrc] = useState<KinoSource>("zenithjs");
-  useEffect(() => { setSrc(getSource()); }, []);
-  const pick = (s: KinoSource) => {
-    if (!isPro && s !== "zenithjs") return; // free — только бесплатный
-    setSource(s); setSrc(s);
-  };
-  const opt = (s: KinoSource, title: string, sub: string, locked: boolean) => (
-    <button
-      onClick={() => (locked ? (location.href = "/pro") : pick(s))}
-      className={
-        "relative flex-1 text-left rounded-xl px-4 py-3 border-2 transition-colors " +
-        (src === s && !locked ? "border-primary bg-primary/10" : "border-border bg-card hover:border-muted-foreground/40") +
-        (locked ? " opacity-70" : "")
-      }
-    >
-      <div className="flex items-center gap-2">
-        <span className={"w-3.5 h-3.5 rounded-full border-2 " + (src === s && !locked ? "border-primary bg-primary" : "border-muted-foreground/50")} />
-        <span className="font-semibold text-foreground flex items-center gap-1.5">
-          {title}{locked && <Lock size={12} className="text-amber-400" />}
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground mt-1 ml-6">{locked ? "Доступно по подписке Про" : sub}</p>
-    </button>
-  );
+/* ── Год в кино: статистика за ТЕКУЩИЙ год (часы/фильмы/серии + киноперсонаж) с
+   кнопкой на полный отчёт /wrapped. Заменил бывший «выбор плеера» — он и так
+   есть в переключателе на странице просмотра, в профиле дублировался. Расчёт —
+   как в /wrapped (фильтр истории по году → computeStats → pickPersona). ── */
+function ruPluralY(n: number, one: string, few: string, many: string) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
+}
+function YStat({ value, label }: { value: number; label: string }) {
   return (
-    <>
-      <div className="flex items-center gap-2 mb-4">
-        <h2 className="text-lg font-bold text-foreground">Качество и источник</h2>
-        {isPro && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[10px] font-bold uppercase tracking-wider">
-            <Crown size={10} /> Про
-          </span>
-        )}
+    <div className="rounded-xl bg-card/60 ring-1 ring-border px-3 py-3 text-center">
+      <div className="text-2xl sm:text-3xl font-black text-foreground tabular-nums leading-none">{value}</div>
+      <div className="text-muted-foreground text-[11px] mt-1">{label}</div>
+    </div>
+  );
+}
+function YearInCinema({ history, favorites, genreLookup }: { history: any[]; favorites: any[]; genreLookup: any }) {
+  const year = new Date().getFullYear();
+  const yearHistory = useMemo(() => {
+    const s = new Date(year, 0, 1).getTime(), e = new Date(year + 1, 0, 1).getTime();
+    return (history || []).filter((h) => h.watchedAt >= s && h.watchedAt < e);
+  }, [history, year]);
+  const stats = useMemo(() => computeStats(yearHistory, favorites, genreLookup), [yearHistory, favorites, genreLookup]);
+  const topGenres = useMemo(() => {
+    const entries = Object.entries(stats.byGenre || {})
+      .filter(([, c]) => (c as number) > 0)
+      .sort((a, b) => (b[1] as number) - (a[1] as number))
+      .slice(0, 5);
+    const total = entries.reduce((s, [, c]) => s + (c as number), 0);
+    return entries.map(([name, count]) => ({ name, count: 0, pct: total ? Math.round(((count as number) / total) * 100) : 0 }));
+  }, [stats]);
+  const persona = useMemo(() => pickPersona(topGenres), [topGenres]);
+  const hours = Math.floor(stats.totalHoursWatched);
+  const movies = stats.totalMoviesWatched;
+  const episodes = stats.totalTvEpisodes;
+  const empty = hours === 0 && movies === 0 && episodes === 0;
+  return (
+    <div className="rounded-2xl p-5 sm:p-6 bg-gradient-to-br from-primary/[0.10] via-primary/[0.03] to-transparent ring-1 ring-primary/20">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+          <span className="text-xl">🎬</span> Год в кино · {year}
+        </h2>
+        <a href="/wrapped" className="inline-flex items-center gap-1.5 h-9 px-4 rounded-full bg-primary text-primary-foreground text-[13px] font-bold hover:bg-primary/90 transition-colors flex-shrink-0">
+          Весь отчёт <ArrowRight size={15} />
+        </a>
       </div>
-      <div className="flex flex-col sm:flex-row gap-3 max-w-3xl">
-        {opt("hdrezka", "Плеер 1", "Наш плеер, максимальное качество, все озвучки.", !isPro)}
-        {opt("alloha", "Плеер 2", "4K, все озвучки, стабильный.", !isPro)}
-        {opt("kinopub", "Плеер 3", "4K, спорт, мгновенная смена озвучки.", !isPro)}
-        {opt("zenithjs", "Бесплатный", "Резервный источник, до 1080p.", false)}
-      </div>
-      <p className="text-xs text-muted-foreground mt-3">
-        {isPro
-          ? "Влияет на весь сайт. Если тайтла нет в выбранном источнике — плеер попробует второй."
-          : "На бесплатном тарифе доступен только базовый источник. Оформи Про — откроются максимальное качество, 4K, спорт и наш плеер."}
-      </p>
-    </>
+      {empty ? (
+        <p className="text-muted-foreground text-sm">В {year} ещё пусто — посмотри пару фильмов, и здесь появится твоя статистика за год.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            <YStat value={hours} label={ruPluralY(hours, "час", "часа", "часов")} />
+            <YStat value={movies} label={ruPluralY(movies, "фильм", "фильма", "фильмов")} />
+            <YStat value={episodes} label={ruPluralY(episodes, "серия", "серии", "серий")} />
+          </div>
+          <div className="mt-4 flex items-center gap-3 rounded-xl bg-card/60 ring-1 ring-border p-3">
+            <span className="text-3xl leading-none">{persona.emoji}</span>
+            <div className="min-w-0">
+              <div className="text-foreground font-bold text-[14px] leading-tight">{persona.title}</div>
+              <div className="text-muted-foreground text-[11px] mt-0.5 leading-tight">{persona.tagline}</div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
