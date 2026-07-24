@@ -142,7 +142,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // подсвечивает активный. (На фильмах эти источники валидны, там не трогаем.)
   useEffect(() => {
     const s = getSource();
-    if (s === "vkmovie" || s === "rutube" || s === "kinobd") setSource("alloha");
+    if (s === "vkmovie" || s === "rutube") setSource("alloha");
   }, []);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
