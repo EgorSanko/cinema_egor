@@ -130,21 +130,12 @@ html:not(.dark) a[href^="/person/"]:hover {
 	--sidebar-ring: oklch(0.439 0 0);
 }
 
-/* Живой фон кинотеатра — статичная картинка под палитру (мобила + фолбэк десктопа).
-   ⚠️ НЕ `background-attachment:fixed` — он глючит на iOS (Safari не рисует фон,
-   показывает просто #0a0a0b). Кладём отдельным ФИКС-СЛОЕМ `body::before`
-   (position:fixed) — надёжно на всех устройствах. z-index:-2 — самый зад;
-   видео-фон (десктоп) сидит на -1, поверх картинки; контент на 0, читается.
-   КЛЮЧЕВОЕ: body И main.bg-background прозрачные, иначе #0a0a0b перекрывает слой. */
+/* Фон кинотеатра — видео-луп (components/video-bg.tsx) поверх тёмной базы.
+   Статичной картинки НЕТ намеренно: раньше на рефреше мелькал webp, потом видео.
+   База = сплошной #0a0a0b (совпадает с затемнением видео), поэтому переход
+   «тёмный фон → видео» незаметен, без вспышки. body И main.bg-background
+   прозрачные — иначе их непрозрачный #0a0a0b перекрыл бы видео-слой (z-index:-1). */
 html.dark { background-color: #0a0a0b; }
-.dark body::before {
-	content: "";
-	position: fixed;
-	inset: 0;
-	z-index: -2;
-	background: url(/site-bg.webp?v=1) center center / cover no-repeat;
-	pointer-events: none;
-}
 .dark body { background-color: transparent; }
 .dark main.bg-background { background-color: transparent; }
 
