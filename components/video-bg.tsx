@@ -4,18 +4,17 @@ import { useEffect, useState } from "react";
 
 // Видео-фон кинотеатра — мрачный атмосферный луп ЗА всем контентом, сильно
 // затемнён (движение угадывается, детали тонут, постеры/текст читаются). Работает
-// как слой поверх статичного html-фона (site-bg.webp остаётся фолбэком).
-//   • ТОЛЬКО десктоп + без prefers-reduced-motion — на мобиле видео-фон сажает
-//     батарею/трафик, там показывается статичная картинка (html bg).
-//   • muted+loop+playsInline+autoPlay — иначе браузер не даст автоплей.
+// как слой поверх статичного webp-фона (body::before остаётся фолбэком).
+//   • Видео ВЕЗДЕ — и десктоп, и мобила (по просьбе: фон одинаковый на всех).
+//     Исключение — prefers-reduced-motion: там остаётся статичная картинка.
+//   • muted+loop+playsInline+autoPlay — иначе браузер (особенно iOS) не даст автоплей;
+//     если автоплей всё же заблокирован (энергосбережение) — снизу виден webp.
 export function VideoBg() {
   const [show, setShow] = useState(false);
   useEffect(() => {
     try {
       const okMotion = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const wide = window.matchMedia("(min-width: 1024px)").matches;
-      const notMobile = !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-      if (okMotion && wide && notMobile) setShow(true);
+      if (okMotion) setShow(true);
     } catch {}
   }, []);
 
