@@ -143,7 +143,7 @@ export function PeterOnce() {
     <canvas
       ref={canvasRef}
       aria-hidden
-      className="pointer-events-none fixed bottom-[6vh] left-1/2 z-[100] -translate-x-1/2 select-none"
+      className="pointer-events-none fixed bottom-0 left-1/2 z-[100] -translate-x-1/2 select-none"
       style={{ width: "clamp(180px, 38vw, 400px)", height: "auto", objectFit: "contain" }}
     />
   );
