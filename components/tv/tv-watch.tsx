@@ -24,8 +24,6 @@ import { PreRollAd, type AdClip } from "@/components/pre-roll-ad";
 const AD_SEQUENCE: AdClip[] = [
   { src: "/media/intro2.mp4", skippable: true },
   { src: "/media/oldspice.mp4", skippable: false },
-  // Финальная реклама: непропускаемая, без кнопки звука, зелёнка вырезается вживую.
-  { src: "/media/peter-ad.mp4", skippable: false, chromaKey: true, noMute: true },
 ];
 
 // ════════════════════════════════════════════════════════════════
