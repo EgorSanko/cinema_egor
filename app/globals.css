@@ -130,15 +130,6 @@ html:not(.dark) a[href^="/person/"]:hover {
 	--sidebar-ring: oklch(0.439 0 0);
 }
 
-/* Фон кинотеатра — видео-луп (components/video-bg.tsx) поверх тёмной базы.
-   Статичной картинки НЕТ намеренно: раньше на рефреше мелькал webp, потом видео.
-   База = сплошной #0a0a0b (совпадает с затемнением видео), поэтому переход
-   «тёмный фон → видео» незаметен, без вспышки. body И main.bg-background
-   прозрачные — иначе их непрозрачный #0a0a0b перекрыл бы видео-слой (z-index:-1). */
-html.dark { background-color: #0a0a0b; }
-.dark body { background-color: transparent; }
-.dark main.bg-background { background-color: transparent; }
-
 @theme inline {
 	/* Geist — clean geometric grotesk, closest free analogue to SF Pro.
 	   Wired via geist.variable (--font-geist) on <html> in layout.tsx. */

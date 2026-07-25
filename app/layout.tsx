@@ -9,7 +9,6 @@ import { MobileNav } from "@/components/mobile-nav";
 import { PWABackButton } from "@/components/pwa-back-button";
 import { ReloadOnStale } from "@/components/reload-on-stale";
 import { SubscriptionEnforcer } from "@/components/subscription-enforcer";
-import { CornerCat } from "@/components/corner-cat";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -86,9 +85,6 @@ export default function RootLayout({
           <SubscriptionEnforcer />
         </AuthProvider>
         <MobileNav />
-        {/* Коты-маскоты в нижних углах (хромакей вживую через WebGL) */}
-        <CornerCat side="left" src="/cat-left.mp4?v=1" />
-        <CornerCat side="right" src="/cat-right.mp4?v=1" />
         <PWABackButton />
         <ReloadOnStale />
         {YM_ID > 0 && (
