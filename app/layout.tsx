@@ -10,7 +10,6 @@ import { PWABackButton } from "@/components/pwa-back-button";
 import { ReloadOnStale } from "@/components/reload-on-stale";
 import { SubscriptionEnforcer } from "@/components/subscription-enforcer";
 import { CornerCat } from "@/components/corner-cat";
-import { VideoBg } from "@/components/video-bg";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -68,7 +67,6 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`dark ${geist.variable} ${righteous.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
-        <VideoBg />
         {/* Миграция застрявших на zenithjs («джетикс») → Alloha. Джетикс больше не
             основной источник (только тихий фолбэк). Двигаем ТОЛЬКО zenithjs/пустое,
             явный выбор Про (hdrezka/kino.pub) не трогаем. До гидрации, чтобы навбар/

@@ -122,7 +122,7 @@ export function CornerCat({ side, src }: { side: "left" | "right"; src: string }
     <canvas
       ref={canvasRef}
       aria-hidden
-      className="pointer-events-none fixed bottom-0 z-20 select-none"
+      className="pointer-events-none fixed bottom-0 -z-10 select-none"
       style={
         {
           [side]: 0,
