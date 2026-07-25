@@ -29,7 +29,7 @@ export function VideoBg() {
         loop
         playsInline
         preload="auto"
-        src="/site-bg.mp4"
+        src="/site-bg.mp4?v=1"
       />
       {/* Затемнение — видео уходит в мрачную текстуру, контент поверх читается. */}
       <div className="absolute inset-0" style={{ background: "rgba(10,10,11,0.72)" }} />

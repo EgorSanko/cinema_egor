@@ -136,7 +136,7 @@ html:not(.dark) a[href^="/person/"]:hover {
    видно (это и была причина). Постеры/контент сверху читаются; центр картинки
    тёмный. Только тёмная тема (сайт всегда .dark). #0a0a0b — фолбэк если webp не загрузится. */
 html.dark {
-	background: #0a0a0b url(/site-bg.webp) center center / cover no-repeat fixed;
+	background: #0a0a0b url(/site-bg.webp?v=1) center center / cover no-repeat fixed;
 }
 .dark body { background-color: transparent; }
 .dark main.bg-background { background-color: transparent; }
