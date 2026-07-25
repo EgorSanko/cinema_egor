@@ -130,13 +130,20 @@ html:not(.dark) a[href^="/person/"]:hover {
 	--sidebar-ring: oklch(0.439 0 0);
 }
 
-/* Живой фон кинотеатра — динамичное lime/violet свечение (сгенерён под палитру).
-   Кладём на html (холст страницы) fixed. КЛЮЧЕВОЕ: body И main.bg-background
-   делаем ПРОЗРАЧНЫМИ — иначе их непрозрачный #0a0a0b перекрывает фон и его не
-   видно (это и была причина). Постеры/контент сверху читаются; центр картинки
-   тёмный. Только тёмная тема (сайт всегда .dark). #0a0a0b — фолбэк если webp не загрузится. */
-html.dark {
-	background: #0a0a0b url(/site-bg.webp?v=1) center center / cover no-repeat fixed;
+/* Живой фон кинотеатра — статичная картинка под палитру (мобила + фолбэк десктопа).
+   ⚠️ НЕ `background-attachment:fixed` — он глючит на iOS (Safari не рисует фон,
+   показывает просто #0a0a0b). Кладём отдельным ФИКС-СЛОЕМ `body::before`
+   (position:fixed) — надёжно на всех устройствах. z-index:-2 — самый зад;
+   видео-фон (десктоп) сидит на -1, поверх картинки; контент на 0, читается.
+   КЛЮЧЕВОЕ: body И main.bg-background прозрачные, иначе #0a0a0b перекрывает слой. */
+html.dark { background-color: #0a0a0b; }
+.dark body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	z-index: -2;
+	background: url(/site-bg.webp?v=1) center center / cover no-repeat;
+	pointer-events: none;
 }
 .dark body { background-color: transparent; }
 .dark main.bg-background { background-color: transparent; }

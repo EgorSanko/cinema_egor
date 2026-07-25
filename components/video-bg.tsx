@@ -21,7 +21,7 @@ export function VideoBg() {
 
   if (!show) return null;
   return (
-    <div aria-hidden className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+    <div aria-hidden className="fixed inset-0 -z-[1] overflow-hidden pointer-events-none">
       <video
         className="absolute inset-0 h-full w-full object-cover"
         autoPlay
