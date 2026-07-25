@@ -30,6 +30,8 @@ import { useSubscription } from "@/hooks/use-subscription";
 const AD_SEQUENCE = [
   { src: "/media/intro2.mp4", skippable: true },
   { src: "/media/oldspice.mp4", skippable: false },
+  // Финальная реклама: непропускаемая, без кнопки звука, зелёнка вырезается вживую.
+  { src: "/media/peter-ad.mp4", skippable: false, chromaKey: true, noMute: true },
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
