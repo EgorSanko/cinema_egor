@@ -6,6 +6,7 @@ import "./globals.css";
 import { AuthProvider } from "@/components/auth-context";
 import { AuthGate } from "@/components/auth-gate";
 import { MobileNav } from "@/components/mobile-nav";
+import { PeterOnce } from "@/components/peter-once";
 import { PWABackButton } from "@/components/pwa-back-button";
 import { ReloadOnStale } from "@/components/reload-on-stale";
 import { SubscriptionEnforcer } from "@/components/subscription-enforcer";
@@ -85,6 +86,7 @@ export default function RootLayout({
           <SubscriptionEnforcer />
         </AuthProvider>
         <MobileNav />
+        <PeterOnce />
         <PWABackButton />
         <ReloadOnStale />
         {YM_ID > 0 && (
