@@ -44,7 +44,7 @@ export function PeterOnce() {
     }
 
     const video = document.createElement("video");
-    video.src = "/peter.mp4?v=1";
+    video.src = "/peter.mp4?v=2";
     video.muted = true;
     video.playsInline = true;
     video.autoplay = true;
@@ -125,8 +125,8 @@ export function PeterOnce() {
     const play = video.play();
     if (play && play.catch) play.catch(() => finish());
     draw();
-    // Страховка, если событие ended не придёт (клип 4.5с) — снять через 6с.
-    const guard = window.setTimeout(finish, 6500);
+    // Страховка, если событие ended не придёт (клип ~28.5с) — снять через 31с.
+    const guard = window.setTimeout(finish, 31000);
 
     return () => {
       stopped = true;
@@ -143,8 +143,8 @@ export function PeterOnce() {
     <canvas
       ref={canvasRef}
       aria-hidden
-      className="pointer-events-none fixed inset-0 z-[100] select-none"
-      style={{ width: "100vw", height: "100vh", objectFit: "contain" }}
+      className="pointer-events-none fixed left-1/2 top-1/2 z-[100] -translate-x-1/2 -translate-y-1/2 select-none"
+      style={{ width: "clamp(180px, 38vw, 400px)", height: "auto", objectFit: "contain" }}
     />
   );
 }
