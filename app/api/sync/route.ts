@@ -119,14 +119,25 @@ export async function POST(req: NextRequest) {
         .sort((a: any, b: any) => b.watchedAt - a.watchedAt)
         .slice(0, 500);
 
-      // Merge positions (keep newest savedAt)
-      const mergedPositions: any = { ...(existing.positions || {}) };
+      // Merge positions (keep newest savedAt), then cap to newest 300 so the
+      // user-data JSON doesn't grow unbounded (history/downloads are already
+      // capped; positions weren't). Досмотренные помечены done:true — надгробия
+      // тоже мёржатся/капаются как обычные записи, старые вытеснятся.
+      const mergedPositionsAll: any = { ...(existing.positions || {}) };
       for (const [key, val] of Object.entries(data.positions || {})) {
-        const existingPos = mergedPositions[key];
+        const existingPos = mergedPositionsAll[key];
         if (!existingPos || (val as any).savedAt > existingPos.savedAt) {
-          mergedPositions[key] = val;
+          mergedPositionsAll[key] = val;
         }
       }
+      const posEntries = Object.entries(mergedPositionsAll);
+      const mergedPositions: any = posEntries.length <= 300
+        ? mergedPositionsAll
+        : Object.fromEntries(
+            posEntries
+              .sort((a, b) => ((b[1] as any)?.savedAt || 0) - ((a[1] as any)?.savedAt || 0))
+              .slice(0, 300),
+          );
 
       // Merge comments (by id, deduplicate)
       const commentMap = new Map<string, any>();

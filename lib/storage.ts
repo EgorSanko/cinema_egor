@@ -239,6 +239,10 @@ function applyServerData(data: any) {
   }
 }
 
+// Кап позиций синка: у активного юзера ключей kino_pos_* могут накапливаться
+// тысячи (каждый начатый эпизод <95%), и все летели в каждый синк + серверный
+// JSON — без ограничения. Шлём только новейшие POSITIONS_CAP по savedAt.
+const POSITIONS_CAP = 300;
 function getAllPositions(): Record<string, any> {
   if (typeof window === "undefined") return {};
   const positions: Record<string, any> = {};
@@ -250,7 +254,12 @@ function getAllPositions(): Record<string, any> {
       } catch {}
     }
   }
-  return positions;
+  const entries = Object.entries(positions);
+  if (entries.length <= POSITIONS_CAP) return positions;
+  const capped = entries
+    .sort((a, b) => ((b[1] as any)?.savedAt || 0) - ((a[1] as any)?.savedAt || 0))
+    .slice(0, POSITIONS_CAP);
+  return Object.fromEntries(capped);
 }
 
 function getAllComments(): Comment[] {
@@ -324,7 +333,16 @@ function positionKey(id: number, type: "movie" | "tv", season?: number, episode?
 export function savePosition(id: number, type: "movie" | "tv", currentTime: number, duration: number, season?: number, episode?: number): void {
   if (currentTime < 5 || duration < 10) return;
   const key = positionKey(id, type, season, episode);
-  if (currentTime / duration > 0.95) { localStorage.removeItem(key); return; }
+  if (currentTime / duration > 0.95) {
+    // Досмотрено. НЕ удаляем ключ, а пишем «надгробие» done:true — иначе
+    // удаление не доезжает до сервера (мёрж синка только добавляет/обновляет,
+    // никогда не удаляет), и на другом устройстве / после ре-логина фильм
+    // «воскресает» с резюме у самого конца. Надгробие разъезжается по
+    // устройствам через тот же newest-savedAt мёрж; getPosition его прячет.
+    localStorage.setItem(key, JSON.stringify({ time: 0, duration, savedAt: Date.now(), done: true }));
+    scheduleSyncToServer();
+    return;
+  }
   localStorage.setItem(key, JSON.stringify({ time: currentTime, duration, savedAt: Date.now() }));
   scheduleSyncToServer();
 }
@@ -335,7 +353,9 @@ export function getPosition(id: number, type: "movie" | "tv", season?: number, e
     const key = positionKey(id, type, season, episode);
     const data = localStorage.getItem(key);
     if (!data) return null;
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (parsed?.done) return null; // досмотрено → резюме не предлагаем (старт с 0)
+    return parsed;
   } catch { return null; }
 }
 
