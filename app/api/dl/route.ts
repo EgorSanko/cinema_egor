@@ -113,6 +113,76 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const REFERER = "https://hdrezka.ag/";
 
+// ── Прямая качка Alloha с VK, МИНУЯ наш бэкенд ───────────────────────────────
+// Раньше ffmpeg тянул фильм через /api/alloha/seg на LeadSeek. Обрыв такой
+// гигабайтной передачи убивал пул общего httpx-клиента бэкенда
+// (RemoteProtocolError) → резолв Alloha начинал отдавать not_found, т.е.
+// «Плеер 1 умер» у ВСЕХ. Плюс это был двойной транзит (VK → LeadSeek → сюда).
+// Теперь ffmpeg ходит к VK сам, с подписанными заголовками (их отдаёт бэкенд
+// по секретному ключу). LeadSeek в качке больше не участвует.
+const VKH_URL = "https://kino.lead-seek.ru/hdrezka/api/alloha-vkh";
+let vkhCache: { at: number; h: Record<string, string> } | null = null;
+
+async function allohaHeaders(): Promise<Record<string, string> | null> {
+  const key = process.env.ALLOHA_VKH_KEY || "";
+  if (!key) return null;
+  if (vkhCache && Date.now() - vkhCache.at < 10 * 60 * 1000) return vkhCache.h;
+  try {
+    const r = await fetch(`${VKH_URL}?k=${encodeURIComponent(key)}`);
+    if (!r.ok) return null;
+    const h = (await r.json()) as Record<string, string>;
+    if (!h || typeof h !== "object") return null;
+    vkhCache = { at: Date.now(), h };
+    return h;
+  } catch {
+    return null;
+  }
+}
+
+/** Достаёт из нашей прокси-ссылки исходные VK-зеркала («A or B»). */
+function allohaMirrors(url: string): string[] {
+  const i = url.indexOf("u=");
+  if (i < 0 || !/alloha\.m3u8/i.test(url)) return [];
+  try {
+    const std = url.slice(i + 2).replace(/[.=]+$/, "").replace(/-/g, "+").replace(/_/g, "/");
+    const raw = Buffer.from(std + "=".repeat((4 - (std.length % 4)) % 4), "base64").toString("utf8");
+    return raw.split(" or ").map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
+  } catch {
+    return [];
+  }
+}
+
+/** Выбирает ЖИВОЕ зеркало VK (они мрут выборочно: 403) и отдаёт его вместе с
+ *  заголовками для ffmpeg. null → прямой путь недоступен, работаем как раньше. */
+async function pickDirectVk(
+  url: string,
+): Promise<{ url: string; headers: Record<string, string> } | null> {
+  const mirrors = allohaMirrors(url);
+  if (!mirrors.length) return null;
+  const headers = await allohaHeaders();
+  if (!headers) return null;
+  for (const m of mirrors) {
+    try {
+      const r = await fetch(m, { headers });
+      if (!r.ok) continue;
+      const head = (await r.text()).slice(0, 64);
+      if (head.includes("#EXTM3U")) return { url: m, headers };
+    } catch {}
+  }
+  return null;
+}
+
+/** Аргументы ffmpeg с заголовками: свои (VK) либо дефолтные (HDRezka). */
+function headerArgs(h?: Record<string, string>): string[] {
+  if (!h) return ["-user_agent", UA, "-headers", `Referer: ${REFERER}\r\n`];
+  const ua = h["User-Agent"] || h["user-agent"] || UA;
+  const rest = Object.entries(h)
+    .filter(([k]) => k.toLowerCase() !== "user-agent")
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\r\n");
+  return ["-user_agent", ua, "-headers", rest ? rest + "\r\n" : ""];
+}
+
 // iOS Safari/QuickTime can't read the duration of a fragmented mp4 (empty_moov)
 // and plays only the first fragment (~2s). For iOS we instead remux to a real
 // temp file with the moov atom at the front (+faststart), then serve that.
@@ -168,6 +238,13 @@ export async function GET(req: NextRequest) {
   }
 
   const filename = sanitizeFilename(filenameRaw);
+  // Alloha: сначала пробуем ПРЯМОЙ путь к VK (минуя наш бэкенд) — так качка не
+  // может уронить резолв Alloha, и нет двойного транзита. Если заголовки
+  // недоступны (нет ключа / бэкенд молчит) — старый путь через прокси.
+  const direct = await pickDirectVk(url);
+  if (direct) {
+    return remuxHls(direct.url, filename, req, direct.headers);
+  }
   // Клиент присылает ссылку Alloha целиком (оба зеркала) — выбираем ЖИВОЕ и
   // короткое, иначе ffmpeg не откроет (лимит URL 4096).
   const finalUrl = await pickWorkingAllohaUrl(url);
@@ -180,7 +257,7 @@ export async function GET(req: NextRequest) {
 }
 
 /** Mode 1 — remux HLS to a fragmented mp4 via ffmpeg, streamed to the client. */
-function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest): Response {
+function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest, hdrs?: Record<string, string>): Response {
   // -headers passes Referer (HDRezka CDN 403s without it)
   // -c copy: no transcode, just repackage ts→mp4
   // -bsf:a aac_adtstoasc: fix AAC bitstream when copying ADTS→mp4
@@ -189,8 +266,7 @@ function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest)
   const args = [
     "-nostdin",
     "-loglevel", "error",
-    "-user_agent", UA,
-    "-headers", `Referer: ${REFERER}\r\n`,
+    ...headerArgs(hdrs),
     "-i", manifestUrl,
     "-c", "copy",
     "-bsf:a", "aac_adtstoasc",
@@ -275,14 +351,14 @@ function cleanupCache(): void {
 /** Spawn ffmpeg to remux url → cache file, marking `<file>.done` on success.
  *  Deliberately NOT tied to req.signal — it keeps running after the client
  *  leaves, so a backgrounded iOS download can resume from the finished file. */
-function ensureRemux(url: string, file: string, donePath: string, key: string, faststart: boolean): void {
+function ensureRemux(url: string, file: string, donePath: string, key: string, faststart: boolean, hdrs?: Record<string, string>): void {
   if (remuxing.has(key) || fs.existsSync(donePath)) return;
   remuxing.add(key);
   try { fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch {}
   safeUnlink(file); // start fresh
   const args = [
     "-nostdin", "-loglevel", "error",
-    "-user_agent", UA, "-headers", `Referer: ${REFERER}\r\n`,
+    ...headerArgs(hdrs),
     "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc",
     // iOS (faststart): a NON-fragmented mp4 with the moov atom moved to the front
     //   and a real mvhd duration. A fragmented mp4 (empty_moov) makes iOS/QuickTime
@@ -411,7 +487,7 @@ function streamFromCache(file: string, donePath: string, filename: string, req: 
   });
 }
 
-async function remuxHls(url: string, filename: string, req: NextRequest): Promise<Response> {
+async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: Record<string, string>): Promise<Response> {
   cleanupCache();
   // iOS needs a faststart (moov-front) file, which can only be served complete;
   // everyone else gets the streamable fragmented file. Key them separately so the
@@ -426,10 +502,10 @@ async function remuxHls(url: string, filename: string, req: NextRequest): Promis
   // (no caching) so a download still works without risking the disk.
   const free = await freeBytes(os.tmpdir());
   if (free !== null && free < MIN_FREE_BYTES && !fs.existsSync(donePath)) {
-    return streamHlsAsMp4(url, filename, req);
+    return streamHlsAsMp4(url, filename, req, hdrs);
   }
 
-  ensureRemux(url, file, donePath, key, ios);
+  ensureRemux(url, file, donePath, key, ios, hdrs);
 
   if (fs.existsSync(donePath)) {
     let size = 0; try { size = fs.statSync(file).size; } catch {}
