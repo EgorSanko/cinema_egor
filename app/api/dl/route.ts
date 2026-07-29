@@ -63,23 +63,41 @@ function isPrivateHost(host: string): boolean {
   return PRIVATE_HOST.test(host);
 }
 
-/** См. lib/kinopub.shortenAllohaProxyUrl — тот же приём на сервере (Node). */
-function shortenAllohaProxyUrl(url: string): string {
+/** Alloha кладёт в качество ДВА зеркала одной строкой («A or B»), и наш прокси
+ *  пакует их в base64 целиком → URL ~5100 символов. Плееру это безразлично, а
+ *  ffmpeg не открывает URL длиннее 4096 («Invalid data found»). Поэтому здесь
+ *  выбираем ОДНО зеркало — но не вслепую: зеркала мрут выборочно (403), поэтому
+ *  пробуем каждое и берём то, что реально отдало плейлист (#EXTM3U). */
+function encMirror(prefix: string, mirror: string): string {
+  return prefix + Buffer.from(mirror, "utf8").toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function pickWorkingAllohaUrl(url: string): Promise<string> {
+  const i = url.indexOf("u=");
+  if (i < 0) return url;
+  const prefix = url.slice(0, i + 2);
+  let raw: string;
   try {
-    const i = url.indexOf("u=");
-    if (i < 0) return url;
-    const prefix = url.slice(0, i + 2);
     const std = url.slice(i + 2).replace(/[.=]+$/, "").replace(/-/g, "+").replace(/_/g, "/");
-    const padded = std + "=".repeat((4 - (std.length % 4)) % 4);
-    const raw = Buffer.from(padded, "base64").toString("utf8");
-    if (!raw.includes(" or ")) return url;
-    const first = raw.split(" or ")[0].trim();
-    const enc = Buffer.from(first, "utf8").toString("base64")
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return prefix + enc;
+    raw = Buffer.from(std + "=".repeat((4 - (std.length % 4)) % 4), "base64").toString("utf8");
   } catch {
     return url;
   }
+  const mirrors = raw.split(" or ").map((s) => s.trim()).filter(Boolean);
+  if (mirrors.length <= 1) return url;
+  for (const m of mirrors) {
+    const candidate = encMirror(prefix, m);
+    try {
+      const r = await fetch(candidate, { headers: { "User-Agent": UA } });
+      if (!r.ok) continue;
+      const head = (await r.text()).slice(0, 64);
+      if (head.includes("#EXTM3U")) return candidate;
+    } catch {}
+  }
+  // Ни одно не ответило плейлистом — отдаём первое: у бэкенд-прокси есть
+  // собственный перебор зеркал, пусть попробует он.
+  return encMirror(prefix, mirrors[0]);
 }
 
 function sanitizeFilename(raw: string): string {
@@ -150,10 +168,9 @@ export async function GET(req: NextRequest) {
   }
 
   const filename = sanitizeFilename(filenameRaw);
-  // Alloha-ссылки клиент уже укорачивает (см. shortenAllohaProxyUrl), но
-  // подстраховываемся и здесь: ffmpeg не открывает URL длиннее 4096 байт, а
-  // «основная or зеркало» в base64 даёт ~5100 → «Invalid data found».
-  const finalUrl = shortenAllohaProxyUrl(url);
+  // Клиент присылает ссылку Alloha целиком (оба зеркала) — выбираем ЖИВОЕ и
+  // короткое, иначе ffmpeg не откроет (лимит URL 4096).
+  const finalUrl = await pickWorkingAllohaUrl(url);
   const isHls = /:hls:manifest\.m3u8/i.test(finalUrl) || /\.m3u8(\?|$)/i.test(finalUrl);
 
   if (isHls) {

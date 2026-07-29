@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, Check, X, ChevronDown, Loader2 } from "lucide-react";
 import { addDownload, hasDownloaded, buildFilename, triggerBrowserDownload } from "@/lib/downloads";
-import { resolveAllohaHls, shortenAllohaProxyUrl, ALLOHA_Q_ORDER, type AllohaHls } from "@/lib/kinopub";
+import { resolveAllohaHls, ALLOHA_Q_ORDER, type AllohaHls } from "@/lib/kinopub";
 import { useAuthGate } from "./auth-gate";
 
 interface MovieMeta {
@@ -165,10 +165,10 @@ export function MovieDownloadButton(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTranslator]);
 
-  const startDownload = (quality: string, rawUrl: string) => {
-    // Обрезаем зеркало («…master.m3u8 or …master.m3u8») — иначе URL ~5100
-    // символов и ffmpeg на бэке не открывает поток (лимит 4096).
-    const url = shortenAllohaProxyUrl(rawUrl);
+  const startDownload = (quality: string, url: string) => {
+    // Ссылку отдаём ЦЕЛИКОМ (в ней два зеркала Alloha) — /api/dl сам выберет
+    // живое: зеркала мрут выборочно (403), а вслепую взятое первое ломало
+    // скачивание. Укорачивание до одного зеркала делает сервер.
     const m: any = props.type === "movie" ? props.movie : props.show;
     const title = props.type === "movie" ? m.title : m.name;
     const trName = translators.find(t => t.id === selectedTranslator)?.name;
