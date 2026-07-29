@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, HDREZKA_UP, DOWNLOADS_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { ProblemReport } from "./problem-report";
@@ -924,11 +924,12 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
                   )}
-                  {/* Скачивание — Pro-фича. Теперь резолвится через Alloha
-                      (нативный HLS → ffmpeg-ремукс в /api/dl), поэтому больше
-                      НЕ зависит от лежащей HDRezka. */}
-                  {isPro && (
+                  {/* Скачивание (Alloha) — за флагом DOWNLOADS_UP: гигабайтная
+                      качка через общий httpx-клиент бэкенда роняет резолв
+                      Alloha всем. «Вместе» — за HDREZKA_UP. */}
+                  {isPro && (DOWNLOADS_UP || HDREZKA_UP) && (
                     <div className="grid grid-cols-2 gap-2.5 w-full sm:contents">
+                      {DOWNLOADS_UP && (
                       <MovieDownloadButton type="movie" movie={{
                         id: movie.id,
                         title: movie.title,
@@ -936,6 +937,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                         release_date: movie.release_date,
                         runtime: movie.runtime,
                       }} />
+                      )}
                       {/* «Вместе» всё ещё резолвится через HDRezka → прячем,
                           пока HDREZKA_UP=false. */}
                       {HDREZKA_UP && (

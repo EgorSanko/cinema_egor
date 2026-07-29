@@ -44,6 +44,17 @@ export function prewarmKinopub() {
 // Pro-дефолт и юзеров с hdrezka уводим на Alloha. Вернуть = поставить true.
 export const HDREZKA_UP = false;
 
+// 🚩 Кнопка «Скачать». ВЫКЛЮЧЕНА (2026-07-30) — не из-за источника, а из-за
+// нагрузки: скачивание тянет фильм (3–4 ГБ) через /api/alloha/seg на общем
+// httpx-клиенте бэкенда. Оборванная качка роняет пул соединений
+// (RemoteProtocolError) → резолв Alloha начинает отдавать not_found → «Плеер 1
+// умер» у ВСЕХ (поймано вживую на тесте: 1 ГБ, затем падение, лечится
+// рестартом kino-api). Включать только после развязки: отдельный httpx-клиент
+// под /api/alloha/seg ИЛИ качать ffmpeg'ом напрямую с VK с подписанными
+// заголовками, минуя бэкенд-прокси. Сам механизм (Alloha-резолв в меню,
+// выбор живого зеркала в /api/dl) уже готов и протестирован.
+export const DOWNLOADS_UP = false;
+
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";

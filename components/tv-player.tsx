@@ -33,7 +33,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, DOWNLOADS_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -1303,11 +1303,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     <SkipForward size={15} /> {"Следующая серия"}
                   </button>
 
-                  {/* Скачивание — Pro-фича, теперь через Alloha (нативный HLS →
-                      ffmpeg-ремукс в /api/dl), от HDRezka больше не зависит.
-                      «Вместе» ниже — всё ещё HDRezka, прячем до HDREZKA_UP. */}
-                  {isPro && (
+                  {/* Скачивание (Alloha) — за флагом DOWNLOADS_UP: гигабайтная
+                      качка через общий httpx-клиент бэкенда роняет резолв
+                      Alloha всем. «Вместе» — за HDREZKA_UP. */}
+                  {isPro && (DOWNLOADS_UP || HDREZKA_UP) && (
                     <div className="grid grid-cols-2 gap-2 w-full sm:contents">
+                      {DOWNLOADS_UP && (
                       <MovieDownloadButton
                         type="tv"
                         show={{
@@ -1321,6 +1322,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                         initialSeason={selectedSeason}
                         initialEpisode={selectedEpisode}
                       />
+                      )}
                       {HDREZKA_UP && (
                       <Link
                         href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "") + "&season=" + selectedSeason + "&episode=" + selectedEpisode}
