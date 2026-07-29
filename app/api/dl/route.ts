@@ -238,13 +238,13 @@ export async function GET(req: NextRequest) {
   }
 
   const filename = sanitizeFilename(filenameRaw);
-  // Alloha: сначала пробуем ПРЯМОЙ путь к VK (минуя наш бэкенд) — так качка не
-  // может уронить резолв Alloha, и нет двойного транзита. Если заголовки
-  // недоступны (нет ключа / бэкенд молчит) — старый путь через прокси.
-  const direct = await pickDirectVk(url);
-  if (direct) {
-    return remuxHls(direct.url, filename, req, direct.headers);
-  }
+  // ⚠️ Качаем ЧЕРЕЗ наш прокси (не напрямую с VK). Прямой путь пробовали —
+  // VK начинает 403-ить сегменты на середине, а у ffmpeg нет ретраев: в файле
+  // дыры, на iOS вообще огрызок (6с вместо фильма). У прокси /api/alloha/seg
+  // 4 ретрая на сегмент, и он теперь на ОТДЕЛЬНОМ httpx-клиенте (keepalive=0),
+  // поэтому обрыв гигабайтной качки больше не роняет резолв Alloha
+  // («Плеер 1 умер» у всех). pickDirectVk оставлен на будущее, но не активен.
+  //
   // Клиент присылает ссылку Alloha целиком (оба зеркала) — выбираем ЖИВОЕ и
   // короткое, иначе ffmpeg не откроет (лимит URL 4096).
   const finalUrl = await pickWorkingAllohaUrl(url);
