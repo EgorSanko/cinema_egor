@@ -517,7 +517,7 @@ async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: 
     // real duration so iOS plays the whole episode (not just the first ~2s). ffmpeg
     // runs detached and nginx /api/dl allows a 3600s read, so a slow/backgrounded
     // download still finishes and a resume gets the same file.
-    return waitForDoneThenServe(url, file, donePath, key, filename, range, req);
+    return waitForDoneThenServe(url, file, donePath, key, filename, range, req, hdrs);
   }
 
   // Not finished yet → stream the growing file from the start (ignore Range; the
@@ -532,6 +532,7 @@ async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: 
 async function waitForDoneThenServe(
   url: string, file: string, donePath: string, key: string,
   filename: string, range: string | null, req: NextRequest,
+  hdrs?: Record<string, string>,
 ): Promise<Response> {
   while (!req.signal.aborted) {
     if (fs.existsSync(donePath)) {
@@ -545,7 +546,9 @@ async function waitForDoneThenServe(
     await new Promise((r) => setTimeout(r, 500));
   }
   if (req.signal.aborted) return new Response(null, { status: 499 });
-  return streamHlsAsMp4(url, filename, req);
+  // Фолбэк тоже с VK-заголовками — без них VK ответит 403 и iPhone не получит
+  // ничего (заголовки терялись: путь для iOS их не пробрасывал).
+  return streamHlsAsMp4(url, filename, req, hdrs);
 }
 
 /** Mode 1-iOS — remux HLS to a real mp4 file with moov-at-front, then serve
