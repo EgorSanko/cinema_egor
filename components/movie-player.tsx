@@ -924,9 +924,10 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
                   )}
-                  {/* Скачивание и «Вместе» — Pro-фичи, но обе резолвятся через
-                      HDRezka. Пока HDRezka лежит (HDREZKA_UP=false) — прячем. */}
-                  {isPro && HDREZKA_UP && (
+                  {/* Скачивание — Pro-фича. Теперь резолвится через Alloha
+                      (нативный HLS → ffmpeg-ремукс в /api/dl), поэтому больше
+                      НЕ зависит от лежащей HDRezka. */}
+                  {isPro && (
                     <div className="grid grid-cols-2 gap-2.5 w-full sm:contents">
                       <MovieDownloadButton type="movie" movie={{
                         id: movie.id,
@@ -935,6 +936,9 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                         release_date: movie.release_date,
                         runtime: movie.runtime,
                       }} />
+                      {/* «Вместе» всё ещё резолвится через HDRezka → прячем,
+                          пока HDREZKA_UP=false. */}
+                      {HDREZKA_UP && (
                       <Link
                         href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
                         className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 px-4 rounded-xl bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[13px] font-semibold"
@@ -942,6 +946,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                       >
                         <Users size={15} /> <span className="sm:hidden">{"Вместе"}</span><span className="hidden sm:inline">{"Смотреть вместе"}</span>
                       </Link>
+                      )}
                     </div>
                   )}
                 </div>

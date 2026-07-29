@@ -30,6 +30,9 @@ export const dynamic = "force-dynamic";
 
 // Whitelist of allowed upstream hosts — without it we'd be an open proxy.
 const ALLOWED_HOST_PATTERNS = [
+  // Наш собственный HLS-прокси (Alloha → VK m3u8 с подписанными заголовками).
+  // Скачивание Alloha идёт через него: kino.lead-seek.ru/hdrezka/api/alloha.m3u8?u=…
+  /^([a-z0-9-]+\.)?lead-seek\.ru$/i,
   /^([a-z0-9-]+\.)?vdbmate\.org$/i,
   /^([a-z0-9-]+\.)?voidboost\.cc$/i,
   /^([a-z0-9-]+\.)?ukrtelard\.online$/i,
@@ -58,6 +61,25 @@ const PRIVATE_HOST =
   /^(localhost|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$)/i;
 function isPrivateHost(host: string): boolean {
   return PRIVATE_HOST.test(host);
+}
+
+/** См. lib/kinopub.shortenAllohaProxyUrl — тот же приём на сервере (Node). */
+function shortenAllohaProxyUrl(url: string): string {
+  try {
+    const i = url.indexOf("u=");
+    if (i < 0) return url;
+    const prefix = url.slice(0, i + 2);
+    const std = url.slice(i + 2).replace(/[.=]+$/, "").replace(/-/g, "+").replace(/_/g, "/");
+    const padded = std + "=".repeat((4 - (std.length % 4)) % 4);
+    const raw = Buffer.from(padded, "base64").toString("utf8");
+    if (!raw.includes(" or ")) return url;
+    const first = raw.split(" or ")[0].trim();
+    const enc = Buffer.from(first, "utf8").toString("base64")
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    return prefix + enc;
+  } catch {
+    return url;
+  }
 }
 
 function sanitizeFilename(raw: string): string {
@@ -128,12 +150,16 @@ export async function GET(req: NextRequest) {
   }
 
   const filename = sanitizeFilename(filenameRaw);
-  const isHls = /:hls:manifest\.m3u8/i.test(url) || /\.m3u8(\?|$)/i.test(url);
+  // Alloha-ссылки клиент уже укорачивает (см. shortenAllohaProxyUrl), но
+  // подстраховываемся и здесь: ffmpeg не открывает URL длиннее 4096 байт, а
+  // «основная or зеркало» в base64 даёт ~5100 → «Invalid data found».
+  const finalUrl = shortenAllohaProxyUrl(url);
+  const isHls = /:hls:manifest\.m3u8/i.test(finalUrl) || /\.m3u8(\?|$)/i.test(finalUrl);
 
   if (isHls) {
-    return remuxHls(url, filename, req);
+    return remuxHls(finalUrl, filename, req);
   }
-  return proxyDirect(target.toString(), filename, req);
+  return proxyDirect(finalUrl, filename, req);
 }
 
 /** Mode 1 — remux HLS to a fragmented mp4 via ffmpeg, streamed to the client. */

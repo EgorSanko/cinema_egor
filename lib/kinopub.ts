@@ -103,6 +103,34 @@ export async function resolveAllohaHls(
   }
 }
 
+/** Alloha кладёт в КАЖДОЕ качество ДВЕ ссылки — «основная or зеркало» — и наш
+ *  прокси пакует их в base64 целиком. Плееру (hls.js) это безразлично, а вот
+ *  СКАЧИВАНИЕ ломалось: у ffmpeg жёсткий лимит длины URL (MAX_URL_SIZE=4096), а
+ *  такая ссылка ~5100 символов → «Invalid data found». Оставляем только первую
+ *  ссылку → ~2600 символов, ffmpeg ремуксит нормально. Padding у бэкенда
+ *  заменён на «.», поэтому нормализуем его перед декодом. */
+export function shortenAllohaProxyUrl(url: string): string {
+  try {
+    const i = url.indexOf("u=");
+    if (i < 0) return url;
+    const prefix = url.slice(0, i + 2);
+    const std = url.slice(i + 2).replace(/[.=]+$/, "").replace(/-/g, "+").replace(/_/g, "/");
+    const padded = std + "=".repeat((4 - (std.length % 4)) % 4);
+    const raw = typeof atob === "function"
+      ? atob(padded)
+      : Buffer.from(padded, "base64").toString("utf8");
+    if (!raw.includes(" or ")) return url;
+    const first = raw.split(" or ")[0].trim();
+    const enc = (typeof btoa === "function"
+      ? btoa(first)
+      : Buffer.from(first, "utf8").toString("base64")
+    ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    return prefix + enc;
+  } catch {
+    return url;
+  }
+}
+
 /** Порядок качеств от высшего к низшему для выбора дефолта/сортировки. */
 export const ALLOHA_Q_ORDER = ["2160", "1440", "1080", "720", "480", "360"];
 /** Выбирает URL для озвучки+качества; если качества нет — берёт ближайшее высшее. */

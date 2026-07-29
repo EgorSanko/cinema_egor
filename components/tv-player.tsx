@@ -1303,9 +1303,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     <SkipForward size={15} /> {"Следующая серия"}
                   </button>
 
-                  {/* Скачивание и «Вместе» — обе через HDRezka. Пока HDRezka
-                      лежит (HDREZKA_UP=false) — прячем. */}
-                  {isPro && HDREZKA_UP && (
+                  {/* Скачивание — Pro-фича, теперь через Alloha (нативный HLS →
+                      ffmpeg-ремукс в /api/dl), от HDRezka больше не зависит.
+                      «Вместе» ниже — всё ещё HDRezka, прячем до HDREZKA_UP. */}
+                  {isPro && (
                     <div className="grid grid-cols-2 gap-2 w-full sm:contents">
                       <MovieDownloadButton
                         type="tv"
@@ -1320,6 +1321,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                         initialSeason={selectedSeason}
                         initialEpisode={selectedEpisode}
                       />
+                      {HDREZKA_UP && (
                       <Link
                         href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "") + "&season=" + selectedSeason + "&episode=" + selectedEpisode}
                         className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 sm:h-10 px-3.5 rounded-xl sm:rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
@@ -1327,6 +1329,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
                       >
                         <Users size={14} /> {"Вместе"}
                       </Link>
+                      )}
                     </div>
                   )}
                 </div>

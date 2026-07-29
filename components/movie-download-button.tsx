@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, Check, X, ChevronDown, Loader2 } from "lucide-react";
 import { addDownload, hasDownloaded, buildFilename, triggerBrowserDownload } from "@/lib/downloads";
+import { resolveAllohaHls, shortenAllohaProxyUrl, ALLOHA_Q_ORDER, type AllohaHls } from "@/lib/kinopub";
 import { useAuthGate } from "./auth-gate";
 
 interface MovieMeta {
@@ -70,15 +71,12 @@ export function MovieDownloadButton(props: Props) {
   const [episode, setEpisode] = useState<number>(
     props.type === "tv" ? props.initialEpisode ?? 1 : 1
   );
-  // Translators are loaded from the same /hdrezka/api/search call. Default
-  // selected = whatever the backend reports as active for the request.
+  // Озвучки берём из Alloha-резолва; id = ИНДЕКС в a.translations.
   const [translators, setTranslators] = useState<Translator[]>([]);
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
-  // Set when the backend substituted a different dub because the chosen one
-  // doesn't have this episode. Drives the warning + download block.
-  const [translatorMismatch, setTranslatorMismatch] = useState<
-    { requestedId: number; gotName: string; gotIsPremium: boolean } | null
-  >(null);
+  // Резолв Alloha кешируем: в одном ответе уже ВСЕ озвучки со своими
+  // качествами, поэтому смена озвучки не требует повторного запроса.
+  const allohaRef = useRef<AllohaHls | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const id = props.type === "movie" ? props.movie.id : props.show.id;
   const targetSeason = props.type === "tv" ? season : undefined;
@@ -105,62 +103,41 @@ export function MovieDownloadButton(props: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const fetchStreamsForCurrent = async (overrideTr?: number | null) => {
+  // Раскладывает качества ВЫБРАННОЙ озвучки в вид {"1080p": url}. Alloha даёт
+  // ключи без «p» («1080»), а оценка размера/сортировка ждут «1080p».
+  const applyQualities = (a: AllohaHls, idx: number) => {
+    const q = a.translations[idx]?.quality || {};
+    const map: Record<string, string> = {};
+    for (const k of ALLOHA_Q_ORDER) if (q[k]) map[`${k}p`] = q[k];
+    for (const [k, v] of Object.entries(q)) if (!map[`${k}p`]) map[`${k}p`] = v;
+    setStreams(Object.keys(map).length ? map : null);
+  };
+
+  // Источник файлов — Alloha (нативный HLS через наш прокси). Раньше меню
+  // строилось на /hdrezka/api/search, но HDRezka забанила наш IP
+  // (HDREZKA_UP=false) и «Скачать» пропало у всех. Alloha в ОДНОМ ответе даёт
+  // все озвучки со своими качествами → смена озвучки без повторного запроса.
+  const fetchStreamsForCurrent = async () => {
     setLoading(true);
     setError(null);
     setStreams(null);
     try {
-      const m: any = props.type === "movie" ? props.movie : props.show;
-      const title = props.type === "movie" ? m.title : m.name;
-      const date = props.type === "movie" ? m.release_date : m.first_air_date;
-      const year = date ? new Date(date).getFullYear() : "";
-      const q = encodeURIComponent((title || "").replace(/["«»""]/g, "").trim());
-      const tr = overrideTr ?? selectedTranslator;
-      const trParam = tr ? `&translator_id=${tr}` : "";
-      const url = props.type === "movie"
-        ? `/hdrezka/api/search?q=${q}&year=${year}&type=movie${trParam}`
-        : `/hdrezka/api/search?q=${q}&year=${year}&type=tv&season=${season}&episode=${episode}${trParam}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!data.streams || Object.keys(data.streams).length === 0) {
+      const a = await resolveAllohaHls(id, props.type, targetSeason, targetEpisode);
+      if (!a || !Array.isArray(a.translations) || a.translations.length === 0) {
         setError("Не удалось получить файлы. Возможно эпизод ещё не вышел.");
         return;
       }
-      // Detect silent translator substitution. When the chosen dub hasn't
-      // covered this episode yet (e.g. Яроцкий dubbed eps 1-2 but not 3),
-      // HDRezka falls back to a DIFFERENT translator — often a premium one
-      // that serves a 1-minute "buy subscription" stub. The old code kept
-      // showing the requested dub's name while silently downloading the stub.
-      // Now: if backend returned a different translator than we asked for,
-      // flag it so the UI can warn and block the download.
-      const requestedTr = tr;
-      const gotTr = data.active_translator_id ?? null;
-      const activeTrObj = Array.isArray(data.translators)
-        ? data.translators.find((t: Translator) => t.id === gotTr)
-        : undefined;
-      const substituted =
-        requestedTr != null && gotTr != null && requestedTr !== gotTr;
-      setTranslatorMismatch(
-        substituted
-          ? { requestedId: requestedTr, gotName: activeTrObj?.name ?? "другую озвучку", gotIsPremium: !!activeTrObj?.is_premium }
-          : null,
-      );
-
-      setStreams(data.streams);
-      // Capture translators list on first fetch; respect backend's reported
-      // active_translator_id when user hasn't picked anything yet.
-      if (Array.isArray(data.translators) && data.translators.length > 0) {
-        setTranslators(data.translators);
-        if (selectedTranslator == null) {
-          setSelectedTranslator(data.active_translator_id ?? data.translators[0].id);
-        }
-      }
-      // Real runtime where known. Movies pass it in minutes; TV episodes
-      // vary so we default to 25 min as a sitcom-ish fallback.
-      const fallbackSec = props.type === "movie"
-        ? ((props.movie.runtime || 90) * 60)
-        : 1500;
-      setDuration(fallbackSec);
+      allohaRef.current = a;
+      setTranslators(a.translations.map((t, i) => ({ id: i, name: t.name })));
+      // Сохраняем выбранную озвучку, если она есть и в новом ответе.
+      const idx = selectedTranslator != null && a.translations[selectedTranslator]
+        ? selectedTranslator
+        : 0;
+      setSelectedTranslator(idx);
+      applyQualities(a, idx);
+      // Реальный хронометраж известен только для фильмов; для серий берём
+      // 25 мин как ситком-подобный дефолт (нужно лишь для оценки размера).
+      setDuration(props.type === "movie" ? (props.movie.runtime || 90) * 60 : 1500);
     } catch {
       setError("Ошибка сети, попробуйте ещё раз");
     } finally {
@@ -181,16 +158,17 @@ export function MovieDownloadButton(props: Props) {
     if (open && props.type === "tv") fetchStreamsForCurrent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, episode]);
+  // Смена озвучки — БЕЗ сети: качества всех озвучек уже в кешированном резолве.
   useEffect(() => {
-    if (open && selectedTranslator != null && streams) fetchStreamsForCurrent(selectedTranslator);
+    const a = allohaRef.current;
+    if (open && a && selectedTranslator != null) applyQualities(a, selectedTranslator);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTranslator]);
 
-  const startDownload = (quality: string, url: string) => {
-    // Block download when the backend substituted a different dub for this
-    // episode — otherwise we'd save the 1-min "buy subscription" stub of a
-    // premium translator instead of the real video.
-    if (translatorMismatch) return;
+  const startDownload = (quality: string, rawUrl: string) => {
+    // Обрезаем зеркало («…master.m3u8 or …master.m3u8») — иначе URL ~5100
+    // символов и ffmpeg на бэке не открывает поток (лимит 4096).
+    const url = shortenAllohaProxyUrl(rawUrl);
     const m: any = props.type === "movie" ? props.movie : props.show;
     const title = props.type === "movie" ? m.title : m.name;
     const trName = translators.find(t => t.id === selectedTranslator)?.name;
@@ -297,12 +275,6 @@ export function MovieDownloadButton(props: Props) {
                   </option>
                 ))}
               </select>
-              {translatorMismatch && (
-                <div className="mt-1.5 text-[11px] text-amber-400/90 leading-snug">
-                  ⚠️ Этой озвучки нет на этой серии. Доступна только «{translatorMismatch.gotName}»
-                  {translatorMismatch.gotIsPremium ? " (по подписке)" : ""}. Выбери другую озвучку или серию.
-                </div>
-              )}
             </div>
           )}
 
@@ -327,19 +299,14 @@ export function MovieDownloadButton(props: Props) {
                   return (
                     <button
                       key={quality}
-                      disabled={!!translatorMismatch}
                       onClick={() => startDownload(quality, url as string)}
-                      className={`w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg transition-colors text-[13px] text-left ${
-                        translatorMismatch
-                          ? "bg-white/[0.03] text-white/30 cursor-not-allowed"
-                          : "bg-white/[0.05] hover:bg-primary/15 hover:ring-1 hover:ring-primary/30"
-                      }`}
+                      className="w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg transition-colors text-[13px] text-left bg-white/[0.05] hover:bg-primary/15 hover:ring-1 hover:ring-primary/30"
                     >
                       <span className="flex items-center gap-2 font-semibold">
-                        {alreadyThisQuality && !translatorMismatch && <Check size={13} className="text-primary" />}
+                        {alreadyThisQuality && <Check size={13} className="text-primary" />}
                         {quality}
                       </span>
-                      {sizeStr && <span className={translatorMismatch ? "text-white/25 text-[11.5px]" : "text-white/50 text-[11.5px]"}>{sizeStr}</span>}
+                      {sizeStr && <span className="text-white/50 text-[11.5px]">{sizeStr}</span>}
                     </button>
                   );
                 })}
