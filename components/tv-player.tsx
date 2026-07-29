@@ -767,6 +767,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
   };
 
   const selectEpisode = (season: number, episode: number) => {
+    // Взводим анти-перескок кулдаун на ЛЮБУЮ смену серии (дропдаун «Серия»,
+    // кнопки панели, авто-переход). Раньше его армил только nextEpisode(), а
+    // переключение через дропдаун шло прямо сюда без арма → при смене у конца
+    // серии залётный ended/loopback новой серии перескакивал ещё на одну.
+    lastAdvanceAtRef.current = Date.now();
     setSelectedSeason(season);
     setSelectedEpisode(episode);
     setShowEpisodes(false);
