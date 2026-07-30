@@ -74,6 +74,8 @@ export function MovieDownloadButton(props: Props) {
   // Озвучки берём из Alloha-резолва; id = ИНДЕКС в a.translations.
   const [translators, setTranslators] = useState<Translator[]>([]);
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
+  // Аудио-дорожки kino.pub (озвучки): держим URL отдельно от списка для UI.
+  const audioRef = useRef<{ id: number; name: string; url: string }[]>([]);
   const popupRef = useRef<HTMLDivElement>(null);
   const id = props.type === "movie" ? props.movie.id : props.show.id;
   const targetSeason = props.type === "tv" ? season : undefined;
@@ -129,25 +131,39 @@ export function MovieDownloadButton(props: Props) {
         setError("Не удалось получить файлы. Возможно эпизод ещё не вышел.");
         return;
       }
-      // Мастер-плейлист даёт варианты качества; каждый вариант — отдельный
-      // плейлист, его и скачиваем (ffmpeg на бэке ремуксит в mp4).
+      // Мастер-плейлист: видео-варианты (качество) + ОТДЕЛЬНЫЕ аудио-дорожки
+      // (#EXT-X-MEDIA:TYPE=AUDIO). Звук у kino.pub не внутри видео-варианта —
+      // если скачать только видео, файл будет БЕЗ ЗВУКА (так и было). Поэтому
+      // тянем обе ссылки, а ffmpeg на бэке склеивает V+A.
       const master = await fetch(kp.hls4).then((r) => (r.ok ? r.text() : ""));
+      const abs = (u: string) => (u.startsWith("http") ? u : new URL(u, kp.hls4).toString());
       const map: Record<string, string> = {};
+      const auds: { id: number; name: string; url: string }[] = [];
       const lines = master.split("\n");
       for (let i = 0; i < lines.length; i++) {
         const s = lines[i].trim();
+        if (s.startsWith("#EXT-X-MEDIA:") && /TYPE=AUDIO/.test(s)) {
+          const uri = /URI="([^"]+)"/.exec(s);
+          const nm = /NAME="([^"]+)"/.exec(s);
+          if (uri) auds.push({ id: auds.length, name: nm?.[1] || `Дорожка ${auds.length + 1}`, url: abs(uri[1]) });
+          continue;
+        }
         if (!s.startsWith("#EXT-X-STREAM-INF")) continue;
         const res = /RESOLUTION=(\d+)x(\d+)/.exec(s);
         const next = (lines[i + 1] || "").trim();
         if (!res || !next || next.startsWith("#")) continue;
-        const url = next.startsWith("http") ? next : new URL(next, kp.hls4).toString();
         const label = labelFor(Number(res[1]));
-        if (!map[label]) map[label] = url;
+        if (!map[label]) map[label] = abs(next);
       }
+      // Дедуп дорожек по имени: kino.pub повторяет их для каждой группы качества.
+      const uniq = Array.from(new Map(auds.map((a) => [a.name, a])).values())
+        .map((a, i) => ({ ...a, id: i }));
+      audioRef.current = uniq;
+      setTranslators(uniq.map((a) => ({ id: a.id, name: a.name })));
+      if (selectedTranslator == null || !uniq[selectedTranslator]) setSelectedTranslator(0);
       // Мастер не разобрался (или один поток) → отдаём его целиком: ffmpeg сам
-      // выберет лучший вариант.
+      // выберет лучший вариант вместе со звуком.
       setStreams(Object.keys(map).length ? map : { Авто: kp.hls4 });
-      setTranslators([]); // у kino.pub одна дорожка на тайтл — выбора озвучки нет
       setDuration(props.type === "movie" ? (props.movie.runtime || 90) * 60 : 1500);
     } catch {
       setError("Ошибка сети, попробуйте ещё раз");
@@ -192,7 +208,9 @@ export function MovieDownloadButton(props: Props) {
           translatorName: trName,
         };
     addDownload(entry);
-    triggerBrowserDownload(url, buildFilename(entry));
+    // Вторым параметром уходит выбранная аудио-дорожка — иначе mp4 без звука.
+    const aud = audioRef.current[selectedTranslator ?? 0]?.url;
+    triggerBrowserDownload(url, buildFilename(entry), aud);
     setDownloadedAny(hasDownloaded(id, props.type));
   };
 

@@ -180,6 +180,15 @@ async function pickDirectVk(
   return null;
 }
 
+/** Вход(ы) ffmpeg. У kino.pub аудио лежит ОТДЕЛЬНОЙ дорожкой
+ *  (#EXT-X-MEDIA:TYPE=AUDIO), поэтому качать только видео-вариант = файл БЕЗ
+ *  ЗВУКА. Когда пришёл audio-URL — берём два входа и явно мапим V+A. */
+function inputArgs(url: string, audio?: string): string[] {
+  return audio
+    ? ["-i", url, "-i", audio, "-map", "0:v:0", "-map", "1:a:0"]
+    : ["-i", url];
+}
+
 /** Аргументы ffmpeg с заголовками: свои (VK) либо дефолтные (HDRezka). */
 function headerArgs(h?: Record<string, string>): string[] {
   if (!h) return ["-user_agent", UA, "-headers", `Referer: ${REFERER}\r\n`];
@@ -258,14 +267,28 @@ export async function GET(req: NextRequest) {
   const finalUrl = await pickWorkingAllohaUrl(url);
   const isHls = /:hls:manifest\.m3u8/i.test(finalUrl) || /\.m3u8(\?|$)/i.test(finalUrl);
 
+  // Отдельная аудио-дорожка (kino.pub держит звук вне видео-варианта — без
+  // неё файл скачивался БЕЗ ЗВУКА). Проверяем так же строго, как основной URL.
+  let audioUrl: string | undefined;
+  const audioRaw = sp.get("audio");
+  if (audioRaw) {
+    try {
+      const a = new URL(audioRaw);
+      const okProto = a.protocol === "https:" || a.protocol === "http:";
+      if (okProto && !isPrivateHost(a.hostname) && (hostAllowed(a.hostname) || isKinopubUrl(a))) {
+        audioUrl = a.toString();
+      }
+    } catch {}
+  }
+
   if (isHls) {
-    return remuxHls(finalUrl, filename, req);
+    return remuxHls(finalUrl, filename, req, undefined, audioUrl);
   }
   return proxyDirect(finalUrl, filename, req);
 }
 
 /** Mode 1 — remux HLS to a fragmented mp4 via ffmpeg, streamed to the client. */
-function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest, hdrs?: Record<string, string>): Response {
+function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest, hdrs?: Record<string, string>, audio?: string): Response {
   // -headers passes Referer (HDRezka CDN 403s without it)
   // -c copy: no transcode, just repackage ts→mp4
   // -bsf:a aac_adtstoasc: fix AAC bitstream when copying ADTS→mp4
@@ -275,7 +298,7 @@ function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest,
     "-nostdin",
     "-loglevel", "error",
     ...headerArgs(hdrs),
-    "-i", manifestUrl,
+    ...inputArgs(manifestUrl, audio),
     "-c", "copy",
     "-bsf:a", "aac_adtstoasc",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
@@ -359,7 +382,7 @@ function cleanupCache(): void {
 /** Spawn ffmpeg to remux url → cache file, marking `<file>.done` on success.
  *  Deliberately NOT tied to req.signal — it keeps running after the client
  *  leaves, so a backgrounded iOS download can resume from the finished file. */
-function ensureRemux(url: string, file: string, donePath: string, key: string, faststart: boolean, hdrs?: Record<string, string>): void {
+function ensureRemux(url: string, file: string, donePath: string, key: string, faststart: boolean, hdrs?: Record<string, string>, audio?: string): void {
   if (remuxing.has(key) || fs.existsSync(donePath)) return;
   remuxing.add(key);
   try { fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch {}
@@ -367,7 +390,7 @@ function ensureRemux(url: string, file: string, donePath: string, key: string, f
   const args = [
     "-nostdin", "-loglevel", "error",
     ...headerArgs(hdrs),
-    "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc",
+    ...inputArgs(url, audio), "-c", "copy", "-bsf:a", "aac_adtstoasc",
     // iOS (faststart): a NON-fragmented mp4 with the moov atom moved to the front
     //   and a real mvhd duration. A fragmented mp4 (empty_moov) makes iOS/QuickTime
     //   read only the first ~2s fragment → the "downloads but plays 2 seconds" bug.
@@ -495,13 +518,14 @@ function streamFromCache(file: string, donePath: string, filename: string, req: 
   });
 }
 
-async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: Record<string, string>): Promise<Response> {
+async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: Record<string, string>, audio?: string): Promise<Response> {
   cleanupCache();
   // iOS needs a faststart (moov-front) file, which can only be served complete;
   // everyone else gets the streamable fragmented file. Key them separately so the
   // two formats never collide in the cache.
   const ios = isIOS(req);
-  const key = cacheKey(url) + (ios ? ".ios" : "");
+  // Ключ кэша учитывает и аудио: другая озвучка = другой файл.
+  const key = cacheKey(url + (audio ? "|" + audio : "")) + (ios ? ".ios" : "");
   const file = path.join(CACHE_DIR, key + ".mp4");
   const donePath = file + ".done";
   const range = req.headers.get("range");
@@ -510,10 +534,10 @@ async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: 
   // (no caching) so a download still works without risking the disk.
   const free = await freeBytes(os.tmpdir());
   if (free !== null && free < MIN_FREE_BYTES && !fs.existsSync(donePath)) {
-    return streamHlsAsMp4(url, filename, req, hdrs);
+    return streamHlsAsMp4(url, filename, req, hdrs, audio);
   }
 
-  ensureRemux(url, file, donePath, key, ios, hdrs);
+  ensureRemux(url, file, donePath, key, ios, hdrs, audio);
 
   if (fs.existsSync(donePath)) {
     let size = 0; try { size = fs.statSync(file).size; } catch {}
@@ -525,7 +549,7 @@ async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: 
     // real duration so iOS plays the whole episode (not just the first ~2s). ffmpeg
     // runs detached and nginx /api/dl allows a 3600s read, so a slow/backgrounded
     // download still finishes and a resume gets the same file.
-    return waitForDoneThenServe(url, file, donePath, key, filename, range, req, hdrs);
+    return waitForDoneThenServe(url, file, donePath, key, filename, range, req, hdrs, audio);
   }
 
   // Not finished yet → stream the growing file from the start (ignore Range; the
@@ -540,7 +564,7 @@ async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: 
 async function waitForDoneThenServe(
   url: string, file: string, donePath: string, key: string,
   filename: string, range: string | null, req: NextRequest,
-  hdrs?: Record<string, string>,
+  hdrs?: Record<string, string>, audio?: string,
 ): Promise<Response> {
   while (!req.signal.aborted) {
     if (fs.existsSync(donePath)) {
@@ -556,7 +580,7 @@ async function waitForDoneThenServe(
   if (req.signal.aborted) return new Response(null, { status: 499 });
   // Фолбэк тоже с VK-заголовками — без них VK ответит 403 и iPhone не получит
   // ничего (заголовки терялись: путь для iOS их не пробрасывал).
-  return streamHlsAsMp4(url, filename, req, hdrs);
+  return streamHlsAsMp4(url, filename, req, hdrs, audio);
 }
 
 /** Mode 1-iOS — remux HLS to a real mp4 file with moov-at-front, then serve
