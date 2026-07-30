@@ -33,7 +33,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, DOWNLOADS_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, ALLOHA_UP, DOWNLOADS_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -142,7 +142,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // подсвечивает активный. (На фильмах эти источники валидны, там не трогаем.)
   useEffect(() => {
     const s = getSource();
-    if (s === "vkmovie" || s === "rutube") setSource("alloha");
+    // Alloha скрыта → сериалы с фильмовых источников уводим на kino.pub.
+    if (s === "vkmovie" || s === "rutube") setSource(ALLOHA_UP ? "alloha" : "kinopub");
   }, []);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };

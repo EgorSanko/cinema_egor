@@ -7,27 +7,23 @@
 // источнике. Free-юзерам не показывается (у них только бесплатный zenithjs).
 
 import { useEffect, useState } from "react";
-import { getSource, setSource, HDREZKA_UP, type KinoSource } from "@/lib/kinopub";
+import { getSource, setSource, HDREZKA_UP, ALLOHA_UP, type KinoSource } from "@/lib/kinopub";
 import { useSubscription } from "@/hooks/use-subscription";
 
 // HDRezka лежит → прячем Плеер 1 (hdrezka) и перенумеровываем: Alloha=Плеер 1,
 // kino.pub=Плеер 2. Вернётся HDRezka (HDREZKA_UP=true) — снова 1/2/3.
-const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
-  ? [
-      { src: "hdrezka", label: "Плеер 1" },
-      { src: "alloha", label: "Плеер 2" },
-      { src: "kinopub", label: "Плеер 3" },
-      { src: "vkmovie", label: "Плеер 4" },
-      { src: "cdnhub", label: "Плеер 5" },
-      { src: "rutube", label: "Плеер 6" },
-    ]
-  : [
-      { src: "alloha", label: "Плеер 1" },
-      { src: "kinopub", label: "Плеер 2" },
-      { src: "vkmovie", label: "Плеер 3" },
-      { src: "cdnhub", label: "Плеер 4" },
-      { src: "rutube", label: "Плеер 5" },
-    ];
+// Список собираем динамически: недоступные источники (HDREZKA_UP / ALLOHA_UP)
+// выпадают, а нумерация «Плеер N» пересчитывается, чтобы не было дыр.
+const PLAYERS: { src: KinoSource; label: string }[] = (
+  [
+    ...(HDREZKA_UP ? (["hdrezka"] as KinoSource[]) : []),
+    ...(ALLOHA_UP ? (["alloha"] as KinoSource[]) : []),
+    "kinopub",
+    "vkmovie",
+    "cdnhub",
+    "rutube",
+  ] as KinoSource[]
+).map((src, i) => ({ src, label: `Плеер ${i + 1}` }));
 
 export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | "tv" }) {
   const { isPro, loading } = useSubscription();

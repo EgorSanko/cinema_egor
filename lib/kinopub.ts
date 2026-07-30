@@ -44,6 +44,17 @@ export function prewarmKinopub() {
 // Pro-дефолт и юзеров с hdrezka уводим на Alloha. Вернуть = поставить true.
 export const HDREZKA_UP = false;
 
+// 🚩 Alloha ВРЕМЕННО СКРЫТА (2026-07-30, решение Егора). Причина: VK режет
+// запросы с IP нашего бэкенда — по логам зритель получает ~67 сегментов и через
+// ~5 минут просмотра начинается 403, картинка встаёт. Лимит ужесточился после
+// нагрузочных тестов скачивания через сегментный прокси. Кодом не лечится:
+// резолв/зеркала/обход исправны, режут снаружи по IP.
+// Пока false: Alloha убрана из переключателя; Pro → kino.pub, free → Collaps
+// (zenithjs), чтобы не сажать платный аккаунт kino.pub на всю бесплатную
+// аудиторию. Вернуть = поставить true (и проверить, что сессия живёт дольше
+// 5 минут, а не только манифест отдаётся).
+export const ALLOHA_UP = false;
+
 // 🚩 Кнопка «Скачать» (Pro). ВКЛЮЧЕНА после развязки с бэкендом.
 // История: качка шла через /api/alloha/seg на общем httpx-клиенте бэкенда, и
 // обрыв гигабайтной передачи убивал пул соединений (RemoteProtocolError) →
@@ -83,11 +94,15 @@ export function getSource(): KinoSource {
   // плеер — он остался ТОЛЬКО тихим фолбэком (allohaFallbackToZenith), когда Alloha
   // не нашла тайтл. Поэтому zenithjs даже не в списке валидных значений: любое
   // старое/неизвестное значение → alloha.
+  // Alloha скрыта (ALLOHA_UP=false) → её сохранённое значение и дефолт уводим на
+  // zenithjs (Collaps): это бесплатный источник, а Pro поднимет энфорсер на kino.pub.
+  const fallback: KinoSource = ALLOHA_UP ? "alloha" : "zenithjs";
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "alloha";
+    if (v === "alloha" && !ALLOHA_UP) return fallback;
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : fallback;
   } catch {
-    return "alloha";
+    return fallback;
   }
 }
 

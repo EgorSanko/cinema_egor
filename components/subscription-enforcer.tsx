@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useSubscription, invalidateSubscription } from "@/hooks/use-subscription";
 import { useAuth } from "@/components/auth-context";
-import { getSource, setSource, HDREZKA_UP } from "@/lib/kinopub";
+import { getSource, setSource, HDREZKA_UP, ALLOHA_UP } from "@/lib/kinopub";
 
 // Приводит источник в соответствие с тарифом (монтируется глобально в layout):
 //  • Free (нет подписки) → источник ВСЕГДА zenithjs (даже если в localStorage
@@ -79,8 +79,14 @@ export function SubscriptionEnforcer() {
       // cur=zenithjs у Про не поднимался, т.к. bump был ЗА флагом. Теперь
       // поднимаем ВСЕГДА (zenithjs или недоступный hdrezka → alloha). Явный
       // Pro-выбор (kinopub/alloha/…) не трогаем.
-      if (cur === "zenithjs" || (cur === "hdrezka" && !HDREZKA_UP)) {
-        setSource(HDREZKA_UP ? "hdrezka" : "alloha");
+      // Alloha скрыта (ALLOHA_UP=false) → Pro уводим на kino.pub.
+      const proDefault = HDREZKA_UP ? "hdrezka" : ALLOHA_UP ? "alloha" : "kinopub";
+      if (
+        cur === "zenithjs" ||
+        (cur === "hdrezka" && !HDREZKA_UP) ||
+        (cur === "alloha" && !ALLOHA_UP)
+      ) {
+        setSource(proDefault);
       }
       try { localStorage.setItem(PRO_DEFAULT_FLAG, "1"); } catch {}
     } else {
@@ -89,7 +95,10 @@ export function SubscriptionEnforcer() {
       // Настоящий free — источник ВСЕГДА alloha (бесплатный плеер с пре-роллом).
       // Раньше был zenithjs (Collaps); теперь free = Alloha + реклама.
       try { localStorage.removeItem(PRO_DEFAULT_FLAG); } catch {}
-      if (cur !== "alloha") setSource("alloha");
+      // Alloha скрыта → free возвращаем на Collaps (zenithjs), а НЕ на kino.pub:
+      // kino.pub — платный аккаунт, сажать на него всю бесплатную аудиторию нельзя.
+      const freeDefault = ALLOHA_UP ? "alloha" : "zenithjs";
+      if (cur !== freeDefault) setSource(freeDefault);
     }
   }, [isPro, loading, user]);
 
