@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, Check, X, ChevronDown, Loader2 } from "lucide-react";
 import { addDownload, hasDownloaded, buildFilename, triggerBrowserDownload } from "@/lib/downloads";
-import { resolveAllohaHls, ALLOHA_Q_ORDER, type AllohaHls } from "@/lib/kinopub";
+import { resolveKinopub } from "@/lib/kinopub";
 import { useAuthGate } from "./auth-gate";
 
 interface MovieMeta {
@@ -74,9 +74,6 @@ export function MovieDownloadButton(props: Props) {
   // Озвучки берём из Alloha-резолва; id = ИНДЕКС в a.translations.
   const [translators, setTranslators] = useState<Translator[]>([]);
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
-  // Резолв Alloha кешируем: в одном ответе уже ВСЕ озвучки со своими
-  // качествами, поэтому смена озвучки не требует повторного запроса.
-  const allohaRef = useRef<AllohaHls | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const id = props.type === "movie" ? props.movie.id : props.show.id;
   const targetSeason = props.type === "tv" ? season : undefined;
@@ -103,40 +100,54 @@ export function MovieDownloadButton(props: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // Раскладывает качества ВЫБРАННОЙ озвучки в вид {"1080p": url}. Alloha даёт
-  // ключи без «p» («1080»), а оценка размера/сортировка ждут «1080p».
-  const applyQualities = (a: AllohaHls, idx: number) => {
-    const q = a.translations[idx]?.quality || {};
-    const map: Record<string, string> = {};
-    for (const k of ALLOHA_Q_ORDER) if (q[k]) map[`${k}p`] = q[k];
-    for (const [k, v] of Object.entries(q)) if (!map[`${k}p`]) map[`${k}p`] = v;
-    setStreams(Object.keys(map).length ? map : null);
-  };
+  // Ширина кадра → привычная метка качества (у kino.pub скоуп-формат вроде
+  // 1920x800, поэтому по высоте считать нельзя).
+  const labelFor = (w: number) => (w >= 1900 ? "1080p" : w >= 1260 ? "720p" : w >= 840 ? "480p" : "360p");
 
-  // Источник файлов — Alloha (нативный HLS через наш прокси). Раньше меню
-  // строилось на /hdrezka/api/search, но HDRezka забанила наш IP
-  // (HDREZKA_UP=false) и «Скачать» пропало у всех. Alloha в ОДНОМ ответе даёт
-  // все озвучки со своими качествами → смена озвучки без повторного запроса.
+  // Источник файлов — kino.pub (Плеер 2, платный аккаунт). Почему не Alloha:
+  // её ссылки отдают ~150 сегментов и дальше 403 → фильм обрывался на 15-й
+  // минуте (проверено, не лечится ни ретраями, ни замедлением). HDRezka
+  // (стабильные ссылки) недоступна — её резолв банит наш IP. kino.pub качается
+  // ровно: 30 минут контента без единой ошибки.
   const fetchStreamsForCurrent = async () => {
     setLoading(true);
     setError(null);
     setStreams(null);
     try {
-      const a = await resolveAllohaHls(id, props.type, targetSeason, targetEpisode);
-      if (!a || !Array.isArray(a.translations) || a.translations.length === 0) {
+      const m: any = props.type === "movie" ? props.movie : props.show;
+      const title = props.type === "movie" ? m.title : m.name;
+      const date = props.type === "movie" ? m.release_date : m.first_air_date;
+      const kp = await resolveKinopub({
+        tmdbId: id,
+        title: title || "",
+        year: date ? new Date(date).getFullYear() : "",
+        type: props.type,
+        season: targetSeason,
+        episode: targetEpisode,
+      });
+      if (!kp || !kp.hls4) {
         setError("Не удалось получить файлы. Возможно эпизод ещё не вышел.");
         return;
       }
-      allohaRef.current = a;
-      setTranslators(a.translations.map((t, i) => ({ id: i, name: t.name })));
-      // Сохраняем выбранную озвучку, если она есть и в новом ответе.
-      const idx = selectedTranslator != null && a.translations[selectedTranslator]
-        ? selectedTranslator
-        : 0;
-      setSelectedTranslator(idx);
-      applyQualities(a, idx);
-      // Реальный хронометраж известен только для фильмов; для серий берём
-      // 25 мин как ситком-подобный дефолт (нужно лишь для оценки размера).
+      // Мастер-плейлист даёт варианты качества; каждый вариант — отдельный
+      // плейлист, его и скачиваем (ffmpeg на бэке ремуксит в mp4).
+      const master = await fetch(kp.hls4).then((r) => (r.ok ? r.text() : ""));
+      const map: Record<string, string> = {};
+      const lines = master.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const s = lines[i].trim();
+        if (!s.startsWith("#EXT-X-STREAM-INF")) continue;
+        const res = /RESOLUTION=(\d+)x(\d+)/.exec(s);
+        const next = (lines[i + 1] || "").trim();
+        if (!res || !next || next.startsWith("#")) continue;
+        const url = next.startsWith("http") ? next : new URL(next, kp.hls4).toString();
+        const label = labelFor(Number(res[1]));
+        if (!map[label]) map[label] = url;
+      }
+      // Мастер не разобрался (или один поток) → отдаём его целиком: ffmpeg сам
+      // выберет лучший вариант.
+      setStreams(Object.keys(map).length ? map : { Авто: kp.hls4 });
+      setTranslators([]); // у kino.pub одна дорожка на тайтл — выбора озвучки нет
       setDuration(props.type === "movie" ? (props.movie.runtime || 90) * 60 : 1500);
     } catch {
       setError("Ошибка сети, попробуйте ещё раз");
@@ -158,12 +169,7 @@ export function MovieDownloadButton(props: Props) {
     if (open && props.type === "tv") fetchStreamsForCurrent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, episode]);
-  // Смена озвучки — БЕЗ сети: качества всех озвучек уже в кешированном резолве.
-  useEffect(() => {
-    const a = allohaRef.current;
-    if (open && a && selectedTranslator != null) applyQualities(a, selectedTranslator);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTranslator]);
+  // У kino.pub одна дорожка на тайтл — переключателя озвучки нет.
 
   const startDownload = (quality: string, url: string) => {
     // Ссылку отдаём ЦЕЛИКОМ (в ней два зеркала Alloha) — /api/dl сам выберет

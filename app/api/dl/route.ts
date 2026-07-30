@@ -46,6 +46,14 @@ function hostAllowed(host: string): boolean {
   return ALLOWED_HOST_PATTERNS.some((re) => re.test(host));
 }
 
+/** kino.pub (Плеер 2) — источник скачивания. Его плейлисты ссылаются на НАШ
+ *  же `/api/kp-cdn` (и на воркер-резолвер), поэтому пускаем только эти пути:
+ *  свой домен целиком открывать нельзя — получился бы SSRF на свои же ручки. */
+function isKinopubUrl(u: URL): boolean {
+  if (/^([a-z0-9-]+\.)?workers\.dev$/i.test(u.hostname)) return true;
+  return /^\/(api\/kp-cdn|kp)\//.test(u.pathname) || u.pathname === "/api/kp-cdn";
+}
+
 // HDRezka stream URLs carry a distinctive token in the path:
 //   /<hex-hash>:<digits>:<base64>/.../<file>.mp4(:hls:manifest.m3u8)
 // The CDN host rotates constantly (laptostack.org, vdbmate.org, interkh.com, …),
@@ -230,7 +238,7 @@ export async function GET(req: NextRequest) {
   }
   // Allow known hosts OR any host serving an HDRezka-shaped stream URL (covers
   // the constantly-rotating CDN hosts like laptostack.org without an open proxy).
-  if (!hostAllowed(target.hostname) && !looksLikeHdrezkaStream(target)) {
+  if (!hostAllowed(target.hostname) && !looksLikeHdrezkaStream(target) && !isKinopubUrl(target)) {
     return NextResponse.json(
       { error: `host not allowed: ${target.hostname}` },
       { status: 403 },
