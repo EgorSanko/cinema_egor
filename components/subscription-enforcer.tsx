@@ -95,9 +95,9 @@ export function SubscriptionEnforcer() {
       // Настоящий free — источник ВСЕГДА alloha (бесплатный плеер с пре-роллом).
       // Раньше был zenithjs (Collaps); теперь free = Alloha + реклама.
       try { localStorage.removeItem(PRO_DEFAULT_FLAG); } catch {}
-      // Alloha скрыта → free возвращаем на Collaps (zenithjs), а НЕ на kino.pub:
-      // kino.pub — платный аккаунт, сажать на него всю бесплатную аудиторию нельзя.
-      const freeDefault = ALLOHA_UP ? "alloha" : "zenithjs";
+      // Alloha скрыта → free тоже на kino.pub. Collaps (zenithjs) у нас не
+      // используется как плеер вообще (решение Егора), поэтому уводить туда нельзя.
+      const freeDefault = ALLOHA_UP ? "alloha" : "kinopub";
       if (cur !== freeDefault) setSource(freeDefault);
     }
   }, [isPro, loading, user]);

@@ -49,10 +49,11 @@ export const HDREZKA_UP = false;
 // ~5 минут просмотра начинается 403, картинка встаёт. Лимит ужесточился после
 // нагрузочных тестов скачивания через сегментный прокси. Кодом не лечится:
 // резолв/зеркала/обход исправны, режут снаружи по IP.
-// Пока false: Alloha убрана из переключателя; Pro → kino.pub, free → Collaps
-// (zenithjs), чтобы не сажать платный аккаунт kino.pub на всю бесплатную
-// аудиторию. Вернуть = поставить true (и проверить, что сессия живёт дольше
-// 5 минут, а не только манифест отдаётся).
+// Пока false: Alloha убрана из переключателя, ОСНОВНОЙ для всех (и Pro, и free)
+// — kino.pub. Collaps (zenithjs) НЕ используем как плеер вообще: сначала я увёл
+// на него free, и Про видел Collaps под подписью «Плеер 1» — так нельзя.
+// Вернуть = поставить true (и проверить, что сессия живёт дольше 5 минут,
+// а не только манифест отдаётся).
 export const ALLOHA_UP = false;
 
 // 🚩 Кнопка «Скачать» (Pro). ВКЛЮЧЕНА после развязки с бэкендом.
@@ -95,8 +96,9 @@ export function getSource(): KinoSource {
   // не нашла тайтл. Поэтому zenithjs даже не в списке валидных значений: любое
   // старое/неизвестное значение → alloha.
   // Alloha скрыта (ALLOHA_UP=false) → её сохранённое значение и дефолт уводим на
-  // zenithjs (Collaps): это бесплатный источник, а Pro поднимет энфорсер на kino.pub.
-  const fallback: KinoSource = ALLOHA_UP ? "alloha" : "zenithjs";
+  // kino.pub. НЕ на zenithjs: Collaps («джетикс») у нас вообще не используется
+  // как плеер — из-за него Про видел Collaps под подписью «Плеер 1».
+  const fallback: KinoSource = ALLOHA_UP ? "alloha" : "kinopub";
   try {
     const v = localStorage.getItem(SOURCE_KEY);
     if (v === "alloha" && !ALLOHA_UP) return fallback;
@@ -118,9 +120,13 @@ export function isIframeSource(s?: KinoSource): boolean {
 // player-switcher (зависит от HDREZKA_UP). Для сообщений «недоступно на Плеере N».
 export function playerLabel(s?: KinoSource): string {
   const src = s || getSource();
-  const order: KinoSource[] = HDREZKA_UP
-    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub", "rutube"]
-    : ["alloha", "kinopub", "vkmovie", "cdnhub", "rutube"];
+  // Порядок = ровно тот, что в переключателе: недоступные источники выпадают,
+  // поэтому «Плеер N» в тексте и на пилюле всегда совпадают.
+  const order: KinoSource[] = [
+    ...(HDREZKA_UP ? (["hdrezka"] as KinoSource[]) : []),
+    ...(ALLOHA_UP ? (["alloha"] as KinoSource[]) : []),
+    "kinopub", "vkmovie", "cdnhub", "rutube",
+  ];
   const i = order.indexOf(src);
   return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
 }
