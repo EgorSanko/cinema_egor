@@ -284,7 +284,7 @@ export async function GET(req: NextRequest) {
   if (isHls) {
     return remuxHls(finalUrl, filename, req, undefined, audioUrl);
   }
-  return proxyDirect(finalUrl, filename, req);
+  return proxyDirect(finalUrl, filename, req, audioUrl);
 }
 
 /** Mode 1 — remux HLS to a fragmented mp4 via ffmpeg, streamed to the client. */
@@ -646,7 +646,7 @@ async function downloadHlsAsFile(manifestUrl: string, filename: string, req: Nex
 }
 
 /** Mode 2 — plain byte proxy for a direct mp4, forwarding Range for resume. */
-async function proxyDirect(url: string, filename: string, req: NextRequest): Promise<Response> {
+async function proxyDirect(url: string, filename: string, req: NextRequest, audio?: string): Promise<Response> {
   const upstreamHeaders: Record<string, string> = {
     "User-Agent": UA,
     Referer: REFERER,
@@ -673,7 +673,10 @@ async function proxyDirect(url: string, filename: string, req: NextRequest): Pro
   const ct = upstream.headers.get("content-type") || "";
   if (/mpegurl|m3u8/i.test(ct)) {
     try { (upstream.body as any)?.cancel?.(); } catch {}
-    return remuxHls(url, filename, req);
+    // ВАЖНО: пробрасываем аудио-дорожку. Ссылки kino.pub (/api/kp-cdn?u=…) не
+    // оканчиваются на .m3u8, поэтому попадают сюда, а не в HLS-ветку — и без
+    // этого проброса файл скачивался БЕЗ ЗВУКА.
+    return remuxHls(url, filename, req, undefined, audio);
   }
 
   const headers = new Headers();
