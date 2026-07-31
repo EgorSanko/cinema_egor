@@ -30,9 +30,6 @@ export const dynamic = "force-dynamic";
 
 // Whitelist of allowed upstream hosts — without it we'd be an open proxy.
 const ALLOWED_HOST_PATTERNS = [
-  // Наш собственный HLS-прокси (Alloha → VK m3u8 с подписанными заголовками).
-  // Скачивание Alloha идёт через него: kino.lead-seek.ru/hdrezka/api/alloha.m3u8?u=…
-  /^([a-z0-9-]+\.)?lead-seek\.ru$/i,
   /^([a-z0-9-]+\.)?vdbmate\.org$/i,
   /^([a-z0-9-]+\.)?voidboost\.cc$/i,
   /^([a-z0-9-]+\.)?ukrtelard\.online$/i,
@@ -44,14 +41,6 @@ const ALLOWED_HOST_PATTERNS = [
 
 function hostAllowed(host: string): boolean {
   return ALLOWED_HOST_PATTERNS.some((re) => re.test(host));
-}
-
-/** kino.pub (Плеер 2) — источник скачивания. Его плейлисты ссылаются на НАШ
- *  же `/api/kp-cdn` (и на воркер-резолвер), поэтому пускаем только эти пути:
- *  свой домен целиком открывать нельзя — получился бы SSRF на свои же ручки. */
-function isKinopubUrl(u: URL): boolean {
-  if (/^([a-z0-9-]+\.)?workers\.dev$/i.test(u.hostname)) return true;
-  return /^\/(api\/kp-cdn|kp)\//.test(u.pathname) || u.pathname === "/api/kp-cdn";
 }
 
 // HDRezka stream URLs carry a distinctive token in the path:
@@ -71,43 +60,6 @@ function isPrivateHost(host: string): boolean {
   return PRIVATE_HOST.test(host);
 }
 
-/** Alloha кладёт в качество ДВА зеркала одной строкой («A or B»), и наш прокси
- *  пакует их в base64 целиком → URL ~5100 символов. Плееру это безразлично, а
- *  ffmpeg не открывает URL длиннее 4096 («Invalid data found»). Поэтому здесь
- *  выбираем ОДНО зеркало — но не вслепую: зеркала мрут выборочно (403), поэтому
- *  пробуем каждое и берём то, что реально отдало плейлист (#EXTM3U). */
-function encMirror(prefix: string, mirror: string): string {
-  return prefix + Buffer.from(mirror, "utf8").toString("base64")
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-async function pickWorkingAllohaUrl(url: string): Promise<string> {
-  const i = url.indexOf("u=");
-  if (i < 0) return url;
-  const prefix = url.slice(0, i + 2);
-  let raw: string;
-  try {
-    const std = url.slice(i + 2).replace(/[.=]+$/, "").replace(/-/g, "+").replace(/_/g, "/");
-    raw = Buffer.from(std + "=".repeat((4 - (std.length % 4)) % 4), "base64").toString("utf8");
-  } catch {
-    return url;
-  }
-  const mirrors = raw.split(" or ").map((s) => s.trim()).filter(Boolean);
-  if (mirrors.length <= 1) return url;
-  for (const m of mirrors) {
-    const candidate = encMirror(prefix, m);
-    try {
-      const r = await fetch(candidate, { headers: { "User-Agent": UA } });
-      if (!r.ok) continue;
-      const head = (await r.text()).slice(0, 64);
-      if (head.includes("#EXTM3U")) return candidate;
-    } catch {}
-  }
-  // Ни одно не ответило плейлистом — отдаём первое: у бэкенд-прокси есть
-  // собственный перебор зеркал, пусть попробует он.
-  return encMirror(prefix, mirrors[0]);
-}
-
 function sanitizeFilename(raw: string): string {
   return raw.replace(/[\r\n"\\\/]/g, "_").trim().slice(0, 200) || "video.mp4";
 }
@@ -120,85 +72,6 @@ function dispositionHeader(filename: string): string {
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const REFERER = "https://hdrezka.ag/";
-
-// ── Прямая качка Alloha с VK, МИНУЯ наш бэкенд ───────────────────────────────
-// Раньше ffmpeg тянул фильм через /api/alloha/seg на LeadSeek. Обрыв такой
-// гигабайтной передачи убивал пул общего httpx-клиента бэкенда
-// (RemoteProtocolError) → резолв Alloha начинал отдавать not_found, т.е.
-// «Плеер 1 умер» у ВСЕХ. Плюс это был двойной транзит (VK → LeadSeek → сюда).
-// Теперь ffmpeg ходит к VK сам, с подписанными заголовками (их отдаёт бэкенд
-// по секретному ключу). LeadSeek в качке больше не участвует.
-const VKH_URL = "https://kino.lead-seek.ru/hdrezka/api/alloha-vkh";
-let vkhCache: { at: number; h: Record<string, string> } | null = null;
-
-async function allohaHeaders(): Promise<Record<string, string> | null> {
-  const key = process.env.ALLOHA_VKH_KEY || "";
-  if (!key) return null;
-  if (vkhCache && Date.now() - vkhCache.at < 10 * 60 * 1000) return vkhCache.h;
-  try {
-    const r = await fetch(`${VKH_URL}?k=${encodeURIComponent(key)}`);
-    if (!r.ok) return null;
-    const h = (await r.json()) as Record<string, string>;
-    if (!h || typeof h !== "object") return null;
-    vkhCache = { at: Date.now(), h };
-    return h;
-  } catch {
-    return null;
-  }
-}
-
-/** Достаёт из нашей прокси-ссылки исходные VK-зеркала («A or B»). */
-function allohaMirrors(url: string): string[] {
-  const i = url.indexOf("u=");
-  if (i < 0 || !/alloha\.m3u8/i.test(url)) return [];
-  try {
-    const std = url.slice(i + 2).replace(/[.=]+$/, "").replace(/-/g, "+").replace(/_/g, "/");
-    const raw = Buffer.from(std + "=".repeat((4 - (std.length % 4)) % 4), "base64").toString("utf8");
-    return raw.split(" or ").map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
-  } catch {
-    return [];
-  }
-}
-
-/** Выбирает ЖИВОЕ зеркало VK (они мрут выборочно: 403) и отдаёт его вместе с
- *  заголовками для ffmpeg. null → прямой путь недоступен, работаем как раньше. */
-async function pickDirectVk(
-  url: string,
-): Promise<{ url: string; headers: Record<string, string> } | null> {
-  const mirrors = allohaMirrors(url);
-  if (!mirrors.length) return null;
-  const headers = await allohaHeaders();
-  if (!headers) return null;
-  for (const m of mirrors) {
-    try {
-      const r = await fetch(m, { headers });
-      if (!r.ok) continue;
-      const head = (await r.text()).slice(0, 64);
-      if (head.includes("#EXTM3U")) return { url: m, headers };
-    } catch {}
-  }
-  return null;
-}
-
-/** Вход(ы) ffmpeg. У kino.pub аудио лежит ОТДЕЛЬНОЙ дорожкой
- *  (#EXT-X-MEDIA:TYPE=AUDIO), поэтому качать только видео-вариант = файл БЕЗ
- *  ЗВУКА. Когда пришёл audio-URL — берём два входа и явно мапим V+A. */
-function inputArgs(url: string, audio?: string): string[] {
-  return audio
-    ? ["-i", url, "-i", audio, "-map", "0:v:0", "-map", "1:a:0"]
-    : ["-i", url];
-}
-
-/** Аргументы ffmpeg с заголовками: свои (VK) либо дефолтные (HDRezka). */
-function headerArgs(h?: Record<string, string>): string[] {
-  if (!h) return ["-user_agent", UA, "-headers", `Referer: ${REFERER}\r\n`];
-  const ua = h["User-Agent"] || h["user-agent"] || UA;
-  const rest = Object.entries(h)
-    .filter(([k]) => k.toLowerCase() !== "user-agent")
-    .map(([k, v]) => `${k}: ${v}`)
-    .join("\r\n");
-  return ["-user_agent", ua, "-headers", rest ? rest + "\r\n" : ""];
-}
 
 // iOS Safari/QuickTime can't read the duration of a fragmented mp4 (empty_moov)
 // and plays only the first fragment (~2s). For iOS we instead remux to a real
@@ -247,7 +120,7 @@ export async function GET(req: NextRequest) {
   }
   // Allow known hosts OR any host serving an HDRezka-shaped stream URL (covers
   // the constantly-rotating CDN hosts like laptostack.org without an open proxy).
-  if (!hostAllowed(target.hostname) && !looksLikeHdrezkaStream(target) && !isKinopubUrl(target)) {
+  if (!hostAllowed(target.hostname) && !looksLikeHdrezkaStream(target)) {
     return NextResponse.json(
       { error: `host not allowed: ${target.hostname}` },
       { status: 403 },
@@ -255,40 +128,16 @@ export async function GET(req: NextRequest) {
   }
 
   const filename = sanitizeFilename(filenameRaw);
-  // ⚠️ Качаем ЧЕРЕЗ наш прокси (не напрямую с VK). Прямой путь пробовали —
-  // VK начинает 403-ить сегменты на середине, а у ffmpeg нет ретраев: в файле
-  // дыры, на iOS вообще огрызок (6с вместо фильма). У прокси /api/alloha/seg
-  // 4 ретрая на сегмент, и он теперь на ОТДЕЛЬНОМ httpx-клиенте (keepalive=0),
-  // поэтому обрыв гигабайтной качки больше не роняет резолв Alloha
-  // («Плеер 1 умер» у всех). pickDirectVk оставлен на будущее, но не активен.
-  //
-  // Клиент присылает ссылку Alloha целиком (оба зеркала) — выбираем ЖИВОЕ и
-  // короткое, иначе ffmpeg не откроет (лимит URL 4096).
-  const finalUrl = await pickWorkingAllohaUrl(url);
-  const isHls = /:hls:manifest\.m3u8/i.test(finalUrl) || /\.m3u8(\?|$)/i.test(finalUrl);
-
-  // Отдельная аудио-дорожка (kino.pub держит звук вне видео-варианта — без
-  // неё файл скачивался БЕЗ ЗВУКА). Проверяем так же строго, как основной URL.
-  let audioUrl: string | undefined;
-  const audioRaw = sp.get("audio");
-  if (audioRaw) {
-    try {
-      const a = new URL(audioRaw);
-      const okProto = a.protocol === "https:" || a.protocol === "http:";
-      if (okProto && !isPrivateHost(a.hostname) && (hostAllowed(a.hostname) || isKinopubUrl(a))) {
-        audioUrl = a.toString();
-      }
-    } catch {}
-  }
+  const isHls = /:hls:manifest\.m3u8/i.test(url) || /\.m3u8(\?|$)/i.test(url);
 
   if (isHls) {
-    return remuxHls(finalUrl, filename, req, undefined, audioUrl);
+    return remuxHls(url, filename, req);
   }
-  return proxyDirect(finalUrl, filename, req, audioUrl);
+  return proxyDirect(target.toString(), filename, req);
 }
 
 /** Mode 1 — remux HLS to a fragmented mp4 via ffmpeg, streamed to the client. */
-function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest, hdrs?: Record<string, string>, audio?: string): Response {
+function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest): Response {
   // -headers passes Referer (HDRezka CDN 403s without it)
   // -c copy: no transcode, just repackage ts→mp4
   // -bsf:a aac_adtstoasc: fix AAC bitstream when copying ADTS→mp4
@@ -297,8 +146,9 @@ function streamHlsAsMp4(manifestUrl: string, filename: string, req: NextRequest,
   const args = [
     "-nostdin",
     "-loglevel", "error",
-    ...headerArgs(hdrs),
-    ...inputArgs(manifestUrl, audio),
+    "-user_agent", UA,
+    "-headers", `Referer: ${REFERER}\r\n`,
+    "-i", manifestUrl,
     "-c", "copy",
     "-bsf:a", "aac_adtstoasc",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
@@ -382,15 +232,15 @@ function cleanupCache(): void {
 /** Spawn ffmpeg to remux url → cache file, marking `<file>.done` on success.
  *  Deliberately NOT tied to req.signal — it keeps running after the client
  *  leaves, so a backgrounded iOS download can resume from the finished file. */
-function ensureRemux(url: string, file: string, donePath: string, key: string, faststart: boolean, hdrs?: Record<string, string>, audio?: string): void {
+function ensureRemux(url: string, file: string, donePath: string, key: string, faststart: boolean): void {
   if (remuxing.has(key) || fs.existsSync(donePath)) return;
   remuxing.add(key);
   try { fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch {}
   safeUnlink(file); // start fresh
   const args = [
     "-nostdin", "-loglevel", "error",
-    ...headerArgs(hdrs),
-    ...inputArgs(url, audio), "-c", "copy", "-bsf:a", "aac_adtstoasc",
+    "-user_agent", UA, "-headers", `Referer: ${REFERER}\r\n`,
+    "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc",
     // iOS (faststart): a NON-fragmented mp4 with the moov atom moved to the front
     //   and a real mvhd duration. A fragmented mp4 (empty_moov) makes iOS/QuickTime
     //   read only the first ~2s fragment → the "downloads but plays 2 seconds" bug.
@@ -518,14 +368,13 @@ function streamFromCache(file: string, donePath: string, filename: string, req: 
   });
 }
 
-async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: Record<string, string>, audio?: string): Promise<Response> {
+async function remuxHls(url: string, filename: string, req: NextRequest): Promise<Response> {
   cleanupCache();
   // iOS needs a faststart (moov-front) file, which can only be served complete;
   // everyone else gets the streamable fragmented file. Key them separately so the
   // two formats never collide in the cache.
   const ios = isIOS(req);
-  // Ключ кэша учитывает и аудио: другая озвучка = другой файл.
-  const key = cacheKey(url + (audio ? "|" + audio : "")) + (ios ? ".ios" : "");
+  const key = cacheKey(url) + (ios ? ".ios" : "");
   const file = path.join(CACHE_DIR, key + ".mp4");
   const donePath = file + ".done";
   const range = req.headers.get("range");
@@ -534,10 +383,10 @@ async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: 
   // (no caching) so a download still works without risking the disk.
   const free = await freeBytes(os.tmpdir());
   if (free !== null && free < MIN_FREE_BYTES && !fs.existsSync(donePath)) {
-    return streamHlsAsMp4(url, filename, req, hdrs, audio);
+    return streamHlsAsMp4(url, filename, req);
   }
 
-  ensureRemux(url, file, donePath, key, ios, hdrs, audio);
+  ensureRemux(url, file, donePath, key, ios);
 
   if (fs.existsSync(donePath)) {
     let size = 0; try { size = fs.statSync(file).size; } catch {}
@@ -549,7 +398,7 @@ async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: 
     // real duration so iOS plays the whole episode (not just the first ~2s). ffmpeg
     // runs detached and nginx /api/dl allows a 3600s read, so a slow/backgrounded
     // download still finishes and a resume gets the same file.
-    return waitForDoneThenServe(url, file, donePath, key, filename, range, req, hdrs, audio);
+    return waitForDoneThenServe(url, file, donePath, key, filename, range, req);
   }
 
   // Not finished yet → stream the growing file from the start (ignore Range; the
@@ -564,7 +413,6 @@ async function remuxHls(url: string, filename: string, req: NextRequest, hdrs?: 
 async function waitForDoneThenServe(
   url: string, file: string, donePath: string, key: string,
   filename: string, range: string | null, req: NextRequest,
-  hdrs?: Record<string, string>, audio?: string,
 ): Promise<Response> {
   while (!req.signal.aborted) {
     if (fs.existsSync(donePath)) {
@@ -578,9 +426,7 @@ async function waitForDoneThenServe(
     await new Promise((r) => setTimeout(r, 500));
   }
   if (req.signal.aborted) return new Response(null, { status: 499 });
-  // Фолбэк тоже с VK-заголовками — без них VK ответит 403 и iPhone не получит
-  // ничего (заголовки терялись: путь для iOS их не пробрасывал).
-  return streamHlsAsMp4(url, filename, req, hdrs, audio);
+  return streamHlsAsMp4(url, filename, req);
 }
 
 /** Mode 1-iOS — remux HLS to a real mp4 file with moov-at-front, then serve
@@ -646,7 +492,7 @@ async function downloadHlsAsFile(manifestUrl: string, filename: string, req: Nex
 }
 
 /** Mode 2 — plain byte proxy for a direct mp4, forwarding Range for resume. */
-async function proxyDirect(url: string, filename: string, req: NextRequest, audio?: string): Promise<Response> {
+async function proxyDirect(url: string, filename: string, req: NextRequest): Promise<Response> {
   const upstreamHeaders: Record<string, string> = {
     "User-Agent": UA,
     Referer: REFERER,
@@ -673,10 +519,7 @@ async function proxyDirect(url: string, filename: string, req: NextRequest, audi
   const ct = upstream.headers.get("content-type") || "";
   if (/mpegurl|m3u8/i.test(ct)) {
     try { (upstream.body as any)?.cancel?.(); } catch {}
-    // ВАЖНО: пробрасываем аудио-дорожку. Ссылки kino.pub (/api/kp-cdn?u=…) не
-    // оканчиваются на .m3u8, поэтому попадают сюда, а не в HLS-ветку — и без
-    // этого проброса файл скачивался БЕЗ ЗВУКА.
-    return remuxHls(url, filename, req, undefined, audio);
+    return remuxHls(url, filename, req);
   }
 
   const headers = new Headers();

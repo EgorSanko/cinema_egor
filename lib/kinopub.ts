@@ -44,59 +44,6 @@ export function prewarmKinopub() {
 // Pro-дефолт и юзеров с hdrezka уводим на Alloha. Вернуть = поставить true.
 export const HDREZKA_UP = false;
 
-// 🚩 Alloha. Была временно скрыта 30.07.2026 из-за тротла VK по IP бэкенда
-// (последствие нагрузочных тестов скачивания): зритель получал ~67 сегментов и
-// через ~5 минут просмотра начинались 403, картинка вставала.
-// ВЕРНУЛИ 31.07.2026 и СРАЗУ ВЫКЛЮЧИЛИ ОБРАТНО: мой скриптовый тест (1 сегмент
-// / 3 сек, 120 подряд без ошибок) НЕ ловит проблему. Живой плеер ходит иначе —
-// буфер пачками, перемотки, смена качества. Замер на реальном трафике: за 20
-// минут 106 успешных сегментов и 70 с 403 (40% брака) → «поиграло 7 минут и
-// зависло». ⚠️ ВЫВОД НА БУДУЩЕЕ: НЕ доверять скриптовым замерам ровным темпом,
-// критерий возврата — доля 403 на РЕАЛЬНОМ трафике (nginx: /api/alloha/seg)
-// близка к нулю в течение часа.
-// 31.07.2026 ВКЛЮЧЕНА СНОВА: сегменты Alloha теперь идут через МСК-прокси на
-// втором VPS Егора (5.42.123.75:8099, systemd vkproxy) — его IP VK не режет.
-// Раньше всё шло через IP бэкенда, который попал под лимит: 40% сегментов
-// отдавались с 403 → «поиграло 7 минут и зависло». Прокси доступен только с
-// IP бэкенда (ufw) и по ключу. Проверка: 40 сегментов пачкой — 0 ошибок там,
-// где раньше падало. КРИТЕРИЙ, если снова начнутся жалобы: смотреть долю 403
-// на РЕАЛЬНОМ трафике (nginx /api/alloha/seg), а не скриптовый прогон.
-// ⚠️ Отдельно, чтобы не путать: барьер «150 сегментов пачкой» — это ШТАТНАЯ
-// защита VK от выкачивания, она была всегда (из-за неё не вышло скачивание) и к
-// тротлу отношения не имеет. Живой плеер в такой темп не ходит.
-// Если снова начнутся обрывы у зрителей — поставить false (Alloha уйдёт из
-// переключателя, все на kino.pub) и мерить ТОЛЬКО в темпе просмотра.
-export const ALLOHA_UP = true;
-
-// 🚩 Кнопка «Скачать» (Pro). ВКЛЮЧЕНА после развязки с бэкендом.
-// История: качка шла через /api/alloha/seg на общем httpx-клиенте бэкенда, и
-// обрыв гигабайтной передачи убивал пул соединений (RemoteProtocolError) →
-// резолв Alloha отдавал not_found → «Плеер 1 умер» у ВСЕХ (поймано вживую).
-// Сейчас /api/dl качает ffmpeg'ом НАПРЯМУЮ с VK (заголовки берёт у бэкенда по
-// секретному ключу ALLOHA_VKH_KEY) — LeadSeek в качке не участвует, ронять
-// нечего, и транзит один вместо двух.
-// 🚩 Кнопка «Скачать» ВЫКЛЮЧЕНА (решение Егора 2026-07-30): возни много,
-// результат нестабильный. Итог экспериментов, чтобы не повторять:
-//   • Alloha как источник НЕ годится — ~150 сегментов и дальше 403, фильм
-//     обрывается на 15-й минуте (не лечится ретраями/замедлением).
-//   • HDRezka дала бы стабильные ссылки (живут месяцами), но её резолв
-//     банит наш IP (HDREZKA_UP=false).
-//   • kino.pub качает фильм целиком (проверено: 3.2 ГБ, 148 мин, точная
-//     длительность), но звук лежит ОТДЕЛЬНОЙ дорожкой — склеивали через
-//     ffmpeg (-map 0:v:0 -map 1:a:0). ⚠️ ОСТАВШАЯСЯ ПРОБЛЕМА: часть дорожек
-//     kino.pub в AC3, а мы копировали их как есть (-c copy) → в mp4 звук
-//     есть, но многие плееры AC3 не декодируют = «скачалось без звука».
-//     Чинится перекодировкой звука: -c:v copy -c:a aac -b:a 192k (дёшево,
-//     видео не трогаем). Если решим вернуть — начинать с этого.
-// Альтернатива, которую обсуждали: отдавать magnet/торрент (рутрекер) вместо
-// собственной качки — ноль нагрузки на сервер и звук всегда родной.
-export const DOWNLOADS_UP = false;
-
-// Историческая справка: вариант Б для Alloha (прокси с 4 ретраями + отдельный
-// httpx-клиент) сделан и остаётся в силе — изоляция пула ПОМОГЛА, обрыв качки
-// больше не роняет резолв Alloha («Плеер 1 умер» у всех). Просто как ИСТОЧНИК
-// для скачивания Alloha непригодна (лимит сегментов), поэтому качаем с kino.pub.
-
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
@@ -107,16 +54,11 @@ export function getSource(): KinoSource {
   // плеер — он остался ТОЛЬКО тихим фолбэком (allohaFallbackToZenith), когда Alloha
   // не нашла тайтл. Поэтому zenithjs даже не в списке валидных значений: любое
   // старое/неизвестное значение → alloha.
-  // Alloha скрыта (ALLOHA_UP=false) → её сохранённое значение и дефолт уводим на
-  // kino.pub. НЕ на zenithjs: Collaps («джетикс») у нас вообще не используется
-  // как плеер — из-за него Про видел Collaps под подписью «Плеер 1».
-  const fallback: KinoSource = ALLOHA_UP ? "alloha" : "kinopub";
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    if (v === "alloha" && !ALLOHA_UP) return fallback;
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : fallback;
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "alloha";
   } catch {
-    return fallback;
+    return "alloha";
   }
 }
 
@@ -132,13 +74,9 @@ export function isIframeSource(s?: KinoSource): boolean {
 // player-switcher (зависит от HDREZKA_UP). Для сообщений «недоступно на Плеере N».
 export function playerLabel(s?: KinoSource): string {
   const src = s || getSource();
-  // Порядок = ровно тот, что в переключателе: недоступные источники выпадают,
-  // поэтому «Плеер N» в тексте и на пилюле всегда совпадают.
-  const order: KinoSource[] = [
-    ...(HDREZKA_UP ? (["hdrezka"] as KinoSource[]) : []),
-    ...(ALLOHA_UP ? (["alloha"] as KinoSource[]) : []),
-    "kinopub", "vkmovie", "cdnhub", "rutube",
-  ];
+  const order: KinoSource[] = HDREZKA_UP
+    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub", "rutube"]
+    : ["alloha", "kinopub", "vkmovie", "cdnhub", "rutube"];
   const i = order.indexOf(src);
   return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
 }
@@ -162,34 +100,6 @@ export async function resolveAllohaHls(
     return d as AllohaHls;
   } catch {
     return null;
-  }
-}
-
-/** Alloha кладёт в КАЖДОЕ качество ДВЕ ссылки — «основная or зеркало» — и наш
- *  прокси пакует их в base64 целиком. Плееру (hls.js) это безразлично, а вот
- *  СКАЧИВАНИЕ ломалось: у ffmpeg жёсткий лимит длины URL (MAX_URL_SIZE=4096), а
- *  такая ссылка ~5100 символов → «Invalid data found». Оставляем только первую
- *  ссылку → ~2600 символов, ffmpeg ремуксит нормально. Padding у бэкенда
- *  заменён на «.», поэтому нормализуем его перед декодом. */
-export function shortenAllohaProxyUrl(url: string): string {
-  try {
-    const i = url.indexOf("u=");
-    if (i < 0) return url;
-    const prefix = url.slice(0, i + 2);
-    const std = url.slice(i + 2).replace(/[.=]+$/, "").replace(/-/g, "+").replace(/_/g, "/");
-    const padded = std + "=".repeat((4 - (std.length % 4)) % 4);
-    const raw = typeof atob === "function"
-      ? atob(padded)
-      : Buffer.from(padded, "base64").toString("utf8");
-    if (!raw.includes(" or ")) return url;
-    const first = raw.split(" or ")[0].trim();
-    const enc = (typeof btoa === "function"
-      ? btoa(first)
-      : Buffer.from(first, "utf8").toString("base64")
-    ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return prefix + enc;
-  } catch {
-    return url;
   }
 }
 

@@ -127,18 +127,15 @@ export function stripManifestSuffix(streamUrl: string): string {
  *     segments into a full mp4. We pass the ORIGINAL manifest URL (with
  *     :hls:manifest.m3u8) so the route detects HLS — stripping it gave either
  *     an 8 MB stub or a raw m3u8 that iOS Safari plays instead of saving. */
-export function toDownloadUrl(streamUrl: string, filename?: string, audioUrl?: string): string {
+export function toDownloadUrl(streamUrl: string, filename?: string): string {
   const name = filename || "video.mp4";
-  // audioUrl — отдельная звуковая дорожка (kino.pub держит звук вне видео-
-  // варианта; без неё скачивался mp4 БЕЗ ЗВУКА). Бэк склеит V+A через ffmpeg.
-  const aud = audioUrl ? `&audio=${encodeURIComponent(audioUrl)}` : "";
-  return `/api/dl?url=${encodeURIComponent(streamUrl)}&name=${encodeURIComponent(name)}${aud}`;
+  return `/api/dl?url=${encodeURIComponent(streamUrl)}&name=${encodeURIComponent(name)}`;
 }
 
 /** Trigger the browser download via our same-origin proxy. The proxy sets
  *  Content-Disposition: attachment so the browser saves rather than plays. */
-export function triggerBrowserDownload(streamUrl: string, filename: string, audioUrl?: string): void {
-  const url = toDownloadUrl(streamUrl, filename, audioUrl);
+export function triggerBrowserDownload(streamUrl: string, filename: string): void {
+  const url = toDownloadUrl(streamUrl, filename);
   const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
   const isIOS = /iPhone|iPad|iPod/i.test(ua)
     // iPadOS 13+ reports as Mac; detect by touch points.

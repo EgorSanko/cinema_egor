@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, HDREZKA_UP, DOWNLOADS_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { ProblemReport } from "./problem-report";
@@ -118,7 +118,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
         resolveAllohaNative();
       } else if (isIframeSource()) {
         setStreamData(null);
-        resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: false })
+        resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current })
           .then((embed) => { if (embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed }); });
       }
     };
@@ -217,7 +217,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     }
     if (isIframeSource()) {
       (async () => {
-        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: false });
+        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -383,7 +383,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     }
     if (isIframeSource() && _attempt === 0) {
       try {
-        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: false });
+        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
       setError("Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
@@ -924,12 +924,10 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
                   )}
-                  {/* Скачивание (Alloha) — за флагом DOWNLOADS_UP: гигабайтная
-                      качка через общий httpx-клиент бэкенда роняет резолв
-                      Alloha всем. «Вместе» — за HDREZKA_UP. */}
-                  {isPro && (DOWNLOADS_UP || HDREZKA_UP) && (
+                  {/* Скачивание и «Вместе» — Pro-фичи, но обе резолвятся через
+                      HDRezka. Пока HDRezka лежит (HDREZKA_UP=false) — прячем. */}
+                  {isPro && HDREZKA_UP && (
                     <div className="grid grid-cols-2 gap-2.5 w-full sm:contents">
-                      {DOWNLOADS_UP && (
                       <MovieDownloadButton type="movie" movie={{
                         id: movie.id,
                         title: movie.title,
@@ -937,10 +935,6 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                         release_date: movie.release_date,
                         runtime: movie.runtime,
                       }} />
-                      )}
-                      {/* «Вместе» всё ещё резолвится через HDRezka → прячем,
-                          пока HDREZKA_UP=false. */}
-                      {HDREZKA_UP && (
                       <Link
                         href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
                         className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 px-4 rounded-xl bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[13px] font-semibold"
@@ -948,7 +942,6 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                       >
                         <Users size={15} /> <span className="sm:hidden">{"Вместе"}</span><span className="hidden sm:inline">{"Смотреть вместе"}</span>
                       </Link>
-                      )}
                     </div>
                   )}
                 </div>

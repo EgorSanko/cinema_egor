@@ -74,7 +74,7 @@ export default function RootLayout({
           try {
             if (!localStorage.getItem('kino_src_force_v2')) {
               var s = localStorage.getItem('kino_source');
-              /* Alloha скрыта (ALLOHA_UP=false) — миграцию на неё не форсим. */
+              if (!s || s === 'zenithjs') localStorage.setItem('kino_source','alloha');
               localStorage.setItem('kino_src_force_v2','1');
             }
           } catch (e) {}

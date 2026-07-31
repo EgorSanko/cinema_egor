@@ -33,7 +33,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, ALLOHA_UP, DOWNLOADS_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -142,8 +142,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // подсвечивает активный. (На фильмах эти источники валидны, там не трогаем.)
   useEffect(() => {
     const s = getSource();
-    // Alloha скрыта → сериалы с фильмовых источников уводим на kino.pub.
-    if (s === "vkmovie" || s === "rutube") setSource(ALLOHA_UP ? "alloha" : "kinopub");
+    if (s === "vkmovie" || s === "rutube") setSource("alloha");
   }, []);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
@@ -158,7 +157,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         resolveAllohaNative(selectedSeason, selectedEpisode);
       } else if (isIframeSource()) {
         setStreamData(null);
-        resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: false })
+        resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: !isProRef.current })
           .then((embed) => { if (embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed }); });
       }
     };
@@ -383,7 +382,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         // Про-источник не нашёл серию → откат на бесплатный embed, чтобы что-то
         // играло (а не чёрный экран). Только если просмотр ещё не начат.
         if (alive && !ok && !startedRef.current) {
-          const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: false });
+          const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: true });
           if (alive && embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed });
         }
       })();
@@ -391,7 +390,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }
     if (isIframeSource()) {
       (async () => {
-        const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: false });
+        const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: !isProRef.current });
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -501,7 +500,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }
     if (isIframeSource() && _attempt === 0) {
       try {
-        const embed = await resolveIframeEmbed(show.id, "tv", season, episode, { allohaFallbackToZenith: false });
+        const embed = await resolveIframeEmbed(show.id, "tv", season, episode, { allohaFallbackToZenith: !isProRef.current });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
       setError("Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");
@@ -1304,12 +1303,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     <SkipForward size={15} /> {"Следующая серия"}
                   </button>
 
-                  {/* Скачивание (Alloha) — за флагом DOWNLOADS_UP: гигабайтная
-                      качка через общий httpx-клиент бэкенда роняет резолв
-                      Alloha всем. «Вместе» — за HDREZKA_UP. */}
-                  {isPro && (DOWNLOADS_UP || HDREZKA_UP) && (
+                  {/* Скачивание и «Вместе» — обе через HDRezka. Пока HDRezka
+                      лежит (HDREZKA_UP=false) — прячем. */}
+                  {isPro && HDREZKA_UP && (
                     <div className="grid grid-cols-2 gap-2 w-full sm:contents">
-                      {DOWNLOADS_UP && (
                       <MovieDownloadButton
                         type="tv"
                         show={{
@@ -1323,8 +1320,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
                         initialSeason={selectedSeason}
                         initialEpisode={selectedEpisode}
                       />
-                      )}
-                      {HDREZKA_UP && (
                       <Link
                         href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "") + "&season=" + selectedSeason + "&episode=" + selectedEpisode}
                         className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 sm:h-10 px-3.5 rounded-xl sm:rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
@@ -1332,7 +1327,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
                       >
                         <Users size={14} /> {"Вместе"}
                       </Link>
-                      )}
                     </div>
                   )}
                 </div>

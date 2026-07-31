@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, Check, X, ChevronDown, Loader2 } from "lucide-react";
 import { addDownload, hasDownloaded, buildFilename, triggerBrowserDownload } from "@/lib/downloads";
-import { resolveKinopub } from "@/lib/kinopub";
 import { useAuthGate } from "./auth-gate";
 
 interface MovieMeta {
@@ -71,11 +70,15 @@ export function MovieDownloadButton(props: Props) {
   const [episode, setEpisode] = useState<number>(
     props.type === "tv" ? props.initialEpisode ?? 1 : 1
   );
-  // Озвучки берём из Alloha-резолва; id = ИНДЕКС в a.translations.
+  // Translators are loaded from the same /hdrezka/api/search call. Default
+  // selected = whatever the backend reports as active for the request.
   const [translators, setTranslators] = useState<Translator[]>([]);
   const [selectedTranslator, setSelectedTranslator] = useState<number | null>(null);
-  // Аудио-дорожки kino.pub (озвучки): держим URL отдельно от списка для UI.
-  const audioRef = useRef<{ id: number; name: string; url: string }[]>([]);
+  // Set when the backend substituted a different dub because the chosen one
+  // doesn't have this episode. Drives the warning + download block.
+  const [translatorMismatch, setTranslatorMismatch] = useState<
+    { requestedId: number; gotName: string; gotIsPremium: boolean } | null
+  >(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const id = props.type === "movie" ? props.movie.id : props.show.id;
   const targetSeason = props.type === "tv" ? season : undefined;
@@ -102,16 +105,7 @@ export function MovieDownloadButton(props: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // Ширина кадра → привычная метка качества (у kino.pub скоуп-формат вроде
-  // 1920x800, поэтому по высоте считать нельзя).
-  const labelFor = (w: number) => (w >= 1900 ? "1080p" : w >= 1260 ? "720p" : w >= 840 ? "480p" : "360p");
-
-  // Источник файлов — kino.pub (Плеер 2, платный аккаунт). Почему не Alloha:
-  // её ссылки отдают ~150 сегментов и дальше 403 → фильм обрывался на 15-й
-  // минуте (проверено, не лечится ни ретраями, ни замедлением). HDRezka
-  // (стабильные ссылки) недоступна — её резолв банит наш IP. kino.pub качается
-  // ровно: 30 минут контента без единой ошибки.
-  const fetchStreamsForCurrent = async () => {
+  const fetchStreamsForCurrent = async (overrideTr?: number | null) => {
     setLoading(true);
     setError(null);
     setStreams(null);
@@ -119,52 +113,54 @@ export function MovieDownloadButton(props: Props) {
       const m: any = props.type === "movie" ? props.movie : props.show;
       const title = props.type === "movie" ? m.title : m.name;
       const date = props.type === "movie" ? m.release_date : m.first_air_date;
-      const kp = await resolveKinopub({
-        tmdbId: id,
-        title: title || "",
-        year: date ? new Date(date).getFullYear() : "",
-        type: props.type,
-        season: targetSeason,
-        episode: targetEpisode,
-      });
-      if (!kp || !kp.hls4) {
+      const year = date ? new Date(date).getFullYear() : "";
+      const q = encodeURIComponent((title || "").replace(/["«»""]/g, "").trim());
+      const tr = overrideTr ?? selectedTranslator;
+      const trParam = tr ? `&translator_id=${tr}` : "";
+      const url = props.type === "movie"
+        ? `/hdrezka/api/search?q=${q}&year=${year}&type=movie${trParam}`
+        : `/hdrezka/api/search?q=${q}&year=${year}&type=tv&season=${season}&episode=${episode}${trParam}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data.streams || Object.keys(data.streams).length === 0) {
         setError("Не удалось получить файлы. Возможно эпизод ещё не вышел.");
         return;
       }
-      // Мастер-плейлист: видео-варианты (качество) + ОТДЕЛЬНЫЕ аудио-дорожки
-      // (#EXT-X-MEDIA:TYPE=AUDIO). Звук у kino.pub не внутри видео-варианта —
-      // если скачать только видео, файл будет БЕЗ ЗВУКА (так и было). Поэтому
-      // тянем обе ссылки, а ffmpeg на бэке склеивает V+A.
-      const master = await fetch(kp.hls4).then((r) => (r.ok ? r.text() : ""));
-      const abs = (u: string) => (u.startsWith("http") ? u : new URL(u, kp.hls4).toString());
-      const map: Record<string, string> = {};
-      const auds: { id: number; name: string; url: string }[] = [];
-      const lines = master.split("\n");
-      for (let i = 0; i < lines.length; i++) {
-        const s = lines[i].trim();
-        if (s.startsWith("#EXT-X-MEDIA:") && /TYPE=AUDIO/.test(s)) {
-          const uri = /URI="([^"]+)"/.exec(s);
-          const nm = /NAME="([^"]+)"/.exec(s);
-          if (uri) auds.push({ id: auds.length, name: nm?.[1] || `Дорожка ${auds.length + 1}`, url: abs(uri[1]) });
-          continue;
+      // Detect silent translator substitution. When the chosen dub hasn't
+      // covered this episode yet (e.g. Яроцкий dubbed eps 1-2 but not 3),
+      // HDRezka falls back to a DIFFERENT translator — often a premium one
+      // that serves a 1-minute "buy subscription" stub. The old code kept
+      // showing the requested dub's name while silently downloading the stub.
+      // Now: if backend returned a different translator than we asked for,
+      // flag it so the UI can warn and block the download.
+      const requestedTr = tr;
+      const gotTr = data.active_translator_id ?? null;
+      const activeTrObj = Array.isArray(data.translators)
+        ? data.translators.find((t: Translator) => t.id === gotTr)
+        : undefined;
+      const substituted =
+        requestedTr != null && gotTr != null && requestedTr !== gotTr;
+      setTranslatorMismatch(
+        substituted
+          ? { requestedId: requestedTr, gotName: activeTrObj?.name ?? "другую озвучку", gotIsPremium: !!activeTrObj?.is_premium }
+          : null,
+      );
+
+      setStreams(data.streams);
+      // Capture translators list on first fetch; respect backend's reported
+      // active_translator_id when user hasn't picked anything yet.
+      if (Array.isArray(data.translators) && data.translators.length > 0) {
+        setTranslators(data.translators);
+        if (selectedTranslator == null) {
+          setSelectedTranslator(data.active_translator_id ?? data.translators[0].id);
         }
-        if (!s.startsWith("#EXT-X-STREAM-INF")) continue;
-        const res = /RESOLUTION=(\d+)x(\d+)/.exec(s);
-        const next = (lines[i + 1] || "").trim();
-        if (!res || !next || next.startsWith("#")) continue;
-        const label = labelFor(Number(res[1]));
-        if (!map[label]) map[label] = abs(next);
       }
-      // Дедуп дорожек по имени: kino.pub повторяет их для каждой группы качества.
-      const uniq = Array.from(new Map(auds.map((a) => [a.name, a])).values())
-        .map((a, i) => ({ ...a, id: i }));
-      audioRef.current = uniq;
-      setTranslators(uniq.map((a) => ({ id: a.id, name: a.name })));
-      if (selectedTranslator == null || !uniq[selectedTranslator]) setSelectedTranslator(0);
-      // Мастер не разобрался (или один поток) → отдаём его целиком: ffmpeg сам
-      // выберет лучший вариант вместе со звуком.
-      setStreams(Object.keys(map).length ? map : { Авто: kp.hls4 });
-      setDuration(props.type === "movie" ? (props.movie.runtime || 90) * 60 : 1500);
+      // Real runtime where known. Movies pass it in minutes; TV episodes
+      // vary so we default to 25 min as a sitcom-ish fallback.
+      const fallbackSec = props.type === "movie"
+        ? ((props.movie.runtime || 90) * 60)
+        : 1500;
+      setDuration(fallbackSec);
     } catch {
       setError("Ошибка сети, попробуйте ещё раз");
     } finally {
@@ -185,12 +181,16 @@ export function MovieDownloadButton(props: Props) {
     if (open && props.type === "tv") fetchStreamsForCurrent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, episode]);
-  // У kino.pub одна дорожка на тайтл — переключателя озвучки нет.
+  useEffect(() => {
+    if (open && selectedTranslator != null && streams) fetchStreamsForCurrent(selectedTranslator);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTranslator]);
 
   const startDownload = (quality: string, url: string) => {
-    // Ссылку отдаём ЦЕЛИКОМ (в ней два зеркала Alloha) — /api/dl сам выберет
-    // живое: зеркала мрут выборочно (403), а вслепую взятое первое ломало
-    // скачивание. Укорачивание до одного зеркала делает сервер.
+    // Block download when the backend substituted a different dub for this
+    // episode — otherwise we'd save the 1-min "buy subscription" stub of a
+    // premium translator instead of the real video.
+    if (translatorMismatch) return;
     const m: any = props.type === "movie" ? props.movie : props.show;
     const title = props.type === "movie" ? m.title : m.name;
     const trName = translators.find(t => t.id === selectedTranslator)?.name;
@@ -208,9 +208,7 @@ export function MovieDownloadButton(props: Props) {
           translatorName: trName,
         };
     addDownload(entry);
-    // Вторым параметром уходит выбранная аудио-дорожка — иначе mp4 без звука.
-    const aud = audioRef.current[selectedTranslator ?? 0]?.url;
-    triggerBrowserDownload(url, buildFilename(entry), aud);
+    triggerBrowserDownload(url, buildFilename(entry));
     setDownloadedAny(hasDownloaded(id, props.type));
   };
 
@@ -299,6 +297,12 @@ export function MovieDownloadButton(props: Props) {
                   </option>
                 ))}
               </select>
+              {translatorMismatch && (
+                <div className="mt-1.5 text-[11px] text-amber-400/90 leading-snug">
+                  ⚠️ Этой озвучки нет на этой серии. Доступна только «{translatorMismatch.gotName}»
+                  {translatorMismatch.gotIsPremium ? " (по подписке)" : ""}. Выбери другую озвучку или серию.
+                </div>
+              )}
             </div>
           )}
 
@@ -323,14 +327,19 @@ export function MovieDownloadButton(props: Props) {
                   return (
                     <button
                       key={quality}
+                      disabled={!!translatorMismatch}
                       onClick={() => startDownload(quality, url as string)}
-                      className="w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg transition-colors text-[13px] text-left bg-white/[0.05] hover:bg-primary/15 hover:ring-1 hover:ring-primary/30"
+                      className={`w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg transition-colors text-[13px] text-left ${
+                        translatorMismatch
+                          ? "bg-white/[0.03] text-white/30 cursor-not-allowed"
+                          : "bg-white/[0.05] hover:bg-primary/15 hover:ring-1 hover:ring-primary/30"
+                      }`}
                     >
                       <span className="flex items-center gap-2 font-semibold">
-                        {alreadyThisQuality && <Check size={13} className="text-primary" />}
+                        {alreadyThisQuality && !translatorMismatch && <Check size={13} className="text-primary" />}
                         {quality}
                       </span>
-                      {sizeStr && <span className="text-white/50 text-[11.5px]">{sizeStr}</span>}
+                      {sizeStr && <span className={translatorMismatch ? "text-white/25 text-[11.5px]" : "text-white/50 text-[11.5px]"}>{sizeStr}</span>}
                     </button>
                   );
                 })}
