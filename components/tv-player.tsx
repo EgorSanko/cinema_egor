@@ -158,7 +158,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         resolveAllohaNative(selectedSeason, selectedEpisode);
       } else if (isIframeSource()) {
         setStreamData(null);
-        resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: !isProRef.current })
+        resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: false })
           .then((embed) => { if (embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed }); });
       }
     };
@@ -383,7 +383,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         // Про-источник не нашёл серию → откат на бесплатный embed, чтобы что-то
         // играло (а не чёрный экран). Только если просмотр ещё не начат.
         if (alive && !ok && !startedRef.current) {
-          const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: true });
+          const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: false });
           if (alive && embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed });
         }
       })();
@@ -391,7 +391,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }
     if (isIframeSource()) {
       (async () => {
-        const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: !isProRef.current });
+        const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: false });
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -501,7 +501,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     }
     if (isIframeSource() && _attempt === 0) {
       try {
-        const embed = await resolveIframeEmbed(show.id, "tv", season, episode, { allohaFallbackToZenith: !isProRef.current });
+        const embed = await resolveIframeEmbed(show.id, "tv", season, episode, { allohaFallbackToZenith: false });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
       setError("Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");

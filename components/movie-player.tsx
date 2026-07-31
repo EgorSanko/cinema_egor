@@ -118,7 +118,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
         resolveAllohaNative();
       } else if (isIframeSource()) {
         setStreamData(null);
-        resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current })
+        resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: false })
           .then((embed) => { if (embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed }); });
       }
     };
@@ -217,7 +217,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     }
     if (isIframeSource()) {
       (async () => {
-        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
+        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: false });
         if (alive && embed) setStreamData({ collaps: true, collapsEmbed: embed });
       })();
       return () => { alive = false; };
@@ -383,7 +383,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     }
     if (isIframeSource() && _attempt === 0) {
       try {
-        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
+        const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: false });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
       setError("Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
