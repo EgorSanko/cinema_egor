@@ -80,7 +80,7 @@ export function SubscriptionEnforcer() {
       // поднимаем ВСЕГДА (zenithjs или недоступный hdrezka → alloha). Явный
       // Pro-выбор (kinopub/alloha/…) не трогаем.
       if (cur === "zenithjs" || (cur === "hdrezka" && !HDREZKA_UP)) {
-        setSource(HDREZKA_UP ? "hdrezka" : "alloha");
+        setSource(HDREZKA_UP ? "hdrezka" : "kinopub"); // Alloha скрыта
       }
       try { localStorage.setItem(PRO_DEFAULT_FLAG, "1"); } catch {}
     } else {
@@ -89,7 +89,7 @@ export function SubscriptionEnforcer() {
       // Настоящий free — источник ВСЕГДА alloha (бесплатный плеер с пре-роллом).
       // Раньше был zenithjs (Collaps); теперь free = Alloha + реклама.
       try { localStorage.removeItem(PRO_DEFAULT_FLAG); } catch {}
-      if (cur !== "alloha") setSource("alloha");
+      if (cur !== "kinopub") setSource("kinopub"); // Alloha скрыта
     }
   }, [isPro, loading, user]);
 

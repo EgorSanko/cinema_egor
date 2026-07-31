@@ -22,11 +22,11 @@ const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
       { src: "rutube", label: "Плеер 6" },
     ]
   : [
-      { src: "alloha", label: "Плеер 1" },
-      { src: "kinopub", label: "Плеер 2" },
-      { src: "vkmovie", label: "Плеер 3" },
-      { src: "cdnhub", label: "Плеер 4" },
-      { src: "rutube", label: "Плеер 5" },
+      // Alloha скрыта (см. комментарий в lib/kinopub.ts getSource).
+      { src: "kinopub", label: "Плеер 1" },
+      { src: "vkmovie", label: "Плеер 2" },
+      { src: "cdnhub", label: "Плеер 3" },
+      { src: "rutube", label: "Плеер 4" },
     ];
 
 export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | "tv" }) {
