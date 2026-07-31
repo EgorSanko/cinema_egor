@@ -27,6 +27,39 @@ function reloadOnce(reason: string) {
 }
 
 export function ReloadOnStale() {
+  // Опрос версии сборки — ГЛАВНЫЙ механизм автообновления. Триггеры ниже (SW и
+  // ChunkLoadError) ненадёжны: SW считается новым только если поменялись его
+  // байты, а его версия прописана руками и при деплое не менялась — поэтому
+  // открытая вкладка жила со старым JS, пока юзер сам не сделает Ctrl+Shift+R.
+  // Теперь: запоминаем версию при загрузке, проверяем раз в минуту и при
+  // возврате на вкладку; изменилась — перезагружаемся сами.
+  React.useEffect(() => {
+    let mine = "";
+    let stop = false;
+    const check = async (first = false) => {
+      if (stop) return;
+      try {
+        const r = await fetch("/api/version", { cache: "no-store" });
+        if (!r.ok) return;
+        const { v } = await r.json();
+        if (!v) return;
+        if (first || !mine) { mine = v; return; }
+        if (v !== mine) {
+          // Не дёргаем страницу под видео: если идёт воспроизведение, ждём
+          // паузы/ухода со вкладки, иначе прервём просмотр на ровном месте.
+          const vid = document.querySelector("video");
+          if (vid && !vid.paused && !document.hidden) return;
+          location.reload();
+        }
+      } catch {}
+    };
+    check(true);
+    const iv = setInterval(() => check(), 60000);
+    const onVis = () => { if (!document.hidden) check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop = true; clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
+
   React.useEffect(() => {
     // Clear the guard after a successful initial render (5s) so a SECOND
     // future deploy can still trigger reload in the same tab.
