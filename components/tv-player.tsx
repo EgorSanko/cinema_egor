@@ -94,6 +94,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [allohaHls, setAllohaHls] = useState<AllohaHls | null>(null);
   const [allohaTr, setAllohaTr] = useState(0);
   const [allohaQ, setAllohaQ] = useState("1080");
+  // Имя выбранной озвучки Alloha держим отдельно от индекса: индекс между сериями
+  // не стабилен (списки/порядок озвучек разнятся), а имя — стабильный ключ, по
+  // которому восстанавливаем выбор при переходе на след. серию. Сидируется из
+  // localStorage на маунте (переживает перезагрузку страницы).
+  const allohaTrNameRef = useRef<string | null>(null);
   const allohaTranslators = useMemo(
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
@@ -111,9 +116,21 @@ export function TVPlayer({ show }: TVPlayerProps) {
       a = await resolveAllohaHls(show.id, "tv", season, episode);
     }
     if (!a) return false;
-    const pick = pickAllohaStream(a, 0, defQ);
+    // Сохраняем выбранную озвучку между сериями: матчим по ИМЕНИ (индекс не
+    // стабилен между сериями). Раньше тут всегда брался индекс 0 → смена серии
+    // сбрасывала озвучку на дефолтную (баг «переключил на 2 — новая серия снова
+    // в 1»). Если выбранной озвучки в этой серии нет — откат на 0.
+    let idx = 0;
+    const want = allohaTrNameRef.current;
+    if (want) {
+      const f = a.translations.findIndex((t) => t.name === want);
+      if (f >= 0) idx = f;
+    }
+    let pick = pickAllohaStream(a, idx, defQ);
+    if (!pick && idx !== 0) { idx = 0; pick = pickAllohaStream(a, 0, defQ); }
     if (!pick) return false;
-    setAllohaHls(a); setAllohaTr(0); setAllohaQ(pick.quality);
+    allohaTrNameRef.current = a.translations[idx]?.name || null;
+    setAllohaHls(a); setAllohaTr(idx); setAllohaQ(pick.quality);
     setStreamData({ stream: pick.url, alloha: true });
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,6 +142,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const pos = videoRef.current?.currentTime || 0;
     setSeekOnSwitch(pos > 1 ? pos : undefined);
     setAllohaTr(i); setAllohaQ(pick.quality);
+    // Запоминаем выбор озвучки по имени, чтобы он сохранялся при переходе на
+    // следующую серию (и после перезагрузки страницы).
+    const nm = allohaHls.translations[i]?.name || null;
+    allohaTrNameRef.current = nm;
+    try { if (nm) localStorage.setItem(`kino_alloha_tr_${show.id}`, nm); } catch {}
     setStreamData((prev: any) => (prev ? { ...prev, stream: pick.url } : prev));
   };
   const changeAllohaQuality = (q: string) => {
@@ -239,6 +261,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // Restore last used translator for this show
     const lastTr = getLastTranslator(show.id, "tv");
     if (lastTr) setSelectedTranslator(lastTr.id);
+    // Восстанавливаем выбранную озвучку Alloha (по имени) — чтобы после
+    // перезагрузки/захода серия открылась в той же озвучке, что смотрели.
+    try { allohaTrNameRef.current = localStorage.getItem(`kino_alloha_tr_${show.id}`) || null; } catch {}
 
     // Query params override saved last-episode (e.g. from "Continue Watching" card)
     const params = new URLSearchParams(window.location.search);
