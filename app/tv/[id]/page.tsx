@@ -4,14 +4,14 @@ import { CastStrip } from "@/components/cast-strip";
 import { DetailsMeta } from "@/components/details-meta";
 import { KpReviews } from "@/components/kp-reviews";
 import { Comments } from "@/components/comments";
-import { getTVDetails, getTVRecommendations } from "@/lib/tmdb";
+import { getTVDetails, getTVRecommendations, getMovieDetails } from "@/lib/tmdb";
 import { getImageUrl } from "@/lib/tmdb";
 import { isBlockedTV } from "@/lib/blocked-content";
 import { clean, tvSchema } from "@/lib/schema";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 interface TVPageProps {
   params: Promise<{ id: string }>;
@@ -62,7 +62,15 @@ export default async function TVPage({ params }: TVPageProps) {
   const { id } = await params;
   if (isBlockedTV(Number(id))) notFound();
   const show = await getTVDetails(Number(id));
-  if (!show) notFound();
+  if (!show) {
+    // Перепутанный тип: id принадлежит ФИЛЬМУ, а не сериалу (реальный баг —
+    // фильм попал в историю как tv → /tv/<movieId> → 404 и «ошибка»). Если id
+    // валиден как фильм — мягкий редирект на /movie/<id> вместо not-found.
+    // (Сетевой сбой TMDB вернул бы null и тут, и там → штатный notFound ниже.)
+    const asMovie = await getMovieDetails(Number(id));
+    if (asMovie) redirect(`/movie/${id}`);
+    notFound();
+  }
   const recommendations = await getTVRecommendations(show.id);
   const recs = recommendations.filter(r => r.id !== show.id).slice(0, 6);
 

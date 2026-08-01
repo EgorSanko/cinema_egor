@@ -4,13 +4,13 @@ import { CastStrip } from "@/components/cast-strip";
 import { DetailsMeta } from "@/components/details-meta";
 import { Comments } from "@/components/comments";
 import { KpReviews } from "@/components/kp-reviews";
-import { getImageUrl, getMovieDetails, getMoviesByGenre, getMovieRecommendations } from "@/lib/tmdb";
+import { getImageUrl, getMovieDetails, getMoviesByGenre, getMovieRecommendations, getTVDetails } from "@/lib/tmdb";
 import { isBlockedMovie } from "@/lib/blocked-content";
 import { clean, movieSchema } from "@/lib/schema";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 interface MoviePageProps {
 params: Promise<{ id: string }>;
@@ -66,7 +66,13 @@ export default async function MoviePage({ params }: MoviePageProps) {
   // automated RKN re-check sees a clean 404.
   if (isBlockedMovie(movieId)) notFound();
   const movie = await getMovieDetails(movieId);
-  if (!movie) notFound();
+  if (!movie) {
+    // Перепутанный тип: id принадлежит СЕРИАЛУ, а не фильму → мягкий редирект
+    // на /tv/<id> вместо not-found (зеркально к /tv/[id]).
+    const asTv = await getTVDetails(movieId);
+    if (asTv) redirect(`/tv/${movieId}`);
+    notFound();
+  }
 
   // Real TMDB recommendations (+ /similar top-up). Fall back to genre-popular
   // only if TMDB returns nothing — so the row is relevant, not random-by-genre.
