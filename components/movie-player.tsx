@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { ProblemReport } from "./problem-report";
@@ -68,6 +68,10 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
   const { isPro, loading: subLoading } = useSubscription();
   const isProRef = useRef(isPro);
   useEffect(() => { isProRef.current = isPro; }, [isPro]);
+  // Подписка загружена? Чтобы не мигнуть Pro-юзеру рекламным плеером Alloha, пока
+  // тариф ещё не известен (в резолвере ждём subLoadedRef=true).
+  const subLoadedRef = useRef(!subLoading);
+  useEffect(() => { subLoadedRef.current = !subLoading; }, [subLoading]);
   // Реклама показана/пропущена в этой сессии страницы (гейтит контент).
   const [adDone, setAdDone] = useState(false);
   // Alloha нативно: резолвнутые озвучки+качества (VK m3u8 через наш прокси).
@@ -80,6 +84,13 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
   );
   // Нативный резолв Alloha ИЛИ VkMovie (форма ответа одинаковая, плеер общий).
   const resolveAllohaNative = useCallback(async (): Promise<boolean> => {
+    // ПУТЬ B (монетизация): FREE (подписка загружена, не Pro) с источником alloha
+    // → плеер Alloha с белой рекламой (доход на наш токен). Рендерим как iframe
+    // (флаг allohaAd: без нашего пре-ролла). Pro/ещё-не-загружено → нативный чистый.
+    if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
+      setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(movie.id, "movie") });
+      return true;
+    }
     let a: AllohaHls | null;
     let defQ = "1080";
     if (getSource() === "vkmovie") {
@@ -104,6 +115,16 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [movie.id]);
+  // ПУТЬ B: как только тариф известен и это FREE на alloha — переключаем на плеер
+  // Alloha с рекламой (до старта). Без этого прогрев мог зарезолвить нативный
+  // (пока подписка грузилась) → free смотрел бы без рекламы = минус доход.
+  useEffect(() => {
+    if (subLoading || isPro) return;
+    if (!ALLOHA_AD_FOR_FREE || getSource() !== "alloha") return;
+    if (startedRef.current) return;
+    resolveAllohaNative();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subLoading, isPro]);
   useEffect(() => {
     const check = () => { setSrcIsZenith(isIframeSource()); setSrcIsFree(getSource() === "zenithjs"); };
     check();
@@ -711,9 +732,9 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
           )}
           {/* Collaps (=LordFilm) — сторонний iframe-плеер (свои озвучки/качество).
               Раскрывается на «Смотреть». Наш ArtPlayer тут не участвует. */}
-          {/* Контент-iframe: для Pro сразу, для free — ТОЛЬКО после пре-ролла
-              (adDone). До этого src в DOM нет → рекламу не обойти. */}
-          {showPlayer && streamData?.collapsEmbed && (isPro || adDone) && (
+          {/* Контент-iframe: Pro сразу; free-Collaps — после нашего пре-ролла;
+              free-Alloha (allohaAd) — СРАЗУ, реклама уже в плеере Alloha. */}
+          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
             <iframe
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}
@@ -724,7 +745,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
           )}
           {/* Пре-ролл реклама (free-тариф) — перед контентом (Alloha-нативно ИЛИ
               collaps-iframe). Ждём резолва подписки, чтобы не мигнуть Pro-юзеру. */}
-          {showPlayer && (streamData?.collapsEmbed || streamData?.alloha) && !isPro && !subLoading && !adDone && (
+          {showPlayer && (streamData?.collapsEmbed || streamData?.alloha) && !streamData?.allohaAd && !isPro && !subLoading && !adDone && (
             <PreRollAd ads={AD_SEQUENCE} onDone={() => setAdDone(true)} />
           )}
           {streamData?.stream && showPlayer && (

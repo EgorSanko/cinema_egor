@@ -195,6 +195,30 @@ export async function resolveAllohaEmbed(
   }
 }
 
+// ─── Официальный партнёрский плеер Alloha (монетизация FREE белой рекламой) ───
+// FREE-тариф смотрит через ЭТОТ плеер (iframe с белой рекламой Alloha → доход на
+// наш токен), PRO — через наш нативный ArtPlayer БЕЗ рекламы (resolveAllohaHls).
+// Токен домен-locked на player.sapkeflykino.ru (в src он публичный — так задумано).
+export const ALLOHA_AD_TOKEN = "5df2e966475ea2b00c904164736c50";
+export const ALLOHA_PLAYER_HOST = "https://player.sapkeflykino.ru";
+// Рубильник монетизации free через плеер Alloha. false → free снова на нативный.
+export const ALLOHA_AD_FOR_FREE = true;
+
+/** Строит URL iframe-плеера Alloha (наш токен) по TMDB id. Плеер сам резолвит
+ *  контент/озвучки/сезоны. startSec — резюм с позиции. */
+export function allohaAdEmbed(
+  tmdbId: number, type: "movie" | "tv", season?: number, episode?: number, startSec?: number,
+): string {
+  const p = new URLSearchParams({
+    tmdb: String(tmdbId),
+    type: type === "tv" ? "serial" : "movie",
+    token: ALLOHA_AD_TOKEN,
+  });
+  if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+  if (startSec && startSec > 5) p.set("start", String(Math.floor(startSec)));
+  return `${ALLOHA_PLAYER_HOST}/?${p.toString()}`;
+}
+
 // Единый резолвер iframe-embed по текущему источнику (zenithjs или alloha).
 // opts.allohaFallbackToZenith: для FREE-тарифа (источник alloha) если у Alloha
 // нет тайтла — падаем на zenithjs (Collaps), чтобы покрытие free не упало. Для

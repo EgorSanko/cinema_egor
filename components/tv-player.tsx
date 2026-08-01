@@ -33,7 +33,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -88,6 +88,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const { isPro, loading: subLoading } = useSubscription();
   const isProRef = useRef(isPro);
   useEffect(() => { isProRef.current = isPro; }, [isPro]);
+  // Подписка загружена? Нужно, чтобы НЕ показать free-рекламу Pro-юзеру на миг,
+  // пока тариф ещё не известен (в резолвере ждём subLoadedRef=true).
+  const subLoadedRef = useRef(!subLoading);
+  useEffect(() => { subLoadedRef.current = !subLoading; }, [subLoading]);
   // Реклама показана/пропущена в этой сессии страницы (гейтит контент-iframe).
   const [adDone, setAdDone] = useState(false);
   // Alloha нативно: резолвнутые озвучки+качества (VK m3u8 через наш прокси).
@@ -107,6 +111,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Плеер 3 скрыт в switcher, а если он всё же выбран (был persisted) — тихо
   // резолвим через Alloha (не показываем ошибку).
   const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
+    // ПУТЬ B (монетизация): FREE-тариф (подписка загружена, не Pro) с источником
+    // alloha → плеер Alloha с белой рекламой (доход на наш токен). Их плеер сам
+    // держит сезоны/озвучки → рендерим как iframe (флаг allohaAd: без нашего
+    // пре-ролла, свои контролы прячем). Pro/ещё-не-загружено → нативный чистый.
+    if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
+      const pos = getPosition(show.id, "tv", season, episode);
+      setAllohaHls(null);
+      setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(show.id, "tv", season, episode, pos?.time) });
+      return true;
+    }
     let defQ = "1080";
     let a: AllohaHls | null;
     if (getSource() === "cdnhub") {
@@ -191,6 +205,16 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Новая серия → снова пре-ролл для free (иначе переключение серий было бы
   // обходом рекламы). Для Pro adDone ни на что не влияет — рекламу не показываем.
   useEffect(() => { setAdDone(false); }, [selectedSeason, selectedEpisode]);
+  // ПУТЬ B: как только тариф известен и это FREE на alloha — переключаем на плеер
+  // Alloha с рекламой (до старта просмотра). Без этого прогрев мог зарезолвить
+  // нативный (пока подписка грузилась) → free смотрел бы без рекламы = минус доход.
+  useEffect(() => {
+    if (subLoading || isPro) return;
+    if (!ALLOHA_AD_FOR_FREE || getSource() !== "alloha") return;
+    if (startedRef.current) return;
+    resolveAllohaNative(selectedSeason, selectedEpisode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subLoading, isPro]);
   const [cssFullscreen, setCssFullscreen] = useState(false);
   // ArtPlayer container — once captured, SkipOverlays portals into it so
   // they stay visible in every fullscreen mode (web/native/mobile).
@@ -1117,8 +1141,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
           )}
           {/* Collaps (=LordFilm) — сторонний iframe со своими сезонами/сериями/
               озвучками. Наши ArtPlayer/панель серий/скипы тут не участвуют. */}
-          {/* Контент-iframe: Pro сразу, free — только после пре-ролла (adDone). */}
-          {showPlayer && streamData?.collapsEmbed && (isPro || adDone) && (
+          {/* Контент-iframe: Pro сразу; free-Collaps — после нашего пре-ролла;
+              free-Alloha (allohaAd) — СРАЗУ, т.к. реклама уже в плеере Alloha. */}
+          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
             <iframe
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}
@@ -1127,8 +1152,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
               allowFullScreen
             />
           )}
-          {/* Пре-ролл реклама (free). Ждём резолва подписки, чтобы не мигнуть Pro. */}
-          {showPlayer && (streamData?.collapsEmbed || streamData?.alloha) && !isPro && !subLoading && !adDone && (
+          {/* Наш пре-ролл (free). НЕ показываем в режиме allohaAd — там своя
+              реклама Alloha, наш пре-ролл был бы двойным. Ждём резолва подписки. */}
+          {showPlayer && (streamData?.collapsEmbed || streamData?.alloha) && !streamData?.allohaAd && !isPro && !subLoading && !adDone && (
             <PreRollAd ads={AD_SEQUENCE} onDone={() => setAdDone(true)} />
           )}
           {streamData?.stream && showPlayer && (
