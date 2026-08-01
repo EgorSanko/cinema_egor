@@ -54,18 +54,14 @@ export function getSource(): KinoSource {
   // плеер — он остался ТОЛЬКО тихим фолбэком (allohaFallbackToZenith), когда Alloha
   // не нашла тайтл. Поэтому zenithjs даже не в списке валидных значений: любое
   // старое/неизвестное значение → alloha.
-  // 🚩 ALLOHA СКРЫТА (31.07.2026, решение Егора: «пока не поймём, в чём была
-  // проблема»). Симптом: просмотр обрывается через 5-7 минут. Проверено на
-  // ПОЛНОСТЬЮ ОТКАЧЕННОМ коде (фронт 36a5640 + бэкенд из бэкапа 29.07) —
-  // воспроизводится, значит дело не в правках: оба зеркала VK отдают 403.
-  // Пока скрыта — основной источник kino.pub. Вернуть = убрать эти три правки
-  // (здесь, в player-switcher.tsx и subscription-enforcer.tsx).
+  // Alloha возвращена 01.08.2026: тротл VK по IP бэкенда отпустил (был временным,
+  // от нагрузочных тестов скачивания). Проверено настоящим 30-минутным
+  // просмотром через hls.js — 0 ошибок сети, ни одного зависания.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    if (v === "alloha") return "kinopub";
-    return v === "kinopub" || v === "hdrezka" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "kinopub";
+    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "alloha";
   } catch {
-    return "kinopub";
+    return "alloha";
   }
 }
 
