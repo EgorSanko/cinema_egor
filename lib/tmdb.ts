@@ -237,17 +237,59 @@ export async function getGenres() {
 	}
 }
 
+// TMDB хранит русские названия через «ё» и НЕ считает «е»≡«ё» при поиске: запрос
+// «люди в черном» находил 2 части из 4, а «люди в чёрном» — все 4. Но «ё» почти
+// никто не печатает, поэтому дублируем запрос с заменой е→ё (и ё→е) и объединяем
+// результаты, сохраняя порядок исходного запроса и убирая дубли по id. Слияние
+// только на 1-й странице — там умещается вся выдача таких запросов, а сложную
+// пагинацию не ломаем.
+function yoQueries(query: string): string[] {
+	const set = new Set<string>([query]);
+	if (/[еЕ]/.test(query)) set.add(query.replace(/е/g, "ё").replace(/Е/g, "Ё"));
+	if (/[ёЁ]/.test(query)) set.add(query.replace(/ё/g, "е").replace(/Ё/g, "Е"));
+	return [...set];
+}
+
+async function tmdbSearchMerged(
+	kind: "movie" | "tv",
+	query: string,
+	page: number
+): Promise<any[]> {
+	const q0 = query.trim();
+	if (!q0) return [];
+	const queries = page === 1 ? yoQueries(q0) : [q0];
+	const lists = await Promise.all(
+		queries.map(async (q) => {
+			try {
+				const r = await fetchWithRetry(
+					`${API_BASE_URL}/search/${kind}?api_key=${API_KEY}&query=${encodeURIComponent(
+						q
+					)}&language=ru-RU&page=${page}`,
+					{ next: { revalidate: 300 } }
+				);
+				const d = await r.json();
+				return (d.results as any[]) || [];
+			} catch {
+				return [];
+			}
+		})
+	);
+	const seen = new Set<number>();
+	const merged: any[] = [];
+	for (const list of lists)
+		for (const it of list)
+			if (it && !seen.has(it.id)) {
+				seen.add(it.id);
+				merged.push(it);
+			}
+	return merged;
+}
+
 export async function searchMovies(query: string, page = 1) {
 	if (!query.trim()) return [];
 	try {
-		const response = await fetchWithRetry(
-			`${API_BASE_URL}/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(
-				query
-			)}&language=ru-RU&page=${page}`,
-			{ next: { revalidate: 300 } }
-		);
-		const data = await response.json();
-		return filterBlocked(data.results as Movie[], "movie");
+		const merged = await tmdbSearchMerged("movie", query, page);
+		return filterBlocked(merged as Movie[], "movie");
 	} catch (error) {
 		console.error("Error searching movies:", error);
 		return [];
@@ -409,12 +451,8 @@ export async function getTVSeasonEpisodes(tvId: number, seasonNumber: number) {
 export async function searchTV(query: string, page = 1) {
   if (!query.trim()) return [];
   try {
-    const response = await fetchWithRetry(
-      `${API_BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(query)}&language=ru-RU&page=${page}`,
-      { next: { revalidate: 300 } }
-    );
-    const data = await response.json();
-    return data.results as TVShow[];
+    // е↔ё-нормализация — см. tmdbSearchMerged (без неё «черном» терял части).
+    return (await tmdbSearchMerged("tv", query, page)) as TVShow[];
   } catch (error) {
     console.error("Error searching TV:", error);
     return [];
