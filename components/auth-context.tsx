@@ -114,12 +114,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("user", JSON.stringify(u));
 
     if (reload) {
-      // ВАЖНО: НЕ делаем inline clearLocalProfile + await loadFromServer перед
-      // reload. Иначе ещё живой плеер (юзер переключал аккаунт ПРЯМО во время
-      // просмотра) во время await дописывал бы kino_pos_* уже под НОВЫЙ аккаунт —
-      // и в «Продолжить» у нового аккаунта появлялся чужой фильм. owner НЕ трогаем:
-      // после reload свежая страница (плеер уже размонтирован) через mount-эффект
-      // увидит owner≠email → сама очистит и загрузит только свой профиль.
+      // Чужой аккаунт → стираем его данные СИНХРОННО перед reload (без await —
+      // гонки с плеером нет, clearLocalProfile синхронный). Иначе, если owner не
+      // был выставлен, mount-эффект свежей страницы уходил в ветку merge и история/
+      // позиции/топ-5 прошлого (free) аккаунта утекали в новый (PRO): «Продолжить»
+      // показывало чужой фильм и не ту серию. После очистки owner=null + пустой
+      // локальный профиль → свежая страница загрузит ТОЛЬКО серверные данные PRO.
+      if (foreign) clearLocalProfile();
       window.location.reload();
       return;
     }

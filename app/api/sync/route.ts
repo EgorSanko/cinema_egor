@@ -195,6 +195,10 @@ export async function POST(req: NextRequest) {
         lists: mergedLists,
         statuses: statusMap,
         downloads: mergedDownloads,
+        // Топ-5 (canon): если клиент прислал непустой — он актуальный; иначе
+        // сохраняем серверный (чтобы пустой локальный после смены аккаунта НЕ
+        // затёр выбор юзера на сервере).
+        canon: (Array.isArray(data.canon) && data.canon.length) ? data.canon : (existing.canon || []),
         friendCode: existing.friendCode || generateFriendCode(),
       };
 

@@ -76,6 +76,7 @@ function setDataOwner(email: string) {
 const PROFILE_KEYS = [
   "kino_favorites", "kino_history", "kino_comments", "kino_lists_v1",
   "kino_status_v1", "kino_downloads_v1", "kino_tried_translators", "kino_friend_code",
+  "kino_canon_v1",
 ];
 export function clearLocalProfile(): void {
   if (typeof window === "undefined") return;
@@ -146,6 +147,7 @@ async function syncToServer(email: string) {
       lists,
       statuses,
       downloads,
+      canon: (() => { try { return JSON.parse(localStorage.getItem("kino_canon_v1") || "[]"); } catch { return []; } })(),
     };
     const res = await fetch("/api/sync", {
       method: "POST",
@@ -184,6 +186,7 @@ export async function syncFromServer(email: string): Promise<boolean> {
       lists,
       statuses,
       downloads,
+      canon: (() => { try { return JSON.parse(localStorage.getItem("kino_canon_v1") || "[]"); } catch { return []; } })(),
     };
 
     const res = await fetch("/api/sync", {
@@ -236,6 +239,14 @@ function applyServerData(data: any) {
     for (const [key, val] of Object.entries(data.positions)) {
       localStorage.setItem(key, JSON.stringify(val));
     }
+  }
+  // Топ-5 (canon) — синкается, чтобы следовать за аккаунтом (раньше был локальным
+  // per-устройство → при смене аккаунта у PRO пропадал). Массив-пик заменяем целиком.
+  if (Array.isArray(data.canon)) {
+    try {
+      localStorage.setItem("kino_canon_v1", JSON.stringify(data.canon));
+      window.dispatchEvent(new Event("canon-changed"));
+    } catch {}
   }
 }
 
