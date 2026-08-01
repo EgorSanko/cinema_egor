@@ -202,7 +202,9 @@ export async function resolveAllohaEmbed(
 export const ALLOHA_AD_TOKEN = "5df2e966475ea2b00c904164736c50";
 export const ALLOHA_PLAYER_HOST = "https://player.sapkeflykino.ru";
 // Рубильник монетизации free через плеер Alloha. false → free снова на нативный.
-export const ALLOHA_AD_FOR_FREE = true;
+// ВРЕМЕННО ВЫКЛ (2026-08-01): free-плеер player.sapkeflykino.ru отдавал 404 →
+// у free ничего не играло. Откат на нативный ArtPlayer до починки iframe-пути.
+export const ALLOHA_AD_FOR_FREE = false;
 
 /** Строит URL iframe-плеера Alloha (наш токен) по TMDB id. Плеер сам резолвит
  *  контент/озвучки/сезоны. startSec — резюм с позиции. */
