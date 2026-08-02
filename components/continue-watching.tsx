@@ -79,12 +79,12 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
     if (h.type === "movie") {
       if (!isFinished && h.progress > 30) items.push({ ...h });
     } else {
-      // TV series
-      if (!isFinished && h.progress > 30) {
-        items.push({ ...h, launchSeason: h.season, launchEpisode: h.episode });
-      } else if (isFinished && h.season && h.episode) {
+      // TV series. Держим сериал в «Продолжить», пока не досмотрена ПОСЛЕДНЯЯ
+      // серия последнего сезона: досмотрел серию → показываем следующую, а не
+      // роняем весь сериал.
+      if (isFinished && h.season && h.episode) {
         const next = nextFromCounts(h.season, h.episode, epCount, seasonCountOf(h));
-        if (next === null) continue; // series finished — don't show a bogus next episode
+        if (next === null) continue; // это был финал сериала — карточку не показываем
         items.push({
           ...h,
           launchSeason: next.launchSeason,
@@ -92,6 +92,13 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
           isNextEpisode: true,
           _unverified: epCount == null,
         });
+      } else {
+        // Серия НЕ досмотрена (в т.ч. только начата, даже ≤30 c) — продолжаем с
+        // неё. Прежний порог `progress > 30` ронял сериал: свежая серия с
+        // прогрессом ≤30 c помечала шоу как показанное (seenShows.add выше), но
+        // карточку не добавляла → сериал молча пропадал из ленты
+        // (репорт: «досмотрел серию, не начал новую — сериал исчез»).
+        items.push({ ...h, launchSeason: h.season, launchEpisode: h.episode });
       }
     }
   }
