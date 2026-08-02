@@ -103,6 +103,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // которому восстанавливаем выбор при переходе на след. серию. Сидируется из
   // localStorage на маунте (переживает перезагрузку страницы).
   const allohaTrNameRef = useRef<string | null>(null);
+  // Индекс выбранной озвучки — нужен, когда у сериала ДВЕ озвучки с ОДИНАКОВЫМ
+  // именем (напр. The Office: две «... MVO 2x2 / Kravec») и по имени их не
+  // различить → сохраняем ещё и индекс.
+  const allohaTrIdxRef = useRef(0);
   const allohaTranslators = useMemo(
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
@@ -139,18 +143,26 @@ export function TVPlayer({ show }: TVPlayerProps) {
     if (want) {
       const norm = (s: string) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
       // Хвостовая «(релиз-группа)» у Alloha меняется между сериями (E1 «Dub (Selena)»,
-      // E2 «Dub (X)») → exact-match падал и озвучка сбрасывалась. Матчим tiered:
-      // точно → без регистра/пробелов → по базовому имени (без хвостовых скобок).
+      // E2 «Dub (X)») → exact-match падал. Матчим tiered: точно → без регистра/
+      // пробелов → по базовому имени (без хвостовых скобок).
       const base = (s: string) => norm(s).replace(/\s*\([^)]*\)\s*$/, "").trim();
-      let f = a.translations.findIndex((t) => t.name === want);
-      if (f < 0) f = a.translations.findIndex((t) => norm(t.name) === norm(want));
-      if (f < 0) f = a.translations.findIndex((t) => base(t.name) === base(want));
-      if (f >= 0) idx = f;
+      const nm = (t: { name: string }) =>
+        t.name === want || norm(t.name) === norm(want) || base(t.name) === base(want);
+      // Все индексы с совпадающим именем. Если совпадений НЕСКОЛЬКО (у сериала две
+      // озвучки с одинаковым именем — The Office) — по имени не различить, поэтому
+      // берём ТОТ ЖЕ индекс, что был выбран (если он среди совпадений), иначе
+      // первый. Это и был «сброс только на этом сериале».
+      const matches: number[] = [];
+      a.translations.forEach((t, i) => { if (nm(t)) matches.push(i); });
+      if (matches.length) {
+        idx = matches.includes(allohaTrIdxRef.current) ? allohaTrIdxRef.current : matches[0];
+      }
     }
     let pick = pickAllohaStream(a, idx, defQ);
     if (!pick && idx !== 0) { idx = 0; pick = pickAllohaStream(a, 0, defQ); }
     if (!pick) return false;
     allohaTrNameRef.current = a.translations[idx]?.name || null;
+    allohaTrIdxRef.current = idx;
     setAllohaHls(a); setAllohaTr(idx); setAllohaQ(pick.quality);
     setStreamData({ stream: pick.url, alloha: true });
     return true;
@@ -163,10 +175,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const pos = videoRef.current?.currentTime || 0;
     setSeekOnSwitch(pos > 1 ? pos : undefined);
     setAllohaTr(i); setAllohaQ(pick.quality);
-    // Запоминаем выбор озвучки по имени, чтобы он сохранялся при переходе на
-    // следующую серию (и после перезагрузки страницы).
+    // Запоминаем выбор озвучки по имени И индексу (имена могут дублироваться),
+    // чтобы он сохранялся при переходе на следующую серию (и после перезагрузки).
     const nm = allohaHls.translations[i]?.name || null;
     allohaTrNameRef.current = nm;
+    allohaTrIdxRef.current = i;
     try { if (nm) localStorage.setItem(`kino_alloha_tr_${show.id}`, nm); } catch {}
     setStreamData((prev: any) => (prev ? { ...prev, stream: pick.url } : prev));
   };
