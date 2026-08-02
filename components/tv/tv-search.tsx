@@ -3,6 +3,7 @@
 import { searchTvUnifiedAction, type TvSearchCard } from "@/app/actions";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { IconBackspace } from "@/components/tv/tv-icons";
 
 // ---------------------------------------------------------------------------
 // On-screen D-pad keyboard.
@@ -34,7 +35,7 @@ const ACTION_ROW: KeyDef[] = [
   { label: "EN", action: "mode", mode: "en" },
   { label: "123", action: "mode", mode: "num" },
   { label: "Пробел", action: "space" },
-  { label: "⌫", action: "del" },
+  { label: "Стереть", action: "del" },
   { label: "Очистить", action: "clear" },
 ];
 
@@ -314,7 +315,7 @@ export function TvSearch() {
                           : "0 2px 6px rgba(0,0,0,0.4)",
                       }}
                     >
-                      {k.label}
+                      {k.action === "del" ? <IconBackspace size={22} /> : k.label}
                     </button>
                   );
                 })}

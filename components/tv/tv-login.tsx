@@ -6,6 +6,7 @@ import { syncFromServer, loadFromServer, clearLocalProfile, getDataOwner } from 
 import { getTvUser, type TvUser } from "@/lib/tv-auth";
 import { LogoSplash } from "./logo-splash";
 import { StyledQR } from "@/components/styled-qr";
+import { IconShift, IconBackspace, IconChevronDown } from "@/components/tv/tv-icons";
 
 // ════════════════════════════════════════════════════════════════
 // TV LOGIN — fully D-pad / keyboard driven on-screen keyboard.
@@ -48,8 +49,8 @@ function buildGrid(): string[][] {
 
 const KEY_LABEL: Record<string, string> = {
   SPACE: "Пробел",
-  DEL: "⌫ Стереть",
-  FIELD: "⇄ Поле",
+  DEL: "Стереть",
+  FIELD: "Поле",
   LOGIN: "Войти",
   REGISTER: "Регистрация",
 };
@@ -324,7 +325,7 @@ export function TvLogin() {
             setMode("register");
             nameStep.current = true; // start with name
             setActiveField("email");
-            setInfo("Регистрация: имя → email → пароль (кнопка ⇄ Поле).");
+            setInfo("Регистрация: имя, затем email и пароль. Кнопка «Поле» — перейти к следующему.");
           } else {
             setMode("login");
             nameStep.current = false;
@@ -480,9 +481,14 @@ export function TvLogin() {
             <div key={rIdx} className="flex gap-1">
               {cells.map((cell, cIdx) => {
                 const focused = focus.row === rIdx && focus.col === cIdx;
-                const label =
+                const iconFor =
+                  cell === "SHIFT" ? <IconShift size={18} />
+                  : cell === "DEL" ? <IconBackspace size={18} />
+                  : cell === "FIELD" ? <IconChevronDown size={18} />
+                  : null;
+                const labelText =
                   cell === "SHIFT"
-                    ? shift ? "⇧ ABC" : "⇧ abc"
+                    ? shift ? "ABC" : "abc"
                     : KEY_LABEL[cell] ?? (shift ? cell.toUpperCase() : cell);
                 const shiftActive = cell === "SHIFT" && shift;
                 const wide = isActionRow;
@@ -497,7 +503,7 @@ export function TvLogin() {
                     disabled={busy}
                     onClick={() => { setFocus({ row: rIdx, col: cIdx }); press(cell); }}
                     onFocus={() => setFocus({ row: rIdx, col: cIdx })}
-                    className="rounded-lg font-semibold outline-none transition-transform duration-100"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold outline-none transition-transform duration-100"
                     style={{
                       minWidth: wide ? 150 : 46,
                       height: 44,
@@ -515,7 +521,8 @@ export function TvLogin() {
                           : "0 2px 10px rgba(0,0,0,0.4)",
                     }}
                   >
-                    {label}
+                    {iconFor}
+                    {labelText}
                   </button>
                 );
               })}

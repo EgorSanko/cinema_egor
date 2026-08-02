@@ -6,6 +6,7 @@ import { getHistory, getPosition } from "@/lib/storage";
 import { getTvUser } from "@/lib/tv-auth";
 import { useTvPro } from "@/hooks/use-tv-pro";
 import { getImageUrl } from "@/lib/tmdb";
+import { IconSearch, IconTrophy, IconLogout } from "@/components/tv/tv-icons";
 
 export type TvCard = {
   id: number;
@@ -281,7 +282,7 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       style={{ background: "var(--background)" }}
     >
       {/* Top bar — brand logo + email + focusable controls (Поиск / Выйти) */}
-      <header className="px-10 pt-6 pb-3 flex items-center gap-4">
+      <header className="px-12 pt-8 pb-4 flex items-center gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
@@ -292,13 +293,22 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
         />
         <div className="flex-1" />
         {user && (
-          <span className="text-sm text-muted-foreground truncate max-w-[220px]">
-            {user.email}
-          </span>
+          <div className="mr-2 flex items-center gap-2.5">
+            <span
+              className="grid h-9 w-9 place-items-center rounded-full text-sm font-bold uppercase"
+              style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+            >
+              {(user.email || "?").trim().charAt(0)}
+            </span>
+            <span className="text-sm text-muted-foreground truncate max-w-[200px]">
+              {user.email}
+            </span>
+          </div>
         )}
         {headerCells.map((cell, i) => {
           const focused = inHeader && headerCol === i;
           const label = cell === "search" ? "Поиск" : cell === "sport" ? "Спорт" : "Выйти";
+          const Icon = cell === "search" ? IconSearch : cell === "sport" ? IconTrophy : IconLogout;
           return (
             <button
               key={cell}
@@ -312,7 +322,7 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                 else logout();
               }}
               onFocus={() => { setInHeader(true); setHeaderCol(i); }}
-              className="rounded-lg px-4 py-2 text-base font-semibold outline-none transition-transform duration-100"
+              className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-base font-semibold outline-none transition-transform duration-100"
               style={{
                 background: focused ? "var(--primary)" : "var(--card)",
                 color: focused ? "var(--primary-foreground)" : "var(--foreground)",
@@ -322,6 +332,7 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                   : "0 2px 10px rgba(0,0,0,0.4)",
               }}
             >
+              <Icon size={20} />
               {label}
             </button>
           );
@@ -332,11 +343,11 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       <div className="flex flex-col gap-5 pb-10">
         {rails.map((rail, rIdx) => (
           <section key={rail.title}>
-            <h2 className="px-10 mb-2 text-xl font-bold text-foreground">
+            <h2 className="px-12 mb-2 text-xl font-bold text-foreground">
               {rail.title}
             </h2>
             <div
-              className="flex gap-3 overflow-x-auto px-10 pb-2"
+              className="flex gap-3 overflow-x-auto px-12 pb-2"
               style={{ scrollbarWidth: "none" }}
             >
               {rail.cards.map((card, cIdx) => {

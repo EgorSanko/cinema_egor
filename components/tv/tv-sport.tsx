@@ -6,6 +6,7 @@ import Hls from "hls.js";
 import { getTvUser } from "@/lib/tv-auth";
 import { useTvPro } from "@/hooks/use-tv-pro";
 import { fetchChannels, type SportChannel } from "@/lib/kinopub";
+import { IconChevronLeft, IconChevronRight, IconChevronUp, IconChevronDown, IconOk, Hint } from "@/components/tv/tv-icons";
 
 // ════════════════════════════════════════════════════════════════
 // TV «Спорт» — прямой эфир спортивных каналов, ТОЛЬКО для Про.
@@ -180,12 +181,15 @@ export function TvSport() {
               <div className="rounded-full bg-black/60 px-6 py-3 text-lg font-semibold text-white/90">Пауза · OK — продолжить</div>
             </div>
           )}
-          <p className="pointer-events-none absolute bottom-[4vh] right-[4vw] text-sm text-white/45">OK — пауза · ↩ назад к каналам</p>
+          <div className="pointer-events-none absolute bottom-[4vh] right-[4vw] flex items-center gap-4 text-sm text-white/50">
+            <Hint icon={<IconOk size={15} />}>пауза</Hint>
+            <span>Назад — к каналам</span>
+          </div>
         </div>
       )}
 
       {/* ── Сетка каналов ── */}
-      <header className="px-10 pt-6 pb-4 flex items-center gap-4">
+      <header className="px-12 pt-8 pb-4 flex items-center gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="SAPKEFLY KINO" draggable={false} className="h-10 w-auto"
           style={{ filter: "drop-shadow(0 0 18px rgba(163,230,53,0.45))" }} />
@@ -193,7 +197,11 @@ export function TvSport() {
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" /> Спорт — прямой эфир
           </h1>
-          <p className="text-sm text-muted-foreground">Живые спортивные каналы · ◀▶▲▼ выбор · OK — включить · ↩ назад</p>
+          <div className="mt-0.5 flex items-center gap-x-4 gap-y-1 flex-wrap text-sm text-muted-foreground">
+            <span>Живые спортивные каналы</span>
+            <Hint icon={<><IconChevronLeft size={15} /><IconChevronRight size={15} /><IconChevronUp size={15} /><IconChevronDown size={15} /></>}>выбор</Hint>
+            <Hint icon={<IconOk size={15} />}>включить</Hint>
+          </div>
         </div>
       </header>
 

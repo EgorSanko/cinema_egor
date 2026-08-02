@@ -18,6 +18,11 @@ import {
 import { getTvUser } from "@/lib/tv-auth";
 import { useTvPro } from "@/hooks/use-tv-pro";
 import { PreRollAd, type AdClip } from "@/components/pre-roll-ad";
+import {
+  IconPlay, IconPause, IconRewind10, IconForward10, IconSettings, IconClose,
+  IconChevronLeft, IconChevronRight, IconChevronUp, IconChevronDown, IconOk,
+  IconCheck, Hint, HintRow,
+} from "@/components/tv/tv-icons";
 
 // Пре-ролл для FREE-тарифа на ТВ — та же последовательность, что на сайте
 // (movie/tv-player): пропускаемый бампер + непропускаемый ролик. Про — без рекламы.
@@ -674,7 +679,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     const v = videoRef.current;
     if (!v) return;
     v.currentTime = Math.max(0, Math.min((v.duration || 1e9), v.currentTime + delta));
-    flash(delta > 0 ? "⏩ +10с" : "⏪ −10с");
+    flash(delta > 0 ? "+10 секунд" : "−10 секунд");
   }, [flash]);
 
   // Scrubber seek — ±delta along the timeline, updating progress state live so
@@ -1070,7 +1075,11 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
               )}
             </div>
           </div>
-          <div className="px-12 pb-5 text-sm text-muted-foreground/60">◀▶ колонка · ▲▼ выбор · OK выбрать/смотреть · ↩ назад</div>
+          <HintRow className="px-12 pb-5 justify-start">
+            <Hint icon={<><IconChevronLeft size={16} /><IconChevronRight size={16} /></>}>колонка</Hint>
+            <Hint icon={<><IconChevronUp size={16} /><IconChevronDown size={16} /></>}>выбор</Hint>
+            <Hint icon={<IconOk size={16} />}>выбрать / смотреть</Hint>
+          </HintRow>
         </div>
       )}
 
@@ -1119,7 +1128,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
               );
             })}
           </div>
-          <p className="mt-2 text-sm text-muted-foreground/60">◀▶ выбор · OK · ↩ назад</p>
+          <HintRow className="mt-3">
+            <Hint icon={<><IconChevronLeft size={16} /><IconChevronRight size={16} /></>}>выбор</Hint>
+            <Hint icon={<IconOk size={16} />}>ОК</Hint>
+          </HintRow>
         </div>
       )}
 
@@ -1211,13 +1223,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                 );
               })()}
               <div className="flex items-center justify-center gap-3">
-                {/* Order MUST match the key handler: 0 ⏪ 1 ⏯ 2 ⏩ 3 ⚙ 4 ✕ */}
+                {/* Order MUST match the key handler: 0 rewind 1 play/pause 2 forward 3 settings 4 exit */}
                 {[
-                  { ic: "⏪", label: "−10с" },
-                  { ic: playing ? "⏸" : "▶", label: "Пауза" },
-                  { ic: "⏩", label: "+10с" },
-                  { ic: "⚙", label: "Настройки" },
-                  { ic: "✕", label: "Выход" },
+                  { ic: <IconRewind10 size={28} />, label: "Назад 10 секунд" },
+                  { ic: playing ? <IconPause size={34} /> : <IconPlay size={34} />, label: playing ? "Пауза" : "Смотреть" },
+                  { ic: <IconForward10 size={28} />, label: "Вперёд 10 секунд" },
+                  { ic: <IconSettings size={28} />, label: "Настройки" },
+                  { ic: <IconClose size={28} />, label: "Выход" },
                 ].map((b, i) => {
                   const f = ctrlZone === "buttons" && ctrlIdx === i;
                   return (
@@ -1232,8 +1244,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                         else if (i === 3) { clearHideTimer(); setSettingsTab(0); setSettingsIdx(0); setOverlay("settings"); }
                         else { exit(); }
                       }}
-                      className="rounded-xl font-bold"
-                      style={{ ...ringStyle(f, i === 1), padding: i === 1 ? "14px 26px" : "12px 18px", fontSize: i === 1 ? 22 : 16 }}
+                      className="inline-flex items-center justify-center rounded-full"
+                      style={{ ...ringStyle(f, i === 1), width: i === 1 ? 68 : 54, height: i === 1 ? 68 : 54 }}
                       aria-label={b.label}
                     >
                       {b.ic}
@@ -1241,11 +1253,22 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                   );
                 })}
               </div>
-              <p className="mt-4 text-center text-xs text-muted-foreground/50">
-                {ctrlZone === "bar"
-                  ? "◀▶ перемотка · ▼ кнопки · OK пауза · ↩ скрыть"
-                  : "◀▶ выбор · OK активировать · ▲ таймлайн · ▼ скрыть · ↩ выход"}
-              </p>
+              <HintRow className="mt-5">
+                {ctrlZone === "bar" ? (
+                  <>
+                    <Hint icon={<><IconChevronLeft size={16} /><IconChevronRight size={16} /></>}>перемотка</Hint>
+                    <Hint icon={<IconChevronDown size={16} />}>кнопки</Hint>
+                    <Hint icon={<IconOk size={16} />}>пауза</Hint>
+                  </>
+                ) : (
+                  <>
+                    <Hint icon={<><IconChevronLeft size={16} /><IconChevronRight size={16} /></>}>выбор</Hint>
+                    <Hint icon={<IconOk size={16} />}>активировать</Hint>
+                    <Hint icon={<IconChevronUp size={16} />}>таймлайн</Hint>
+                    <Hint icon={<IconChevronDown size={16} />}>скрыть</Hint>
+                  </>
+                )}
+              </HintRow>
             </div>
           )}
 
@@ -1316,7 +1339,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                             style={ringStyle(f)}>
                             <span className="text-lg font-bold tabular-nums" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>{ep.episode_number}</span>
                             <span className="truncate text-base font-medium">{ep.name || `Серия ${ep.episode_number}`}</span>
-                            {cur && <span className="ml-auto text-xs" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>▶</span>}
+                            {cur && <IconCheck size={18} className="ml-auto" style={{ color: f ? "#0a0a0a" : "var(--primary)" }} />}
                           </button>
                         );
                       })}
@@ -1340,7 +1363,11 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                     </div>
                   )}
                 </div>
-                <p className="mt-4 text-center text-xs text-muted-foreground/50">◀▶ вкладка · ▲▼ выбор · OK применить · ↩ назад</p>
+                <HintRow className="mt-4">
+                  <Hint icon={<><IconChevronLeft size={16} /><IconChevronRight size={16} /></>}>вкладка</Hint>
+                  <Hint icon={<><IconChevronUp size={16} /><IconChevronDown size={16} /></>}>выбор</Hint>
+                  <Hint icon={<IconOk size={16} />}>применить</Hint>
+                </HintRow>
               </div>
             </div>
           )}
