@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { syncFromServer } from "@/lib/storage";
+import { syncFromServer, loadFromServer, clearLocalProfile, getDataOwner } from "@/lib/storage";
 import { getTvUser, type TvUser } from "@/lib/tv-auth";
 import { LogoSplash } from "./logo-splash";
 import { StyledQR } from "@/components/styled-qr";
@@ -168,9 +168,19 @@ export function TvLogin() {
 
   // Store the user EXACTLY like auth-context.completeAuth, then pull history.
   async function completeAuth(u: TvUser) {
+    // Изоляция аккаунтов (как на сайте, auth-context): если в WebView лежат данные
+    // ДРУГОГО аккаунта — стереть и загрузить ТОЛЬКО серверные нового. Иначе история/
+    // позиции прошлого юзера мержились под новую почту (тот же баг, что на сайте).
+    let prevUser: string | null = null;
+    try { prevUser = JSON.parse(localStorage.getItem("user") || "null")?.email || null; } catch {}
+    const owner = getDataOwner();
+    const foreign = (!!owner && owner !== u.email) || (!!prevUser && prevUser !== u.email);
     localStorage.setItem("user", JSON.stringify(u));
     setInfo("Загружаем вашу историю…");
-    try { await syncFromServer(u.email); } catch {}
+    try {
+      if (foreign) { clearLocalProfile(); await loadFromServer(u.email); }
+      else { await syncFromServer(u.email); }
+    } catch {}
     router.push("/tv-home");
   }
 
