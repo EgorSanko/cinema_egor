@@ -4,6 +4,7 @@
 	"private": true,
 	"scripts": {
 		"build": "next build --webpack",
+		"postbuild": "node scripts/stamp-sw.mjs",
 		"dev": "next dev",
 		"lint": "eslint .",
 		"start": "next start"

@@ -40,6 +40,22 @@ export function ReloadOnStale() {
     };
     navigator.serviceWorker?.addEventListener?.("message", onSwMessage);
 
+    // Периодически (и при возврате на вкладку) проверяем обновление sw.js. Новый
+    // деплой штампует sw.js свежим CACHE_NAME → он переактивируется и шлёт
+    // SW_RELOAD → эта вкладка сама перезагрузится на свежий код. Без этого открытая
+    // SPA-вкладка крутила бы старый JS до ручного рефреша (корень «на устройстве
+    // старая версия»: озвучка сбрасывается, не грузит, старый path-B и т.п.).
+    const checkSW = () => {
+      try {
+        navigator.serviceWorker?.getRegistration?.()
+          .then((r) => { try { r && r.update(); } catch {} })
+          .catch(() => {});
+      } catch {}
+    };
+    const swTimer = setInterval(checkSW, 120000);
+    const onVis = () => { if (document.visibilityState === "visible") checkSW(); };
+    document.addEventListener("visibilitychange", onVis);
+
     // Catch ChunkLoadError from Webpack/Turbopack/Next.js — covers a wider
     // set of patterns now: dynamic import 404, RSC payload mismatch, "Minified
     // React error #423" (hydration recovery fail), and any direct 404 on
@@ -85,6 +101,8 @@ export function ReloadOnStale() {
 
     return () => {
       clearTimeout(clearGuard);
+      clearInterval(swTimer);
+      document.removeEventListener("visibilitychange", onVis);
       navigator.serviceWorker?.removeEventListener?.("message", onSwMessage);
       window.removeEventListener("error", onErr);
       window.removeEventListener("unhandledrejection", onUnhandled);
