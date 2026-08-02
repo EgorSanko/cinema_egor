@@ -137,7 +137,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
     let idx = 0;
     const want = allohaTrNameRef.current;
     if (want) {
-      const f = a.translations.findIndex((t) => t.name === want);
+      const norm = (s: string) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+      // Хвостовая «(релиз-группа)» у Alloha меняется между сериями (E1 «Dub (Selena)»,
+      // E2 «Dub (X)») → exact-match падал и озвучка сбрасывалась. Матчим tiered:
+      // точно → без регистра/пробелов → по базовому имени (без хвостовых скобок).
+      const base = (s: string) => norm(s).replace(/\s*\([^)]*\)\s*$/, "").trim();
+      let f = a.translations.findIndex((t) => t.name === want);
+      if (f < 0) f = a.translations.findIndex((t) => norm(t.name) === norm(want));
+      if (f < 0) f = a.translations.findIndex((t) => base(t.name) === base(want));
       if (f >= 0) idx = f;
     }
     let pick = pickAllohaStream(a, idx, defQ);
