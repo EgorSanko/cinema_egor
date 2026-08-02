@@ -7,7 +7,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
   Home, Tv, Layers, Users, LayoutGrid,
-  Bookmark, ChevronDown, Heart, Clock, Send, Radio, Crown, Tv2,
+  Bookmark, ChevronDown, Heart, Clock, Send, Crown, Tv2,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -64,8 +64,7 @@ export function Navbar() {
     // Тариф определяем по isPro, НЕ по источнику: free теперь на alloha (не
     // zenithjs), поэтому source больше не отличает free от Pro.
     let links = !isPro ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
-    // Спорт скрыт по просьбе (2026-07). Код оставлен на случай возврата.
-    // if (isPro) links = [...links, { label: "Спорт", href: "/sport", Icon: Radio }];
+    // Спорт удалён (2026-08): каналы шли с kino.pub, подписка на источник уходит.
     // Вкладка «Про»: у free — апселл подписки; у Pro — управление подпиской. Всегда.
     links = [...links, { label: "Про", href: "/pro", Icon: Crown }];
     return links;

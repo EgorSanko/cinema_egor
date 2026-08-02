@@ -331,28 +331,6 @@ export async function resolveKinopub(a: ResolveArgs): Promise<KinopubStream | nu
   }
 }
 
-export interface SportChannel {
-  id: number;
-  name: string;
-  title: string;
-  logo: string;
-  stream: string; // живой HLS (токен эфира выдаётся при каждом запросе)
-}
-
-/** Список живых спорт-каналов (kino.pub /v1/tv). Стрим-токены свежие на момент
- *  запроса — вызывать при открытии страницы /sport. */
-export async function fetchChannels(): Promise<SportChannel[]> {
-  try {
-    const r = await fetchRetry(`${KINOPUB_WORKER}/channels`);
-    if (!r) return [];
-    const d = await r.json();
-    if (!d || !d.ok || !Array.isArray(d.channels)) return [];
-    // Поток канала = HLS на mycdn.video (токен в URL, CORS открыт). Браузер юзера
-    // (резидентный IP) тянет mycdn НАПРЯМУЮ. Прокси /api/kp-cdn убрали: наши VPS
-    // (дата-центр) mycdn НЕ достают (connection blocked → 502), а residential —
-    // достаёт. Если у кого-то ISP режет mycdn — увы, проксировать нам нечем.
-    return d.channels as SportChannel[];
-  } catch {
-    return [];
-  }
-}
+// Спорт-каналы (fetchChannels/SportChannel) удалены 2026-08: источник kino.pub
+// уходит вместе с подпиской. KINOPUB_WORKER/fetchRetry оставлены — их использует
+// ad-free воспроизведение фильмов через kino.pub.

@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { invalidateSubscription } from "@/hooks/use-subscription";
 import {
-  Crown, Check, X, Zap, Download, Users, Radio, Sparkles,
+  Crown, Check, X, Zap, Download, Users, Sparkles,
   AudioLines, Ban, ShieldCheck, ChevronDown, Gauge, Clapperboard, Loader2,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-context";
@@ -14,8 +14,8 @@ import { PLANS as PLAN_DATA } from "@/lib/plans";
 
 /**
  * Страница подписки «Про» (/pro). Источники НЕ называем — только пользовательская
- * ценность (без рекламы, макс. качество, все озвучки, скачивание, «Вместе»,
- * спорт). Тарифы по срокам с выгодой — как у kino.pub. Оплата пока не подключена
+ * ценность (без рекламы, макс. качество, все озвучки, скачивание, «Вместе»).
+ * Тарифы по срокам с выгодой. Оплата пока не подключена
  * («пока оформить»): кнопка показывает статус «скоро», реальный чекаут добавим,
  * когда выберем платёжный агрегатор.
  */
@@ -30,7 +30,6 @@ const FEATURES: { Icon: any; title: string; desc: string }[] = [
   { Icon: Clapperboard, title: "Наш плеер", desc: "Продолжить с любого места, история просмотра, авто-скип заставок и титров." },
   { Icon: Download, title: "Скачивание", desc: "Сохраняй фильмы и серии на телефон и смотри офлайн — в дороге и без сети." },
   { Icon: Users, title: "Совместный просмотр", desc: "«Вместе» — синхронный просмотр с друзьями в одной комнате и общий чат." },
-  { Icon: Radio, title: "Спортивные каналы", desc: "Прямые эфиры в HD и 4K — матчи и турниры без задержек." },
   { Icon: Sparkles, title: "Ранний доступ", desc: "Новые функции раньше всех и приоритетная поддержка в любой момент." },
 ];
 
@@ -42,7 +41,6 @@ const COMPARE: { label: string; free: boolean | string; pro: boolean | string }[
   { label: "Наш плеер: история, продолжить, скип", free: false, pro: true },
   { label: "Скачивание на устройство", free: false, pro: true },
   { label: "Совместный просмотр «Вместе»", free: false, pro: true },
-  { label: "Спортивные каналы в эфире", free: false, pro: true },
   { label: "Приоритетная поддержка", free: false, pro: true },
 ];
 
@@ -159,8 +157,8 @@ export default function ProPage() {
             <span className="bg-gradient-to-r from-primary to-lime-200 bg-clip-text text-transparent">и без ограничений</span>
           </h1>
           <p className="mt-4 text-foreground/60 text-[15px] sm:text-lg max-w-2xl mx-auto leading-relaxed">
-            Максимальное качество, все озвучки, скачивание, совместный просмотр и спортивные
-            каналы — в одной подписке на месяц. Без автосписаний.
+            Максимальное качество, все озвучки, скачивание и совместный просмотр —
+            в одной подписке на месяц. Без автосписаний.
           </p>
           {isPro && until && (
             <div className="mt-6 inline-flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-primary/12 ring-1 ring-primary/30 text-primary font-bold text-[15px]">

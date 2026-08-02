@@ -4,9 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getHistory, getPosition } from "@/lib/storage";
 import { getTvUser } from "@/lib/tv-auth";
-import { useTvPro } from "@/hooks/use-tv-pro";
 import { getImageUrl } from "@/lib/tmdb";
-import { IconSearch, IconTrophy, IconLogout } from "@/components/tv/tv-icons";
+import { IconSearch, IconLogout } from "@/components/tv/tv-icons";
 
 export type TvCard = {
   id: number;
@@ -26,7 +25,7 @@ const CARD_W = 158; // px
 
 // Header controls, navigated left/right when the header row is focused.
 // "sport" появляется только у Про (прямой эфир — платная фича).
-type HeaderCell = "search" | "sport" | "logout";
+type HeaderCell = "search" | "logout";
 
 /**
  * TV "10-foot UI" home. Fully D-pad / keyboard driven.
@@ -50,7 +49,6 @@ type HeaderCell = "search" | "sport" | "logout";
  */
 export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
   const router = useRouter();
-  const { isPro } = useTvPro();
 
   // ── Auth gate ──
   const [user, setUser] = useState<ReturnType<typeof getTvUser>>(null);
@@ -124,11 +122,8 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
   // inHeader=true => header row owns the D-pad; headerCol indexes HeaderCell.
   const [inHeader, setInHeader] = useState(false);
   const [headerCol, setHeaderCol] = useState(0);
-  // «Спорт» — только у Про. Порядок: [Поиск] ([Спорт]) [Выйти].
-  const headerCells = useMemo<HeaderCell[]>(
-    () => (isPro ? ["search", "sport", "logout"] : ["search", "logout"]),
-    [isPro]
-  );
+  // Порядок: [Поиск] [Выйти]. (Спорт убран — источник каналов kino.pub уходит.)
+  const headerCells = useMemo<HeaderCell[]>(() => ["search", "logout"], []);
   const [focus, setFocus] = useState({ rail: 0, index: 0 });
 
   const cardRefs = useRef<(HTMLButtonElement | null)[][]>([]);
@@ -213,7 +208,6 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
         } else if (isEnter) {
           const cell = headerCells[headerCol];
           if (cell === "search") router.push("/tv-search");
-          else if (cell === "sport") router.push("/tv-sport");
           else if (cell === "logout") logout();
         }
         // isUp: no-op (already at top)
@@ -307,8 +301,8 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
         )}
         {headerCells.map((cell, i) => {
           const focused = inHeader && headerCol === i;
-          const label = cell === "search" ? "Поиск" : cell === "sport" ? "Спорт" : "Выйти";
-          const Icon = cell === "search" ? IconSearch : cell === "sport" ? IconTrophy : IconLogout;
+          const label = cell === "search" ? "Поиск" : "Выйти";
+          const Icon = cell === "search" ? IconSearch : IconLogout;
           return (
             <button
               key={cell}
@@ -318,7 +312,6 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                 setInHeader(true);
                 setHeaderCol(i);
                 if (cell === "search") router.push("/tv-search");
-                else if (cell === "sport") router.push("/tv-sport");
                 else logout();
               }}
               onFocus={() => { setInHeader(true); setHeaderCol(i); }}
