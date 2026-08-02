@@ -249,7 +249,25 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         try {
           const a = await resolveAllohaHls(media.id, media.type, s, e);
           if (a && a.translations.length) {
-            const trIdx = typeof trId === "number" && trId >= 0 && trId < a.translations.length ? trId : 0;
+            // Держим озвучку между сериями ПО ИМЕНИ; индекс — лишь запасной
+            // вариант. Alloha может отдавать озвучки в РАЗНОМ порядке для разных
+            // серий — тогда матч по одному индексу «сползает» на чужую дорожку
+            // (тот самый «сброс озвучки при смене серии»). Индекс сохраняем для
+            // дублей-имён (напр. The Office — две дорожки с одинаковым названием).
+            let trIdx = typeof trId === "number" && trId >= 0 && trId < a.translations.length ? trId : 0;
+            const want = getLastTranslator(media.id, media.type)?.name || null;
+            if (want) {
+              const norm = (x: string) => (x || "").toLowerCase().replace(/\s+/g, " ").trim();
+              const base = (x: string) => norm(x).replace(/\s*\([^)]*\)\s*$/, "").trim();
+              const nm = (t: { name: string }) =>
+                t.name === want || norm(t.name) === norm(want) || base(t.name) === base(want);
+              const matches: number[] = [];
+              a.translations.forEach((t, i) => { if (nm(t)) matches.push(i); });
+              if (matches.length) trIdx = matches.includes(trIdx) ? trIdx : matches[0];
+            }
+            // Синхронизируем сохранённое имя с реально выбранным индексом, чтобы
+            // следующая серия матчилась от актуальной дорожки.
+            saveLastTranslator(media.id, media.type, trIdx, a.translations[trIdx].name);
             const q = a.translations[trIdx].quality || {};
             const sq = ALLOHA_Q_ORDER.find((k) => q[k]) || Object.keys(q)[0];
             return {
@@ -336,7 +354,14 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     setQuality(sq || d.quality || "");
     if (d.translators?.length) {
       setTranslators(d.translators);
-      setTranslatorId((prev) => prev ?? requestedTr ?? d.active_translator_id ?? d.translators![0].id);
+      // Alloha: active_translator_id уже вычислен матчем по имени — доверяем ему
+      // (иначе устаревший prev-индекс держал бы неверную подсветку при смене
+      // порядка озвучек между сериями). Прочие источники — прежняя логика.
+      setTranslatorId((prev) =>
+        d.alloha
+          ? (d.active_translator_id ?? requestedTr ?? prev ?? d.translators![0].id)
+          : (prev ?? requestedTr ?? d.active_translator_id ?? d.translators![0].id)
+      );
     }
   };
 
