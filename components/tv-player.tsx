@@ -163,6 +163,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
     if (!pick) return false;
     allohaTrNameRef.current = a.translations[idx]?.name || null;
     allohaTrIdxRef.current = idx;
+    // Персистим выбранную озвучку на КАЖДОМ проигрывании (не только при ручном
+    // переключении) — иначе после закрытия/переоткрытия сайта ключ мог оказаться
+    // пуст, и новая серия из «Продолжить» стартовала в озвучке №1
+    // (репорт: «смотрел в озвучке 2 → новая серия снова в 1»).
+    try { if (allohaTrNameRef.current) localStorage.setItem(`kino_alloha_tr_${show.id}`, allohaTrNameRef.current); } catch {}
     setAllohaHls(a); setAllohaTr(idx); setAllohaQ(pick.quality);
     setStreamData({ stream: pick.url, alloha: true });
     return true;
@@ -307,7 +312,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
     if (lastTr) setSelectedTranslator(lastTr.id);
     // Восстанавливаем выбранную озвучку Alloha (по имени) — чтобы после
     // перезагрузки/захода серия открылась в той же озвучке, что смотрели.
-    try { allohaTrNameRef.current = localStorage.getItem(`kino_alloha_tr_${show.id}`) || null; } catch {}
+    try { allohaTrNameRef.current = localStorage.getItem(`kino_alloha_tr_${show.id}`) || getLastTranslator(show.id, "tv")?.name || null; } catch {}
 
     // Query params override saved last-episode (e.g. from "Continue Watching" card)
     const params = new URLSearchParams(window.location.search);

@@ -227,6 +227,8 @@ function buildSpeedSetting(art: Artplayer) {
     selector,
     onSelect: function (item: any) {
       art.playbackRate = item.value;
+      // Запоминаем скорость между сессиями/сериями (репорт: «скорость сбрасывается»).
+      try { localStorage.setItem("kino_speed", String(item.value)); } catch {}
       return item.html;
     },
   };
@@ -448,6 +450,18 @@ export function ArtPlayerView(props: ArtPlayerProps) {
     // until loadedmetadata so the seek sticks.
     art.on("ready", () => {
       onVideoReady?.(art.video);
+      // Восстанавливаем сохранённую скорость воспроизведения — иначе на свежем
+      // открытии (в т.ч. новая серия из «Продолжить») она всегда стартовала 1×.
+      // Переприменяем и после метаданных: загрузка source сбрасывает playbackRate.
+      try {
+        const savedRate = parseFloat(localStorage.getItem("kino_speed") || "1");
+        if (savedRate && savedRate !== 1) {
+          const applyRate = () => { try { if (art.video) art.video.playbackRate = savedRate; } catch {} };
+          applyRate();
+          art.video?.addEventListener("loadedmetadata", applyRate, { once: true });
+          art.video?.addEventListener("canplay", applyRate, { once: true });
+        }
+      } catch {}
       // kino.pub menus (manifest may already be parsed by now; if not, the hls
       // listeners rebuild when it is).
       if (kinopubModeRef.current) buildKinopubMenus();
