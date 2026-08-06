@@ -173,26 +173,53 @@ export default function ProPage() {
           <p className="mt-3 text-foreground/40 text-[12.5px]">{PLANS[0].price} ₽ в месяц · без длинных обязательств</p>
         </section>
 
-        {/* ── Features grid ────────────────────────────────────── */}
-        <section className="relative max-w-6xl mx-auto px-4 sm:px-6 mt-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {FEATURES.map(({ Icon, title, desc }) => (
-              <div key={title} className="relative rounded-2xl p-5 bg-foreground/[0.03] ring-1 ring-white/[0.06] hover:ring-primary/25 transition-colors overflow-hidden group">
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ boxShadow: "inset 0 0 40px rgba(163,230,53,0.08)" }} />
-                <div className="relative w-11 h-11 rounded-xl bg-primary/12 ring-1 ring-primary/25 flex items-center justify-center text-primary mb-3.5" style={{ boxShadow: "0 0 18px rgba(163,230,53,0.16)" }}>
-                  <Icon size={20} />
+        {/* ── Что входит ───────────────────────────────────────────
+            Было: семь ОДИНАКОВЫХ карточек в сетке, у каждой иконка в
+            скруглённой плитке НАД заголовком — два самых узнаваемых штампа
+            сгенерированной вёрстки сразу (identical card grids + icon tile
+            stacked above heading). Когда все блоки выглядят одинаково, не
+            выделяется ничего.
+            Стало: ритм с иерархией — главная ценность подана крупно и без
+            карточки, остальное идёт списком в две колонки с волосяными
+            разделителями. Иконки переехали В СТРОКУ к заголовку: плиток нет,
+            «карточной» рамки нет, информация вся сохранена.
+            Боковую цветную полосу намеренно НЕ используем — по каталогу это
+            вообще самый частый признак ИИ-макета. */}
+        <section className="relative max-w-5xl mx-auto px-4 sm:px-6 mt-10 sm:mt-14">
+          {(() => {
+            const [lead, ...rest] = FEATURES;
+            return (
+              <>
+                <div className="max-w-2xl">
+                  <h2 className="flex items-center gap-3 text-2xl sm:text-[28px] font-bold text-foreground">
+                    <lead.Icon size={26} className="shrink-0 text-primary" />
+                    {lead.title}
+                  </h2>
+                  <p className="mt-2.5 text-[15px] sm:text-base text-foreground/75 leading-relaxed">
+                    {lead.desc}
+                  </p>
                 </div>
-                <h2 className="relative text-[15px] font-bold text-foreground">{title}</h2>
-                <p className="relative text-foreground/75 text-[13px] mt-1 leading-relaxed">{desc}</p>
-              </div>
-            ))}
-          </div>
+
+                <div className="mt-9 grid gap-x-12 sm:grid-cols-2">
+                  {rest.map(({ Icon, title, desc }) => (
+                    <div key={title} className="flex gap-3.5 py-4 border-t border-white/[0.07]">
+                      <Icon size={19} className="mt-0.5 shrink-0 text-primary/85" />
+                      <div>
+                        <h2 className="text-[15px] font-semibold text-foreground">{title}</h2>
+                        <p className="mt-1 text-[13px] text-foreground/70 leading-relaxed">{desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </section>
 
         {/* ── Plans ────────────────────────────────────────────── */}
         <section id="plans" className="relative max-w-5xl mx-auto px-4 sm:px-6 mt-14 sm:mt-20 scroll-mt-20">
           <h2 className="text-2xl sm:text-3xl font-black text-foreground text-center">Подписка Про</h2>
-          <p className="text-foreground/55 text-center text-[14px] mt-2">Всё Про за {plan.price} ₽ в месяц. Продлеваешь когда захочешь — без длинных обязательств.</p>
+          <p className="text-foreground/75 text-center text-[14px] mt-2">Всё Про за {plan.price} ₽ в месяц. Продлеваешь когда захочешь — без длинных обязательств.</p>
 
           {/* Единый тариф — 1 месяц */}
           <div className="mt-8 mx-auto max-w-sm rounded-2xl p-6 border-2 border-primary bg-primary/[0.08] text-center"
@@ -202,7 +229,7 @@ export default function ProPage() {
               <span className="text-5xl font-black text-foreground tabular-nums">{plan.price}</span>
               <span className="text-foreground/60 text-lg font-semibold">₽ / мес</span>
             </div>
-            <div className="text-foreground/45 text-[12px] mt-2">Все возможности Про · картой или через СБП</div>
+            <div className="text-foreground/70 text-[12.5px] mt-2">Все возможности Про · картой или через СБП</div>
           </div>
 
           {/* CTA */}
