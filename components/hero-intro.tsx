@@ -9,7 +9,10 @@ import { HeroSection } from "@/components/hero-section";
 // then fades and is replaced by the swipeable hero cards. Plays every visit;
 // tap/Esc skips.
 
-const HOLD_MS = 5000; // hold the frozen logo for 5s after the video ends
+// Пауза на застывшем логотипе после ролика. Было 5с при 7-секундном видео;
+// новый ролик короткий (3с), и держать логотип дольше самого ролика выглядело
+// затянуто — 2с достаточно, весь интро укладывается в ~5с.
+const HOLD_MS = 2000;
 const FADE_MS = 750; // crossfade-out duration
 const HARD_CAP_MS = 20000; // safety: never get stuck if onEnded never fires
 
@@ -65,7 +68,7 @@ export function HeroIntro({ movies }: { movies: HeroMovies }) {
         onClick={finish}
         className="relative w-full cursor-pointer overflow-hidden rounded-2xl bg-black ring-1 ring-white/[0.06]"
         style={{
-          aspectRatio: "1280 / 660",
+          aspectRatio: "1280 / 720",
           opacity: fading ? 0 : 1,
           transition: `opacity ${FADE_MS}ms ease-out`,
         }}
@@ -78,11 +81,13 @@ export function HeroIntro({ movies }: { movies: HeroMovies }) {
           muted
           playsInline
           preload="auto"
-          poster="/intro-logo-poster.jpg"
+          poster="/intro-logo-v2.jpg"
           onEnded={onEnded}
           onError={finish}
         >
-          <source src="/intro-logo.mp4" type="video/mp4" />
+          {/* v2: новое имя файла — чтобы у вернувшихся юзеров не подтянулся
+              старый ролик из кэша браузера. */}
+          <source src="/intro-logo-v2.mp4" type="video/mp4" />
         </video>
         <span className="pointer-events-none absolute bottom-3 right-4 text-xs text-white/40 select-none">
           нажмите, чтобы пропустить
