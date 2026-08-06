@@ -220,29 +220,26 @@ export function Navbar() {
       >
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 gap-3">
-            {/* Logo + тариф-бейдж: Про / Free по isPro (free = не Pro, независимо
-                от источника; во время загрузки подписки бейдж не мигаем). */}
-            <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Логотип САМ показывает тариф: у free — шильдик FREE, у Pro — корона
+                и золотой бейдж PRO (отдельные текстовые пилюли убраны, выглядели
+                хуже). Пока подписка грузится — нейтральный логотип, чтобы не
+                мигать FREE→PRO. У Pro-версии корона и бейдж съедают высоту, из-за
+                чего при равной высоте картинки надпись выходила мельче — поэтому
+                ей задана своя высота, так оба варианта смотрятся одинаково. */}
+            <div className="flex items-center flex-shrink-0">
               <Link href="/" className="group flex items-center">
                 <img
-                  src="/logo.png"
-                  alt="sapkefly kino"
+                  src={subLoading ? "/logo.png" : isPro ? "/logo-pro.png" : "/logo-free.png"}
+                  alt={!subLoading && isPro ? "sapkefly kino pro" : "sapkefly kino"}
                   width={170}
                   height={44}
                   decoding="async"
                   fetchPriority="high"
-                  className="h-11 w-auto transition-all duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)]"
+                  className={`w-auto transition-all duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)] ${
+                    !subLoading && isPro ? "h-[58px]" : "h-11"
+                  }`}
                 />
               </Link>
-              {isPro ? (
-                <span className="inline-flex items-center gap-1 h-6 px-2.5 rounded-full bg-gradient-to-r from-amber-400/20 to-primary/20 ring-1 ring-primary/40 text-primary text-[11px] font-bold uppercase tracking-wider leading-none">
-                  <Crown size={12} /> Про
-                </span>
-              ) : subLoading ? null : (
-                <span className="inline-flex items-center h-6 px-2.5 rounded-full bg-primary/15 ring-1 ring-primary/30 text-primary text-[11px] font-bold uppercase tracking-wider leading-none">
-                  Free
-                </span>
-              )}
             </div>
 
             {/* Nav pill (desktop). min-w-0 + overflow-x-auto: когда пунктов много
