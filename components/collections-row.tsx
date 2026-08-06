@@ -39,7 +39,7 @@ export async function CollectionsRow() {
                     alt=""
                     fill
                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 250px"
-                    className="object-cover opacity-50 transition-all duration-500 group-hover:opacity-70 group-hover:scale-105"
+                    className="object-cover opacity-50 transition-opacity duration-500 group-hover:opacity-80"
                   />
                 )}
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-background/85 via-background/40 to-transparent" />

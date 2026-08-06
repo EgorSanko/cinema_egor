@@ -96,10 +96,10 @@ export default function StatusBucketPage({ params }: { params: Promise<{ bucket:
                         <div className="absolute inset-0 flex items-center justify-center text-foreground/30"><Film size={28} /></div>
                       )}
                       {it.vote_average && it.vote_average > 0 && (
-                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/70 text-amber-300 text-[10px] font-bold">★ {it.vote_average.toFixed(1)}</span>
+                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/70 text-amber-300 text-[12px] font-bold">★ {it.vote_average.toFixed(1)}</span>
                       )}
                       {it.type === "tv" && (
-                        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-white/85 text-[9px] font-bold uppercase tracking-wider">TV</span>
+                        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-white/85 text-[11px] font-bold uppercase tracking-wider">TV</span>
                       )}
                     </div>
                     <p className="mt-2 text-foreground/85 text-[12.5px] font-semibold line-clamp-1 group-hover:text-primary">{it.title}</p>

@@ -209,10 +209,10 @@ export function SubtitlesMenu({ tmdbId, season, episode, videoRef }: SubtitlesMe
               <span className="flex-1 text-left min-w-0">
                 <span className="block truncate">
                   {LANG_NAMES_RU[s.language] || s.display}
-                  {s.hi && <span className="ml-1.5 text-[10px] text-foreground/45 align-middle">HI</span>}
+                  {s.hi && <span className="ml-1.5 text-[12px] text-foreground/45 align-middle">HI</span>}
                 </span>
                 {s.release && (
-                  <span className="block text-[10px] text-foreground/40 truncate">{s.release}</span>
+                  <span className="block text-[12px] text-foreground/40 truncate">{s.release}</span>
                 )}
               </span>
               {selectedId === s.id && <Check size={14} className="text-primary flex-shrink-0" />}
@@ -238,7 +238,7 @@ export function SubtitlesMenu({ tmdbId, season, episode, videoRef }: SubtitlesMe
       >
         <Subtitles size={16} className="flex-shrink-0 text-foreground/55" />
         <span className="flex-1 text-left min-w-0">
-          <span className="block text-[10px] leading-tight uppercase tracking-wide opacity-70">Субтитры</span>
+          <span className="block text-[12px] leading-tight uppercase tracking-wide opacity-70">Субтитры</span>
           <span className="block text-[12px] truncate font-medium">
             {current ? (LANG_NAMES_RU[current.language] || current.display) : "Выключены"}
           </span>

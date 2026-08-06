@@ -61,9 +61,9 @@ export default function FavoritesPage() {
                 <Link href={item.type === "tv" ? `/tv/${item.id}` : `/movie/${item.id}`}>
                   <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-card">
                     <Image src={getImageUrl(item.poster_path, "w342") || "/placeholder.svg"} alt={item.title} fill
-                      className="object-cover group-hover:scale-110 transition-all duration-300" sizes="(max-width: 768px) 50vw, 185px" />
+                      className="object-cover brightness-[0.92] transition-[filter] duration-300 ease-out group-hover:brightness-110" sizes="(max-width: 768px) 50vw, 185px" />
                     {item.type === "tv" && (
-                      <div className="absolute top-2 left-2 bg-primary/90 text-white text-[10px] font-bold px-2 py-1 rounded-md uppercase z-10">Сериал</div>
+                      <div className="absolute top-2 left-2 bg-primary/90 text-white text-[12px] font-bold px-2 py-1 rounded-md uppercase z-10">Сериал</div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                       <div className="absolute bottom-0 left-0 right-0 p-3">

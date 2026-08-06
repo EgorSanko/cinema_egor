@@ -1014,7 +1014,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                         }}
                       >
                         <span className="truncate">{t.name}</span>
-                        {t.is_premium && <span className="shrink-0 text-[9px] font-bold px-1 rounded bg-amber-400/25 text-amber-300">PRO</span>}
+                        {t.is_premium && <span className="shrink-0 text-[11px] font-bold px-1 rounded bg-amber-400/25 text-amber-300">PRO</span>}
                       </button>
                     );
                   })}

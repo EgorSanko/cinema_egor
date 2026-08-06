@@ -48,7 +48,7 @@ export function CastStrip({ cast }: { cast?: CastMember[] }) {
                     alt={c.name}
                     fill
                     sizes="124px"
-                    className="object-cover object-top transition-transform duration-500 group-hover:scale-[1.05]"
+                    className="object-cover object-top brightness-[0.92] transition-[filter] duration-300 ease-out group-hover:brightness-110"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-foreground/25">

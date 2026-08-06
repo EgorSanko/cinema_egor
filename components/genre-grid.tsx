@@ -81,7 +81,7 @@ export function GenreGrid({ genres }: GenreGridProps) {
                     alt=""
                     fill
                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                    className="object-cover opacity-30 transition-all duration-500 group-hover:opacity-50 group-hover:scale-105"
+                    className="object-cover opacity-30 transition-opacity duration-500 group-hover:opacity-60"
                   />
                 )}
                 {/* Color tint + dark gradient for text legibility */}

@@ -372,7 +372,7 @@ export function Navbar() {
                           onChange={(e) => setSearchQuery(e.target.value)}
                           className="w-full h-10 pl-9 pr-12 bg-foreground/[0.04] border border-white/[0.08] rounded-full text-[13px] text-foreground placeholder:text-foreground/40 focus:outline-none focus:border-foreground/30"
                         />
-                        <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono text-foreground/40 bg-foreground/[0.04] border border-white/[0.08] rounded">ESC</kbd>
+                        <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[12px] font-mono text-foreground/40 bg-foreground/[0.04] border border-white/[0.08] rounded">ESC</kbd>
                       </div>
                     </form>
                     {searchQuery.trim().length <= 1 && searchHistory.length > 0 && (
@@ -430,7 +430,7 @@ export function Navbar() {
                   <Bookmark size={15} />
                   <span>Моё</span>
                   {favCount > 0 && (
-                    <span className="ml-0.5 min-w-[18px] h-[18px] px-1 bg-primary/20 text-primary text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <span className="ml-0.5 min-w-[18px] h-[18px] px-1 bg-primary/20 text-primary text-[12px] font-bold rounded-full flex items-center justify-center">
                       {favCount > 99 ? "99+" : favCount}
                     </span>
                   )}

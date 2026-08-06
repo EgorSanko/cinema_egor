@@ -195,7 +195,7 @@ export function ContinueWatching() {
                     src={getImageUrl(item.poster_path, "w500") || "/placeholder.svg"}
                     alt={item.title}
                     fill
-                    className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                    className="object-cover brightness-[0.92] transition-[filter] duration-300 ease-out group-hover:brightness-110"
                     sizes="(max-width: 768px) 50vw, 240px"
                   />
 
@@ -204,14 +204,14 @@ export function ContinueWatching() {
 
                   {/* Episode badge \u2014 pill, top-left */}
                   {item.type === "tv" && showSeason && showEpisode && (
-                    <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-md ring-1 ring-white/15 text-white text-[10px] font-bold tracking-wide">
+                    <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-md ring-1 ring-white/15 text-white text-[12px] font-bold tracking-wide">
                       S{showSeason}E{showEpisode}
                     </div>
                   )}
 
                   {/* Next-episode badge replaces the time when applicable */}
                   {item.isNextEpisode ? (
-                    <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-full bg-primary text-primary-foreground text-[10px] font-extrabold tracking-wide shadow-md shadow-black/30">
+                    <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-full bg-primary text-primary-foreground text-[12px] font-extrabold tracking-wide shadow-md shadow-black/30">
                       {"\u0421\u041b\u0415\u0414."}
                     </div>
                   ) : (

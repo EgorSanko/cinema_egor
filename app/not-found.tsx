@@ -79,7 +79,7 @@ export default async function NotFound() {
               <div className="mt-6 max-w-md flex items-start gap-3 p-4 rounded-2xl bg-white/[0.04] ring-1 ring-white/[0.08] backdrop-blur-sm">
                 <Lock size={18} className="text-foreground/45 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-foreground/45 font-bold">
+                  <p className="text-[12px] uppercase tracking-wider text-foreground/45 font-bold">
                     Причина блокировки:
                   </p>
                   <p className="text-foreground text-sm font-semibold mt-0.5">

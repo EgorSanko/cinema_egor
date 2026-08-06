@@ -154,7 +154,7 @@ export default function ProPage() {
           </div>
           <h1 className="mt-5 text-4xl sm:text-6xl font-black text-foreground tracking-tight leading-[1.05]">
             Смотри без рекламы <br className="hidden sm:block" />
-            <span className="bg-gradient-to-r from-primary to-lime-200 bg-clip-text text-transparent">и без ограничений</span>
+            <span className="text-primary">и без ограничений</span>
           </h1>
           <p className="mt-4 text-foreground/60 text-[15px] sm:text-lg max-w-2xl mx-auto leading-relaxed">
             Максимальное качество, все озвучки, скачивание и совместный просмотр —
@@ -182,8 +182,8 @@ export default function ProPage() {
                 <div className="relative w-11 h-11 rounded-xl bg-primary/12 ring-1 ring-primary/25 flex items-center justify-center text-primary mb-3.5" style={{ boxShadow: "0 0 18px rgba(163,230,53,0.16)" }}>
                   <Icon size={20} />
                 </div>
-                <h3 className="relative text-[15px] font-bold text-foreground">{title}</h3>
-                <p className="relative text-foreground/55 text-[12.5px] mt-1 leading-relaxed">{desc}</p>
+                <h2 className="relative text-[15px] font-bold text-foreground">{title}</h2>
+                <p className="relative text-foreground/75 text-[13px] mt-1 leading-relaxed">{desc}</p>
               </div>
             ))}
           </div>

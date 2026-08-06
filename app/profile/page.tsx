@@ -834,7 +834,7 @@ function SmallStat({ icon, label, value, accent }: { icon: React.ReactNode; labe
       </div>
       <div className="min-w-0">
         <div className="text-foreground text-[17px] font-bold leading-none tabular-nums">{value}</div>
-        <div className="text-foreground/45 text-[10px] mt-0.5 truncate">{label}</div>
+        <div className="text-foreground/45 text-[12px] mt-0.5 truncate">{label}</div>
       </div>
     </div>
   );
@@ -874,7 +874,7 @@ function FeaturedContinueHero({ item }: { item: any }) {
       <div className="relative grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-6 p-6 sm:p-8 min-h-[280px] sm:min-h-[340px]">
         {/* Left: text + controls */}
         <div className="flex flex-col justify-end max-w-xl">
-          <div className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-full bg-primary/15 ring-1 ring-primary/30 backdrop-blur text-primary text-[10px] font-bold tracking-wider uppercase mb-3">
+          <div className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-full bg-primary/15 ring-1 ring-primary/30 backdrop-blur text-primary text-[12px] font-bold tracking-wider uppercase mb-3">
             <Sparkles size={10} /> Продолжить просмотр
           </div>
 
@@ -970,7 +970,7 @@ function MiniContinue({ item }: { item: any }) {
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/45">
           <div className="h-full bg-primary" style={{ width: `${pct}%`, boxShadow: "0 0 8px rgba(163,230,53,0.5)" }} />
         </div>
-        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/65 backdrop-blur text-white text-[10px] font-bold ring-1 ring-white/10">
+        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/65 backdrop-blur text-white text-[12px] font-bold ring-1 ring-white/10">
           {pct}%
         </span>
       </div>
@@ -1145,7 +1145,7 @@ function DonutChart({ segments, centerLabel }: { segments: { name: string; pct: 
       {centerLabel && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <span className="text-foreground text-[18px] font-bold leading-none">{centerLabel}</span>
-          <span className="text-foreground/45 text-[9px] uppercase tracking-wider mt-0.5">всего</span>
+          <span className="text-foreground/45 text-[11px] uppercase tracking-wider mt-0.5">всего</span>
         </div>
       )}
     </div>
@@ -1274,7 +1274,7 @@ function StreakStatWithFreeze({ value }: { value: number }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-foreground text-[17px] font-bold leading-none tabular-nums">{value}</div>
-        <div className="text-foreground/45 text-[10px] mt-0.5 truncate">Дней подряд</div>
+        <div className="text-foreground/45 text-[12px] mt-0.5 truncate">Дней подряд</div>
       </div>
       <button
         onClick={onFreeze}
@@ -1288,7 +1288,7 @@ function StreakStatWithFreeze({ value }: { value: number }) {
             : "bg-white/[0.02] ring-white/[0.04] text-foreground/20 cursor-not-allowed"
         }`}
       >
-        {confirming ? <span className="text-[9px] font-bold">OK?</span> : <span style={{ fontSize: 12 }}>❄️</span>}
+        {confirming ? <span className="text-[11px] font-bold">OK?</span> : <span style={{ fontSize: 12 }}>❄️</span>}
       </button>
     </div>
   );
@@ -1342,7 +1342,7 @@ function CanonStrip({ picks, onEdit }: { picks: CanonPick[]; onEdit: () => void 
                   <Film size={28} />
                 </div>
               )}
-              <span className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center ring-2 ring-background">
+              <span className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-primary text-primary-foreground text-[12px] font-bold flex items-center justify-center ring-2 ring-background">
                 {i + 1}
               </span>
               <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/95 to-transparent">
@@ -1516,7 +1516,7 @@ function WatchHeatmap({ data }: { data: HeatCell[][] }) {
 
   return (
     <div ref={containerRef} className="relative flex gap-2.5">
-      <div className="flex flex-col gap-[3px] py-[2px] text-foreground/35 text-[9px] font-medium">
+      <div className="flex flex-col gap-[3px] py-[2px] text-foreground/35 text-[11px] font-medium">
         {dayLabels.map(d => <span key={d} className="h-[14px] leading-[14px]">{d}</span>)}
       </div>
       <div className="flex-1 grid grid-cols-12 gap-[3px]">
@@ -1566,7 +1566,7 @@ function WatchHeatmap({ data }: { data: HeatCell[][] }) {
           className="pointer-events-none absolute z-50 -translate-x-1/2 -translate-y-full mt-[-6px] px-2.5 py-1.5 rounded-lg bg-black/95 ring-1 ring-primary/30 text-foreground text-[11px] font-medium whitespace-nowrap shadow-lg"
           style={{ left: hover.x, top: hover.y, boxShadow: "0 6px 20px -4px rgba(0,0,0,0.6), 0 0 0 1px rgba(163,230,53,0.15)" }}
         >
-          <div className="text-primary text-[10px] uppercase tracking-wider font-bold">
+          <div className="text-primary text-[12px] uppercase tracking-wider font-bold">
             {hover.cell.date.getDate()} {RU_MONTHS[hover.cell.date.getMonth()]}
           </div>
           {hover.cell.minutes > 0 ? (
@@ -1663,7 +1663,7 @@ function AchievementCard({ ach, unlockedDate }: { ach: UnlockedAchievement; unlo
 
       {/* Rarity label top-right (only when unlocked) */}
       {isUnlocked && rarity !== "common" && (
-        <span className={`absolute top-1.5 right-1.5 inline-flex items-center gap-0.5 px-1.5 py-px rounded text-[8px] font-bold uppercase tracking-wider ${tier.badge}`}>
+        <span className={`absolute top-1.5 right-1.5 inline-flex items-center gap-0.5 px-1.5 py-px rounded text-[11px] font-bold uppercase tracking-wider ${tier.badge}`}>
           {rarity === "legendary" && <Zap size={8} fill="currentColor" />}
           {rarity}
         </span>
@@ -1682,15 +1682,15 @@ function AchievementCard({ ach, unlockedDate }: { ach: UnlockedAchievement; unlo
 
       <div className="relative mt-1 text-center">
         <div className="text-foreground text-[11.5px] font-semibold leading-tight line-clamp-1">{ach.name}</div>
-        <div className="text-foreground/45 text-[10px] mt-0.5 line-clamp-2 min-h-[2.2em]">{ach.desc}</div>
+        <div className="text-foreground/45 text-[12px] mt-0.5 line-clamp-2 min-h-[2.2em]">{ach.desc}</div>
       </div>
 
       <div className="relative mt-2">
         {isUnlocked ? (
           <div className="flex items-center justify-between gap-1">
-            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide ${tier.badge}`}>Получено</span>
+            <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold tracking-wide ${tier.badge}`}>Получено</span>
             {unlockedDate && (
-              <span className="text-foreground/40 text-[9px] font-medium tabular-nums">
+              <span className="text-foreground/40 text-[11px] font-medium tabular-nums">
                 {formatDate(unlockedDate)}
               </span>
             )}
@@ -1700,10 +1700,10 @@ function AchievementCard({ ach, unlockedDate }: { ach: UnlockedAchievement; unlo
             <div className="h-1 bg-white/[0.05] rounded-full overflow-hidden">
               <div className="h-full bg-primary/70 rounded-full" style={{ width: `${Math.min(ach.progress * 100, 100)}%` }} />
             </div>
-            <div className="text-[9px] text-foreground/45 text-center tabular-nums">{ach.current} / {ach.target}</div>
+            <div className="text-[11px] text-foreground/45 text-center tabular-nums">{ach.current} / {ach.target}</div>
           </div>
         ) : (
-          <div className="text-[9px] text-foreground/30 text-center">{ach.current} / {ach.target}</div>
+          <div className="text-[11px] text-foreground/30 text-center">{ach.current} / {ach.target}</div>
         )}
       </div>
     </div>

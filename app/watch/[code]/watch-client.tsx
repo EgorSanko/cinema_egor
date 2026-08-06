@@ -1129,11 +1129,11 @@ export default function WatchClient({ code }: Props) {
             <div className="flex items-center gap-2">
               <div className="flex -space-x-2">
                 {members.slice(0, 4).map((m) => (
-                  <div key={m.id} className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-gray-950 ${m.isHost ? "bg-purple-500 text-white" : "bg-gray-700 text-gray-300"}`}>
+                  <div key={m.id} className={`w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold border-2 border-gray-950 ${m.isHost ? "bg-purple-500 text-white" : "bg-gray-700 text-gray-300"}`}>
                     {m.name.charAt(0).toUpperCase()}
                   </div>
                 ))}
-                {members.length > 4 && <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-[10px] text-gray-400 border-2 border-gray-950">+{members.length - 4}</div>}
+                {members.length > 4 && <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-[12px] text-gray-400 border-2 border-gray-950">+{members.length - 4}</div>}
               </div>
               <button onClick={() => setChatMode("overlay")} className="p-1 rounded hover:bg-white/10" title="Свернуть">
                 <X size={14} className="text-gray-500" />

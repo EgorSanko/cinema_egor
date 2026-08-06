@@ -123,7 +123,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
                         />
                       ) : null}
                       {r.vote_average > 0 && (
-                        <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur text-amber-300 text-[10px] font-bold ring-1 ring-white/15">
+                        <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur text-amber-300 text-[12px] font-bold ring-1 ring-white/15">
                           ★ {r.vote_average.toFixed(1)}
                         </span>
                       )}

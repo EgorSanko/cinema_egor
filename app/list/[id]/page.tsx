@@ -108,7 +108,7 @@ export default function ListPage({ params }: { params: Promise<{ id: string }> }
             <div className="min-w-0">
               <h1 className="text-4xl sm:text-5xl font-black text-foreground tracking-tight">{list.name}</h1>
               {list.description && <p className="text-foreground/55 text-sm mt-2">{list.description}</p>}
-              <p className="text-foreground/45 text-[12px] mt-2">{list.items.length} {plural(list.items.length, "фильм", "фильма", "фильмов")}{!isOwn && <span className="ml-2 px-2 py-0.5 rounded bg-purple-500/15 ring-1 ring-purple-400/30 text-purple-300 text-[10px] font-bold uppercase tracking-wider">от друга</span>}</p>
+              <p className="text-foreground/45 text-[12px] mt-2">{list.items.length} {plural(list.items.length, "фильм", "фильма", "фильмов")}{!isOwn && <span className="ml-2 px-2 py-0.5 rounded bg-purple-500/15 ring-1 ring-purple-400/30 text-purple-300 text-[12px] font-bold uppercase tracking-wider">от друга</span>}</p>
             </div>
             <div className="flex items-center gap-2">
               {isOwn && (

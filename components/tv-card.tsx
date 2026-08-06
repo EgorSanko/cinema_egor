@@ -16,16 +16,17 @@ export function TVCard({ show }: TVCardProps) {
   return (
     <Link href={`/tv/${show.id}`}>
       <div className="group cursor-pointer h-full">
-        <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-card">
+        {/* Ховер без зума постера — см. пояснение в movie-card.tsx. */}
+        <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-card ring-0 ring-primary/0 transition-[box-shadow,filter] duration-300 group-hover:ring-2 group-hover:ring-primary/50">
           <PosterImage
             src={getImageUrl(show.poster_path, "w342") || "/placeholder.svg"}
             alt={show.name}
-            className="object-cover group-hover:scale-110 transition-all duration-300 ease-in-out"
+            className="object-cover brightness-[0.92] transition-[filter] duration-300 ease-out group-hover:brightness-110"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           />
           {/* Series badge + rating chip stacked top-left */}
           <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
-            <div className="bg-primary/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">Сериал</div>
+            <div className="bg-primary/90 text-white text-[12px] font-bold px-2 py-0.5 rounded-md uppercase">Сериал</div>
             {rating && (
               <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur-sm text-[11px] font-bold text-foreground ring-1 ring-white/10">
                 <span className="text-amber-300">★</span>{rating}

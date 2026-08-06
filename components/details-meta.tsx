@@ -114,11 +114,11 @@ export async function DetailsMeta({ type, data }: { type: "movie" | "tv"; data: 
                       alt={p.title || ""}
                       fill
                       sizes="(max-width: 640px) 33vw, 200px"
-                      className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                      className="object-cover brightness-[0.92] transition-[filter] duration-300 ease-out group-hover:brightness-110"
                     />
                   ) : null}
                   {p.id === data.id && (
-                    <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-primary text-primary-foreground text-[10px] font-bold">
+                    <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-primary text-primary-foreground text-[12px] font-bold">
                       Сейчас
                     </span>
                   )}

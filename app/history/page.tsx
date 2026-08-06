@@ -114,7 +114,7 @@ export default function HistoryPage() {
                           </div>
                           <div className="flex-shrink-0 text-right">
                             <p className="text-xs text-muted-foreground">{timeAgo(item.watchedAt)}</p>
-                            {item.quality && <span className="inline-block mt-1 text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded">{item.quality}</span>}
+                            {item.quality && <span className="inline-block mt-1 text-[12px] bg-primary/10 text-primary px-2 py-0.5 rounded">{item.quality}</span>}
                           </div>
                         </div>
                       </Link>

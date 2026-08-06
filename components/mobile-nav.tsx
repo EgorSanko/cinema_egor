@@ -45,7 +45,7 @@ export function MobileNav() {
                 isActive ? "text-primary" : "text-muted-foreground"
               }`}>
               <Icon size={20} className={isActive ? "text-primary" : ""} />
-              <span className="text-[10px] font-medium">{label}</span>
+              <span className="text-[12px] font-medium">{label}</span>
             </Link>
           );
         })}

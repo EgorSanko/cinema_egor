@@ -887,7 +887,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                   <div className="flex gap-6 pt-0.5">
                     <div className="flex flex-col">
                       <span className="text-[24px] sm:text-[27px] font-extrabold text-emerald-400 leading-none tabular-nums">{movie.vote_average.toFixed(1)}</span>
-                      <span className="mt-1.5 text-[10px] uppercase tracking-[0.09em] text-foreground/45 font-bold">TMDB</span>
+                      <span className="mt-1.5 text-[12px] uppercase tracking-[0.09em] text-foreground/45 font-bold">TMDB</span>
                     </div>
                   </div>
                 )}

@@ -128,7 +128,7 @@ export default async function TVPage({ params }: TVPageProps) {
                         />
                       ) : null}
                       {r.number_of_seasons && (
-                        <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur text-white text-[10px] font-semibold ring-1 ring-white/15">
+                        <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur text-white text-[12px] font-semibold ring-1 ring-white/15">
                           {r.number_of_seasons} сезон.
                         </span>
                       )}

@@ -26,14 +26,14 @@ export function HdCard({
             src={poster}
             alt={name}
             loading="lazy"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            className="w-full h-full object-cover brightness-[0.92] transition-[filter] duration-300 ease-out group-hover:brightness-110"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <Icon size={28} className="text-muted-foreground" />
           </div>
         )}
-        <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/55 backdrop-blur text-[10px] font-semibold text-white/85">
+        <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/55 backdrop-blur text-[12px] font-semibold text-white/85">
           <Icon size={10} /> HD
         </span>
       </div>

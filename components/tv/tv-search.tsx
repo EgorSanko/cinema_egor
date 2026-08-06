@@ -382,7 +382,7 @@ export function TvSearch() {
 
                       {/* Type badge — distinguishes Фильм vs Сериал at a glance */}
                       <span
-                        className="absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                        className="absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[12px] font-bold uppercase tracking-wide"
                         style={{
                           background: isTv ? "rgba(56,189,248,0.92)" : "rgba(0,0,0,0.72)",
                           color: isTv ? "#06283d" : "#fff",

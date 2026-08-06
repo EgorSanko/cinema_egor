@@ -245,7 +245,7 @@ export function MovieDownloadButton(props: Props) {
             return (
               <div className="grid grid-cols-2 gap-2 mb-3">
                 <div>
-                  <label className="text-[10px] uppercase tracking-wider text-white/45 font-semibold">Сезон</label>
+                  <label className="text-[12px] uppercase tracking-wider text-white/45 font-semibold">Сезон</label>
                   <select
                     value={season}
                     onChange={(e) => {
@@ -264,7 +264,7 @@ export function MovieDownloadButton(props: Props) {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] uppercase tracking-wider text-white/45 font-semibold">Серия</label>
+                  <label className="text-[12px] uppercase tracking-wider text-white/45 font-semibold">Серия</label>
                   <select
                     value={episode}
                     onChange={(e) => setEpisode(Number(e.target.value))}
@@ -284,7 +284,7 @@ export function MovieDownloadButton(props: Props) {
               by id since HDRezka sometimes returns duplicates. */}
           {translators.length > 1 && (
             <div className="mb-3">
-              <label className="text-[10px] uppercase tracking-wider text-white/45 font-semibold">Озвучка</label>
+              <label className="text-[12px] uppercase tracking-wider text-white/45 font-semibold">Озвучка</label>
               <select
                 value={selectedTranslator ?? ""}
                 onChange={(e) => setSelectedTranslator(Number(e.target.value))}

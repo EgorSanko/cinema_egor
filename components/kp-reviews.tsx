@@ -43,7 +43,7 @@ export function KpReviews({ tmdbId, type = "movie" }: { tmdbId: number; type?: "
             <div key={i} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
               <div className="flex items-center gap-2 mb-2">
                 {r.type && (
-                  <span className={"text-[10px] font-bold px-1.5 py-0.5 rounded " + (TYPE_STYLE[r.type] || "bg-white/10 text-muted-foreground")}>
+                  <span className={"text-[12px] font-bold px-1.5 py-0.5 rounded " + (TYPE_STYLE[r.type] || "bg-white/10 text-muted-foreground")}>
                     {r.type}
                   </span>
                 )}

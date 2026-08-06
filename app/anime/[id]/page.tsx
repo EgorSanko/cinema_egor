@@ -234,7 +234,7 @@ export default function AnimeReleasePage() {
                       {active && <div className="absolute inset-0 ring-2 ring-inset ring-lime-400/70 rounded-lg" />}
                     </div>
                     <div className="mt-1 text-[11.5px] font-medium text-foreground/85 line-clamp-2 leading-tight">{aniTitle(r.name)}</div>
-                    <div className="text-[10px] text-muted-foreground">{r.year} · {r.type?.description || r.type?.value}</div>
+                    <div className="text-[12px] text-muted-foreground">{r.year} · {r.type?.description || r.type?.value}</div>
                   </Link>
                 );
               })}

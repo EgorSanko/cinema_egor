@@ -114,7 +114,7 @@ function ListCard({ list, onShare, onDelete }: { list: UserList; onShare: () => 
             <div className="grid grid-cols-2 grid-rows-2 h-full">
               {posters.map((p, i) => (
                 <div key={i} className="relative overflow-hidden">
-                  <Image src={`${POSTER}/w342${p.poster_path}`} alt="" fill sizes="200px" className="object-cover transition-transform group-hover:scale-105" />
+                  <Image src={`${POSTER}/w342${p.poster_path}`} alt="" fill sizes="200px" className="object-cover brightness-[0.92] transition-[filter] duration-300 group-hover:brightness-110" />
                 </div>
               ))}
             </div>

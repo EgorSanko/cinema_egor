@@ -106,26 +106,31 @@ export function HeroSection({ movies }: HeroSectionProps) {
                   priority
                   sizes="100vw"
                 />
-                {/* Left fade for legibility + bottom soft fade */}
-                <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
+                {/* Подложка под текстом. Была слишком слабой: описание и мета
+                    поверх светлых кадров не добирали контраст (детектор
+                    Impeccable: low-contrast, до 1.1:1 при норме 4.5:1).
+                    Усилена левая заливка и добавлен нижний упор. */}
+                <div className="absolute inset-0 bg-gradient-to-r from-background via-background/88 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/35 to-transparent" />
 
                 <div className="absolute inset-0 flex items-center pt-16">
                   <div className="max-w-[1600px] mx-auto w-full px-4 sm:px-6 lg:px-8">
                     <div className="max-w-xl space-y-4 sm:space-y-5">
-                      {/* Type chip */}
-                      <span className="inline-block px-2.5 py-1 rounded-md text-[11px] font-extrabold tracking-[0.18em] uppercase text-primary bg-primary/10 ring-1 ring-primary/30">
-                        {isTv ? "Сериал" : "Фильм"}
-                      </span>
-
-                      {/* Title */}
-                      <h1 className="text-4xl sm:text-5xl md:text-7xl font-black text-foreground uppercase tracking-tight leading-[1.02]">
+                      {/* Заголовок. Чип-кикер («ФИЛЬМ» мелкими разряженными
+                          капсом над огромным заголовком) убран — это дефолтный
+                          шаблон ИИ-героя (детектор: hero-eyebrow-chip). Тип
+                          тайтла никуда не делся, он ушёл в мета-строку ниже.
+                          break-words — длинные названия распирали контейнер на
+                          16px (детектор: text-overflow). */}
+                      <h1 className="text-4xl sm:text-5xl md:text-7xl font-black text-foreground uppercase tracking-tight leading-[1.02] break-words hyphens-auto">
                         {title}
                       </h1>
 
                       {/* Meta row */}
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]">
-                        {yearStr && <span className="text-foreground/75">{yearStr}</span>}
+                        <span className="text-foreground/90 font-medium">{isTv ? "Сериал" : "Фильм"}</span>
+                        {yearStr && <span className="text-foreground/30">·</span>}
+                        {yearStr && <span className="text-foreground/90">{yearStr}</span>}
                         {seasons && (
                           <>
                             <span className="text-foreground/30">·</span>
@@ -149,14 +154,14 @@ export function HeroSection({ movies }: HeroSectionProps) {
                           </>
                         )}
                         {isAdult && (
-                          <span className="px-1.5 py-0.5 rounded-md bg-foreground/[0.06] text-foreground/65 ring-1 ring-white/[0.08] text-[11px] font-medium">
+                          <span className="px-1.5 py-0.5 rounded-md bg-foreground/[0.06] text-foreground/85 ring-1 ring-white/[0.08] text-[12px] font-medium">
                             18+
                           </span>
                         )}
                       </div>
 
                       {item.overview && (
-                        <p className="text-foreground/70 text-[14px] sm:text-[15px] leading-relaxed line-clamp-2 max-w-md">
+                        <p className="text-foreground/90 text-[14px] sm:text-[15px] leading-relaxed line-clamp-2 max-w-md">
                           {item.overview}
                         </p>
                       )}

@@ -317,7 +317,7 @@ export function HdDetail({ details }: { details: HdDetails }) {
                     >
                       {t.name}
                       {t.is_premium && (
-                        <span className="text-[9px] font-bold px-1 rounded bg-amber-400/20 text-amber-300 leading-none py-0.5">PRO</span>
+                        <span className="text-[11px] font-bold px-1 rounded bg-amber-400/20 text-amber-300 leading-none py-0.5">PRO</span>
                       )}
                     </button>
                   ))}

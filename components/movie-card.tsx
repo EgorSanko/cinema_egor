@@ -16,11 +16,15 @@ export function MovieCard({ movie }: MovieCardProps) {
   return (
     <Link href={`/movie/${movie.id}`}>
       <div className="group cursor-pointer h-full">
-        <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-card">
+        {/* Ховер без зума постера: увеличение картинки при наведении —
+            типовой признак сгенерированной вёрстки (детектор Impeccable:
+            image-hover-transform). Вместо него — подсветка постера и обводка
+            карточки: намерение то же, штампа нет. */}
+        <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-card ring-0 ring-primary/0 transition-[box-shadow,filter] duration-300 group-hover:ring-2 group-hover:ring-primary/50">
           <PosterImage
             src={getImageUrl(movie.poster_path, "w342") || "/placeholder.svg"}
             alt={movie.title}
-            className="object-cover group-hover:scale-110 transition-all duration-300 ease-in-out"
+            className="object-cover brightness-[0.92] transition-[filter] duration-300 ease-out group-hover:brightness-110"
             sizes="(max-width: 640px) 45vw, (max-width: 1024px) 25vw, 185px"
           />
           {/* Rating chip — always visible top-left so phone users see it without hovering */}
