@@ -45,10 +45,19 @@ export const metadata: Metadata = {
     description: "Смотрите любимые фильмы бесплатно без регистрации",
     images: ["/logo-512.png"],
   },
+  // Иконки для «добавить на главный экран». Раньше сюда был подставлен
+  // /logo.png — это ШИРОКАЯ надпись (320x83), а не квадрат: iOS берёт для
+  // ярлыка именно apple-иконку и обрезал её в квадрат, поэтому на телефоне
+  // вместо логотипа выходила невнятная полоска. Теперь отдельные квадратные
+  // иконки со знаком-камерой на фирменном тёмном фоне.
   icons: {
-    icon: "/logo.png",
-    shortcut: "/logo.png",
-    apple: "/logo.png",
+    icon: [
+      { url: "/favicon.png", sizes: "64x64", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/favicon.png",
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   other: {
     "mobile-web-app-capable": "yes",
