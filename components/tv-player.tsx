@@ -75,6 +75,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [selectedQuality, setSelectedQuality] = useState("");
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [selectedEpisode, setSelectedEpisode] = useState(1);
+  // Стартовые «1/1» — это ещё не выбор пользователя, а заглушка до чтения
+  // сохранённой серии (или ?s=&e= из «Продолжить»). Пока флаг false, прогрев
+  // не стартует: иначе уходил лишний запрос за первой серией, который потом
+  // мог опоздать и подменить поток.
+  const [episodeRestored, setEpisodeRestored] = useState(false);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const [showSeasons, setShowSeasons] = useState(false);
@@ -114,13 +119,23 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // Нативный резолв Alloha в наш ArtPlayer. VkMovie = ТОЛЬКО фильмы → на сериале
   // Плеер 3 скрыт в switcher, а если он всё же выбран (был persisted) — тихо
   // резолвим через Alloha (не показываем ошибку).
+  // Счётчик поколений резолва. Результат применяем ТОЛЬКО если за время запроса
+  // не успел стартовать более свежий. Без этого случалась гонка: плеер монтируется
+  // с дефолтом «сезон 1, серия 1», уходит запрос за S1E1, следом эффект
+  // подставляет сохранённую серию и уходит второй запрос — и если первый отвечал
+  // ПОЗЖЕ второго, он затирал поток. Наружу это выглядело как «в списке S3E3, а
+  // играет S1E1» (репорт после захода с ярлыка на главном экране).
+  const resolveSeqRef = useRef(0);
   const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
+    const seq = ++resolveSeqRef.current;
+    const устарел = () => seq !== resolveSeqRef.current;
     // ПУТЬ B (монетизация): FREE-тариф (подписка загружена, не Pro) с источником
     // alloha → плеер Alloha с белой рекламой (доход на наш токен). Их плеер сам
     // держит сезоны/озвучки → рендерим как iframe (флаг allohaAd: без нашего
     // пре-ролла, свои контролы прячем). Pro/ещё-не-загружено → нативный чистый.
     if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
       const pos = getPosition(show.id, "tv", season, episode);
+      if (устарел()) return false;
       setAllohaHls(null);
       setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(show.id, "tv", season, episode, pos?.time) });
       return true;
@@ -134,6 +149,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
       a = await resolveAllohaHls(show.id, "tv", season, episode);
     }
     if (!a) return false;
+    // Пока ходили за потоком, мог стартовать резолв другой серии — тогда наш
+    // ответ уже неактуален и писать его в состояние нельзя.
+    if (устарел()) return false;
     // Сохраняем выбранную озвучку между сериями: матчим по ИМЕНИ (индекс не
     // стабилен между сериями). Раньше тут всегда брался индекс 0 → смена серии
     // сбрасывала озвучку на дефолтную (баг «переключил на 2 — новая серия снова
@@ -323,6 +341,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
       // User clicks the big "Смотреть" overlay themselves.
       setSelectedSeason(parseInt(qs, 10));
       setSelectedEpisode(parseInt(qe, 10));
+      setEpisodeRestored(true);
       return;
     }
     const last = getLastEpisode(show.id);
@@ -330,6 +349,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
       setSelectedSeason(last.season);
       setSelectedEpisode(last.episode);
     }
+    setEpisodeRestored(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show.id]);
 
@@ -438,13 +458,15 @@ export function TVPlayer({ show }: TVPlayerProps) {
     };
     const iv = setInterval(write, 20000);
     return () => { clearInterval(iv); write(); };
-  }, [showPlayer, streamData?.collapsEmbed, show, selectedSeason, selectedEpisode, episodes]);
+  }, [showPlayer, streamData?.collapsEmbed, show, selectedSeason, selectedEpisode, episodes, episodeRestored]);
 
   // Prefetch the selected episode's stream before the user presses "Смотреть"
   // so the first play is instant. Only warms while the player isn't open;
   // fetchStream consumes this in-flight request when the URL matches.
   useEffect(() => {
     if (showPlayer) return;
+    // Ждём восстановления серии — иначе прогрев уходит за «сезон 1, серия 1».
+    if (!episodeRestored) return;
     let alive = true;
     // Collaps (=LordFilm) — resolve the iframe embed for this episode (their
     // player handles seasons/episodes/dubs itself).
