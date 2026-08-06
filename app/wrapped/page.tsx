@@ -224,7 +224,7 @@ export default function WrappedPage() {
           {/* ── Persona ── */}
           {persona.title !== "Кинопервопроходец" && (
             <WrappedCard>
-              <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold mb-3">Твой персонаж</div>
+              <div className="text-foreground/75 text-[12px] uppercase tracking-wider font-semibold mb-3">Твой персонаж</div>
               <div className="flex items-center gap-4">
                 <span className="text-6xl leading-none">{persona.emoji}</span>
                 <div>
@@ -238,7 +238,7 @@ export default function WrappedPage() {
           {/* ── Top genres ── */}
           {topGenres.length > 0 && (
             <WrappedCard>
-              <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold mb-4">Из чего сделан твой год</div>
+              <div className="text-foreground/75 text-[12px] uppercase tracking-wider font-semibold mb-4">Из чего сделан твой год</div>
               <ul className="space-y-2.5">
                 {topGenres.map((g, i) => {
                   const entry = Object.values(GENRES).find(x => x.name === g.name);
@@ -260,7 +260,7 @@ export default function WrappedPage() {
           {/* ── Top titles ── */}
           {topTitles.length > 0 && (
             <WrappedCard>
-              <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold mb-4">Твой топ-5</div>
+              <div className="text-foreground/75 text-[12px] uppercase tracking-wider font-semibold mb-4">Твой топ-5</div>
               <ol className="space-y-3">
                 {topTitles.map((t, i) => (
                   <li key={`${t.type}-${t.id}`}>
@@ -294,7 +294,7 @@ export default function WrappedPage() {
                   <Flame size={24} />
                 </div>
                 <div>
-                  <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold">Самый бомбический день</div>
+                  <div className="text-foreground/75 text-[12px] uppercase tracking-wider font-semibold">Самый бомбический день</div>
                   <div className="text-foreground font-black text-2xl leading-tight">{bigDay.label}</div>
                   <div className="text-foreground/65 text-sm mt-0.5">{bigDay.count} серий/фильмов за день</div>
                 </div>
@@ -310,7 +310,7 @@ export default function WrappedPage() {
                   <Flame size={24} />
                 </div>
                 <div>
-                  <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold">Серия подряд</div>
+                  <div className="text-foreground/75 text-[12px] uppercase tracking-wider font-semibold">Серия подряд</div>
                   <div className="text-foreground font-black text-2xl leading-tight">{stats.consecutiveDays} {ruPlural(stats.consecutiveDays, "день", "дня", "дней")}</div>
                   <div className="text-foreground/65 text-sm mt-0.5">Ты смотришь без перерыва</div>
                 </div>

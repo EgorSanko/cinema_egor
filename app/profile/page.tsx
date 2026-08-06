@@ -1080,7 +1080,7 @@ function CinemaDNA({ topGenres }: { topGenres: { name: string; count: number; pc
           <span className="text-3xl leading-none">{persona.emoji}</span>
           <div className="min-w-0">
             <div className="text-foreground font-bold text-[14px] leading-tight">{persona.title}</div>
-            <div className="text-foreground/55 text-[11px] mt-0.5 leading-tight">{persona.tagline}</div>
+            <div className="text-foreground/75 text-[12px] mt-0.5 leading-tight">{persona.tagline}</div>
           </div>
         </div>
       </div>
@@ -1205,7 +1205,7 @@ function FriendCodeChip() {
             </div>
 
             <div>
-              <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold mb-2">Твой код — отправь другу</div>
+              <div className="text-foreground/75 text-[12px] uppercase tracking-wider font-semibold mb-2">Твой код — отправь другу</div>
               <button
                 onClick={copy}
                 className="w-full inline-flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-purple-500/20 to-primary/15 ring-1 ring-purple-400/40 hover:ring-purple-300/60 transition-colors"
@@ -1217,7 +1217,7 @@ function FriendCodeChip() {
             </div>
 
             <div>
-              <div className="text-foreground/55 text-[11px] uppercase tracking-wider font-semibold mb-2">Ввести код друга</div>
+              <div className="text-foreground/75 text-[12px] uppercase tracking-wider font-semibold mb-2">Ввести код друга</div>
               <div className="flex gap-2">
                 <input
                   value={friendInput}

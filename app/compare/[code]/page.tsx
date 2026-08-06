@@ -136,7 +136,7 @@ export default function ComparePage({ params }: { params: Promise<{ code: string
               <div className="relative rounded-3xl p-8 bg-gradient-to-br from-purple-500/[0.12] to-primary/[0.06] ring-1 ring-purple-400/20 text-center overflow-hidden">
                 <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-purple-500/[0.18] blur-3xl pointer-events-none" />
                 <div className="relative">
-                  <div className="text-foreground/55 text-[11px] uppercase tracking-widest font-semibold">Совпадение вкусов</div>
+                  <div className="text-foreground/75 text-[12px] uppercase tracking-widest font-semibold">Совпадение вкусов</div>
                   <div className="text-[6rem] font-black leading-none mt-1 bg-gradient-to-r from-purple-300 to-primary bg-clip-text text-transparent tabular-nums" style={{ textShadow: "0 0 60px rgba(168,85,247,0.3)" }}>
                     {matchPct}%
                   </div>
@@ -198,7 +198,7 @@ function CompareStat({ label, value, accent }: { label: string; value: number | 
   return (
     <div className={`rounded-2xl p-4 bg-gradient-to-br ${styles.bg} ring-1 ${styles.ring} text-center`}>
       <div className={`text-3xl font-black tabular-nums ${styles.text}`}>{value}</div>
-      <div className="text-foreground/55 text-[11px] mt-1">{label}</div>
+      <div className="text-foreground/75 text-[12px] mt-1">{label}</div>
     </div>
   );
 }

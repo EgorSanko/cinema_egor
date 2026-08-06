@@ -48,7 +48,7 @@ export async function CollectionsRow() {
                     <div className="min-w-0">
                       <h3 className="text-foreground text-[15px] sm:text-base font-bold leading-tight">{c.name}</h3>
                       {c.total > 0 && (
-                        <p className="text-foreground/55 text-[11px] mt-1">
+                        <p className="text-foreground/75 text-[12px] mt-1">
                           {c.total.toLocaleString("ru-RU")} {pluralizeFilms(c.total)}
                         </p>
                       )}
