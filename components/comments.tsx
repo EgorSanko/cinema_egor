@@ -1,8 +1,7 @@
 "use client";
 
-import { getComments, addComment, deleteComment, type Comment } from "@/lib/storage";
 import { Star, Trash2, MessageCircle } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./auth-context";
 
 interface CommentsProps {
@@ -10,47 +9,77 @@ interface CommentsProps {
   mediaType: "movie" | "tv";
 }
 
+type PublicReview = {
+  id: string;
+  author: string;
+  text: string;
+  rating: number;
+  createdAt: number;
+  updatedAt?: number;
+  mine?: boolean;
+};
+
 /**
- * Отзывы к тайтлу. Хранятся в аккаунте пользователя (kino_comments в профиле,
- * синк через /api/sync) — то есть это ЛИЧНЫЕ заметки с оценкой, их не видит
- * никто другой.
+ * Публичные отзывы к тайтлу. Привязаны к карточке TMDB целиком — не к сезону,
+ * серии или плееру.
  *
- * Переделано после отзыва Егора:
- *  - убрано поле «Ваше имя»: отзыв и так идёт от аккаунта, имя берём оттуда;
- *  - оценка вынесена в отдельную строку — раньше пять звёзд стояли в один ряд
- *    с полем ввода и на телефоне не помещались, их сжимало и выносило за край;
- *  - звёзды получили полноразмерные тач-цели (44px) и не сжимаются;
- *  - кнопка удаления была видна ТОЛЬКО при наведении — на телефоне навести
- *    нельзя, то есть удалить свой отзыв с телефона было невозможно;
- *  - вместо «карточек в рамке» — разделители-волоски, как в остальном свежем
- *    оформлении.
+ * Раньше отзывы лежали в localStorage и синхронизировались только в личный
+ * профиль, то есть их не видел никто, кроме автора (фича была собрана
+ * наполовину). Теперь читаем и пишем через /api/reviews: личность сервер берёт
+ * из подписанной куки, поэтому отзыв от чужого имени не оставить.
+ *
+ * Имя показываем из аккаунта; у кого его нет — «Гость». Почта наружу не уходит
+ * никогда (иначе публичный отзыв раскрыл бы её).
  */
 export function Comments({ mediaId, mediaType }: CommentsProps) {
   const { user } = useAuth();
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [reviews, setReviews] = useState<PublicReview[]>([]);
+  const [avg, setAvg] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  // Имя для подписи отзыва: имя аккаунта → почта → «Я». Спрашивать его у
-  // пользователя не нужно, оно уже известно.
-  const authorName = (user?.name?.trim() || user?.email?.trim() || "Я");
+  const authorName = (user?.name?.trim() || "Гость");
 
-  useEffect(() => {
-    setComments(getComments(mediaId, mediaType));
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/reviews?id=${mediaId}&type=${mediaType}`, { cache: "no-store" });
+      const d = await r.json();
+      setReviews(Array.isArray(d.reviews) ? d.reviews : []);
+      setAvg(d.avg ?? null);
+      // Свой отзыв подставляем в форму — повторная отправка его обновит.
+      const mine = (d.reviews || []).find((x: PublicReview) => x.mine);
+      if (mine) { setText(mine.text); setRating(mine.rating); }
+    } catch { /* сеть отвалилась — покажем пустой список, форма останется рабочей */ }
   }, [mediaId, mediaType]);
 
-  const handleSubmit = () => {
-    if (!text.trim() || rating === 0) return;
-    const newComment = addComment({ mediaId, mediaType, author: authorName, text: text.trim(), rating });
-    setComments([newComment, ...comments]);
-    setText("");
-    setRating(0);
+  useEffect(() => { load(); }, [load]);
+
+  const handleSubmit = async () => {
+    if (!text.trim() || rating === 0 || busy) return;
+    setBusy(true); setError("");
+    try {
+      const r = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaId, mediaType, text: text.trim(), rating, author: authorName }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error === "auth" ? "Войдите в аккаунт, чтобы оставить отзыв." : "Не удалось отправить. Попробуйте ещё раз."); return; }
+      await load();
+    } catch { setError("Нет связи с сервером. Попробуйте позже."); }
+    finally { setBusy(false); }
   };
 
-  const handleDelete = (id: string) => {
-    deleteComment(id);
-    setComments(comments.filter((c) => c.id !== id));
+  const handleDelete = async (id: string) => {
+    try {
+      await fetch(`/api/reviews?id=${mediaId}&type=${mediaType}&rid=${id}`, { method: "DELETE" });
+      setReviews((prev) => prev.filter((x) => x.id !== id));
+      setText(""); setRating(0);
+      load();
+    } catch {}
   };
 
   const timeAgo = (ts: number) => {
@@ -65,31 +94,25 @@ export function Comments({ mediaId, mediaType }: CommentsProps) {
     return new Date(ts).toLocaleDateString("ru-RU");
   };
 
-  const avgRating = comments.length > 0
-    ? (comments.reduce((sum, c) => sum + c.rating, 0) / comments.length).toFixed(1)
-    : null;
-
   const ratingLabel = ["", "плохо", "так себе", "неплохо", "хорошо", "отлично"][rating] || "";
+  const alreadyMine = reviews.some((r) => r.mine);
 
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h2 className="text-2xl font-bold text-foreground">Отзывы</h2>
-        {comments.length > 0 && (
-          <span className="text-[13px] text-foreground/60">{comments.length}</span>
-        )}
-        {avgRating && (
+        {reviews.length > 0 && <span className="text-[13px] text-foreground/60">{reviews.length}</span>}
+        {avg != null && (
           <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-amber-300">
-            <Star size={13} fill="currentColor" /> {avgRating}
+            <Star size={13} fill="currentColor" /> {avg}
           </span>
         )}
       </div>
 
-      {/* ── Форма ──────────────────────────────────────────────────────── */}
       {user ? (
         <div className="rounded-2xl bg-foreground/[0.04] p-4 sm:p-5">
-          {/* Оценка — ОТДЕЛЬНОЙ строкой. Раньше звёзды делили ряд с полем имени
-              и на узком экране их сжимало за край картинки. */}
+          {/* Оценка отдельной строкой: в одном ряду с полем ввода пять звёзд
+              на телефоне сжимало и выносило за край. Тач-цели 44px. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-[13px] font-medium text-foreground/70">Ваша оценка</span>
             <div className="flex items-center">
@@ -111,9 +134,7 @@ export function Comments({ mediaId, mediaType }: CommentsProps) {
                 </button>
               ))}
             </div>
-            {ratingLabel && (
-              <span className="text-[13px] text-foreground/60">{ratingLabel}</span>
-            )}
+            {ratingLabel && <span className="text-[13px] text-foreground/60">{ratingLabel}</span>}
           </div>
 
           <textarea
@@ -125,45 +146,46 @@ export function Comments({ mediaId, mediaType }: CommentsProps) {
             maxLength={500}
           />
 
+          {error && <p className="mt-2 text-[13px] text-red-400">{error}</p>}
+
           <div className="mt-3 flex items-center justify-between gap-3">
             <span className="text-[12.5px] text-foreground/50">
-              {text.length > 0 ? `${text.length} / 500` : "Виден только вам"}
+              {text.length > 0 ? `${text.length} / 500` : `Отзыв увидят все · подпись: ${authorName}`}
             </span>
             <button
               onClick={handleSubmit}
-              disabled={!text.trim() || rating === 0}
+              disabled={!text.trim() || rating === 0 || busy}
               className="h-10 px-5 rounded-full bg-primary text-[#0a0a0b] text-[13px] font-bold disabled:opacity-35 disabled:cursor-not-allowed hover:brightness-110 transition-[filter,opacity]"
             >
-              Отправить
+              {busy ? "Отправляем…" : alreadyMine ? "Обновить" : "Отправить"}
             </button>
           </div>
         </div>
       ) : (
         <div className="rounded-2xl bg-foreground/[0.04] p-5 text-[14px] text-foreground/70">
-          Войдите в аккаунт, чтобы оставлять отзывы — они сохранятся и будут
-          доступны на всех ваших устройствах.
+          Войдите в аккаунт, чтобы оставить отзыв — его увидят другие зрители.
         </div>
       )}
 
-      {/* ── Список ─────────────────────────────────────────────────────── */}
-      {comments.length === 0 ? (
+      {reviews.length === 0 ? (
         <div className="py-8 text-center">
           <MessageCircle size={32} className="mx-auto mb-2.5 text-foreground/20" />
-          <p className="text-[14px] text-foreground/55">
-            Здесь появятся ваши отзывы об этом тайтле
-          </p>
+          <p className="text-[14px] text-foreground/55">Отзывов пока нет — ваш будет первым</p>
         </div>
       ) : (
         <div>
-          {comments.map((c) => (
+          {reviews.map((c) => (
             <article key={c.id} className="group flex gap-3.5 border-t border-white/[0.07] py-4">
               <div className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/15 text-[13px] font-bold text-primary">
-                {(c.author || "Я").charAt(0).toUpperCase()}
+                {(c.author || "Г").charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                   <span className="text-[13.5px] font-semibold text-foreground">{c.author}</span>
-                  <span className="text-[12.5px] text-foreground/50">{timeAgo(c.createdAt)}</span>
+                  {c.mine && (
+                    <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] font-bold text-primary">ваш</span>
+                  )}
+                  <span className="text-[12.5px] text-foreground/50">{timeAgo(c.updatedAt || c.createdAt)}</span>
                   <span className="flex items-center gap-0.5">
                     {[1, 2, 3, 4, 5].map((s) => (
                       <Star
@@ -177,15 +199,17 @@ export function Comments({ mediaId, mediaType }: CommentsProps) {
                 </div>
                 <p className="mt-1.5 text-[14px] leading-relaxed text-foreground/80 break-words">{c.text}</p>
               </div>
-              {/* Удаление: на телефоне навести нельзя, поэтому кнопка видна всегда
-                  (приглушённо), а на десктопе проявляется при наведении. */}
-              <button
-                onClick={() => handleDelete(c.id)}
-                aria-label="Удалить отзыв"
-                className="h-9 w-9 shrink-0 grid place-items-center rounded-full text-foreground/40 opacity-60 hover:bg-white/[0.06] hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-              >
-                <Trash2 size={15} />
-              </button>
+              {/* Удалять может автор (и админ — это решает сервер). На телефоне
+                  навести нельзя, поэтому кнопка видна всегда. */}
+              {c.mine && (
+                <button
+                  onClick={() => handleDelete(c.id)}
+                  aria-label="Удалить отзыв"
+                  className="h-9 w-9 shrink-0 grid place-items-center rounded-full text-foreground/40 opacity-60 hover:bg-white/[0.06] hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
             </article>
           ))}
         </div>
