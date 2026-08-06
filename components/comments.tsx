@@ -1,34 +1,48 @@
 "use client";
 
 import { getComments, addComment, deleteComment, type Comment } from "@/lib/storage";
-import { Star, Send, Trash2, MessageCircle } from "lucide-react";
+import { Star, Trash2, MessageCircle } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useAuth } from "./auth-context";
 
 interface CommentsProps {
   mediaId: number;
   mediaType: "movie" | "tv";
 }
 
+/**
+ * Отзывы к тайтлу. Хранятся в аккаунте пользователя (kino_comments в профиле,
+ * синк через /api/sync) — то есть это ЛИЧНЫЕ заметки с оценкой, их не видит
+ * никто другой.
+ *
+ * Переделано после отзыва Егора:
+ *  - убрано поле «Ваше имя»: отзыв и так идёт от аккаунта, имя берём оттуда;
+ *  - оценка вынесена в отдельную строку — раньше пять звёзд стояли в один ряд
+ *    с полем ввода и на телефоне не помещались, их сжимало и выносило за край;
+ *  - звёзды получили полноразмерные тач-цели (44px) и не сжимаются;
+ *  - кнопка удаления была видна ТОЛЬКО при наведении — на телефоне навести
+ *    нельзя, то есть удалить свой отзыв с телефона было невозможно;
+ *  - вместо «карточек в рамке» — разделители-волоски, как в остальном свежем
+ *    оформлении.
+ */
 export function Comments({ mediaId, mediaType }: CommentsProps) {
+  const { user } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState("");
-  const [author, setAuthor] = useState("");
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
 
+  // Имя для подписи отзыва: имя аккаунта → почта → «Я». Спрашивать его у
+  // пользователя не нужно, оно уже известно.
+  const authorName = (user?.name?.trim() || user?.email?.trim() || "Я");
+
   useEffect(() => {
     setComments(getComments(mediaId, mediaType));
-    // localStorage can throw in private mode / restricted webviews — guard it.
-    try {
-      const saved = localStorage.getItem("kino_username");
-      if (saved) setAuthor(saved);
-    } catch {}
   }, [mediaId, mediaType]);
 
   const handleSubmit = () => {
-    if (!text.trim() || !author.trim() || rating === 0) return;
-    try { localStorage.setItem("kino_username", author); } catch {}
-    const newComment = addComment({ mediaId, mediaType, author: author.trim(), text: text.trim(), rating });
+    if (!text.trim() || rating === 0) return;
+    const newComment = addComment({ mediaId, mediaType, author: authorName, text: text.trim(), rating });
     setComments([newComment, ...comments]);
     setText("");
     setRating(0);
@@ -36,7 +50,7 @@ export function Comments({ mediaId, mediaType }: CommentsProps) {
 
   const handleDelete = (id: string) => {
     deleteComment(id);
-    setComments(comments.filter(c => c.id !== id));
+    setComments(comments.filter((c) => c.id !== id));
   };
 
   const timeAgo = (ts: number) => {
@@ -55,101 +69,124 @@ export function Comments({ mediaId, mediaType }: CommentsProps) {
     ? (comments.reduce((sum, c) => sum + c.rating, 0) / comments.length).toFixed(1)
     : null;
 
+  const ratingLabel = ["", "плохо", "так себе", "неплохо", "хорошо", "отлично"][rating] || "";
+
   return (
-    <section className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-foreground">Отзывы</h2>
-          <span className="text-sm text-muted-foreground bg-card px-2.5 py-1 rounded-lg">{comments.length}</span>
-          {avgRating && (
-            <span className="text-sm text-yellow-400 flex items-center gap-1">
-              <Star size={14} fill="currentColor" /> {avgRating}
-            </span>
-          )}
-        </div>
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-2xl font-bold text-foreground">Отзывы</h2>
+        {comments.length > 0 && (
+          <span className="text-[13px] text-foreground/60">{comments.length}</span>
+        )}
+        {avgRating && (
+          <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-amber-300">
+            <Star size={13} fill="currentColor" /> {avgRating}
+          </span>
+        )}
       </div>
 
-      {/* Add comment form */}
-      <div className="bg-card border border-border rounded-xl p-4 space-y-4">
-        <div className="flex items-center gap-4">
-          <input
-            type="text"
-            placeholder="Ваше имя"
-            value={author}
-            onChange={(e) => setAuthor(e.target.value)}
-            className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary transition-colors"
-            maxLength={30}
-          />
-          {/* Star rating */}
-          <div className="flex items-center gap-0.5">
-            {[1, 2, 3, 4, 5].map(s => (
-              <button key={s}
-                onMouseEnter={() => setHoverRating(s)}
-                onMouseLeave={() => setHoverRating(0)}
-                onClick={() => setRating(s)}
-                className="p-0.5 transition-transform hover:scale-110">
-                <Star size={20}
-                  className={`transition-colors ${(hoverRating || rating) >= s ? "text-yellow-400" : "text-gray-600"}`}
-                  fill={(hoverRating || rating) >= s ? "currentColor" : "none"}
-                />
-              </button>
-            ))}
+      {/* ── Форма ──────────────────────────────────────────────────────── */}
+      {user ? (
+        <div className="rounded-2xl bg-foreground/[0.04] p-4 sm:p-5">
+          {/* Оценка — ОТДЕЛЬНОЙ строкой. Раньше звёзды делили ряд с полем имени
+              и на узком экране их сжимало за край картинки. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-[13px] font-medium text-foreground/70">Ваша оценка</span>
+            <div className="flex items-center">
+              {[1, 2, 3, 4, 5].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  aria-label={`Оценка ${s} из 5`}
+                  onMouseEnter={() => setHoverRating(s)}
+                  onMouseLeave={() => setHoverRating(0)}
+                  onClick={() => setRating(s)}
+                  className="shrink-0 grid h-11 w-11 place-items-center -mx-0.5"
+                >
+                  <Star
+                    size={24}
+                    className={`transition-colors ${(hoverRating || rating) >= s ? "text-amber-300" : "text-foreground/25"}`}
+                    fill={(hoverRating || rating) >= s ? "currentColor" : "none"}
+                  />
+                </button>
+              ))}
+            </div>
+            {ratingLabel && (
+              <span className="text-[13px] text-foreground/60">{ratingLabel}</span>
+            )}
           </div>
-        </div>
-        <div className="flex gap-3">
+
           <textarea
-            placeholder="Напишите отзыв..."
+            placeholder="Что понравилось, а что нет?"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            rows={2}
-            className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-foreground placeholder-muted-foreground text-sm resize-none focus:outline-none focus:border-primary transition-colors"
+            rows={3}
+            className="mt-3 w-full rounded-xl bg-background/60 px-3.5 py-3 text-[14px] text-foreground placeholder:text-foreground/40 resize-none outline-none ring-1 ring-white/[0.08] focus:ring-primary/50 transition-shadow"
             maxLength={500}
           />
-          <button onClick={handleSubmit}
-            disabled={!text.trim() || !author.trim() || rating === 0}
-            className="self-end px-4 py-2 bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2">
-            <Send size={16} />
-          </button>
-        </div>
-      </div>
 
-      {/* Comments list */}
-      {comments.length === 0 ? (
-        <div className="text-center py-10">
-          <MessageCircle size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-          <p className="text-muted-foreground">Пока нет отзывов. Будьте первым!</p>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-[12.5px] text-foreground/50">
+              {text.length > 0 ? `${text.length} / 500` : "Виден только вам"}
+            </span>
+            <button
+              onClick={handleSubmit}
+              disabled={!text.trim() || rating === 0}
+              className="h-10 px-5 rounded-full bg-primary text-[#0a0a0b] text-[13px] font-bold disabled:opacity-35 disabled:cursor-not-allowed hover:brightness-110 transition-[filter,opacity]"
+            >
+              Отправить
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="space-y-3">
-          {comments.map(c => (
-            <div key={c.id} className="bg-card border border-border rounded-xl p-4 group">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold">
-                    {c.author.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium text-foreground">{c.author}</span>
-                    <span className="text-xs text-muted-foreground ml-2">{timeAgo(c.createdAt)}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-0.5">
-                    {[1, 2, 3, 4, 5].map(s => (
-                      <Star key={s} size={12}
-                        className={c.rating >= s ? "text-yellow-400" : "text-gray-700"}
+        <div className="rounded-2xl bg-foreground/[0.04] p-5 text-[14px] text-foreground/70">
+          Войдите в аккаунт, чтобы оставлять отзывы — они сохранятся и будут
+          доступны на всех ваших устройствах.
+        </div>
+      )}
+
+      {/* ── Список ─────────────────────────────────────────────────────── */}
+      {comments.length === 0 ? (
+        <div className="py-8 text-center">
+          <MessageCircle size={32} className="mx-auto mb-2.5 text-foreground/20" />
+          <p className="text-[14px] text-foreground/55">
+            Здесь появятся ваши отзывы об этом тайтле
+          </p>
+        </div>
+      ) : (
+        <div>
+          {comments.map((c) => (
+            <article key={c.id} className="group flex gap-3.5 border-t border-white/[0.07] py-4">
+              <div className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/15 text-[13px] font-bold text-primary">
+                {(c.author || "Я").charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <span className="text-[13.5px] font-semibold text-foreground">{c.author}</span>
+                  <span className="text-[12.5px] text-foreground/50">{timeAgo(c.createdAt)}</span>
+                  <span className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star
+                        key={s}
+                        size={13}
+                        className={c.rating >= s ? "text-amber-300" : "text-foreground/20"}
                         fill={c.rating >= s ? "currentColor" : "none"}
                       />
                     ))}
-                  </div>
-                  <button onClick={() => handleDelete(c.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-red-400 transition-all">
-                    <Trash2 size={14} />
-                  </button>
+                  </span>
                 </div>
+                <p className="mt-1.5 text-[14px] leading-relaxed text-foreground/80 break-words">{c.text}</p>
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">{c.text}</p>
-            </div>
+              {/* Удаление: на телефоне навести нельзя, поэтому кнопка видна всегда
+                  (приглушённо), а на десктопе проявляется при наведении. */}
+              <button
+                onClick={() => handleDelete(c.id)}
+                aria-label="Удалить отзыв"
+                className="h-9 w-9 shrink-0 grid place-items-center rounded-full text-foreground/40 opacity-60 hover:bg-white/[0.06] hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+              >
+                <Trash2 size={15} />
+              </button>
+            </article>
           ))}
         </div>
       )}
