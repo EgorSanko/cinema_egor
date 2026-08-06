@@ -814,6 +814,24 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // ("Смотреть"); resume=true → seek to the saved position ("Продолжить").
   const openPlayerEp = (resume: boolean) => {
     if (!requireAuth("Войдите, чтобы смотреть сериалы и сохранять прогресс")) return;
+    // Клик мог прийти РАНЬШЕ, чем эффект подставил сохранённую серию: на холодном
+    // старте (заход с ярлыка на главном экране) между отрисовкой кнопки и
+    // выполнением эффектов есть небольшое окно. Если нажать в него, в состоянии
+    // ещё заглушка «сезон 1, серия 1» — и запускалась первая серия, хотя список
+    // через миг показывал правильную. Поэтому здесь дочитываем сохранённую серию
+    // синхронно, до старта воспроизведения.
+    if (!episodeRestored) {
+      try {
+        const p = new URLSearchParams(window.location.search);
+        const qs = p.get("s"), qe = p.get("e");
+        if (qs && qe) { setSelectedSeason(parseInt(qs, 10)); setSelectedEpisode(parseInt(qe, 10)); }
+        else {
+          const last = getLastEpisode(show.id);
+          if (last) { setSelectedSeason(last.season); setSelectedEpisode(last.episode); }
+        }
+      } catch {}
+      setEpisodeRestored(true);
+    }
     startedRef.current = true;
     setWantResume(resume);
     if (resume && resumeTime && videoRef.current) videoRef.current.currentTime = resumeTime;
