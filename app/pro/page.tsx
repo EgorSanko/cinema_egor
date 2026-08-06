@@ -149,14 +149,15 @@ export default function ProPage() {
 
         {/* ── Hero ─────────────────────────────────────────────── */}
         <section className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-12 sm:pt-16 pb-8 text-center">
-          <div className="inline-flex items-center gap-2 px-3.5 h-8 rounded-full bg-gradient-to-r from-amber-400/15 to-primary/20 ring-1 ring-primary/40 text-primary text-[12px] font-bold tracking-wider uppercase">
-            <Crown size={13} /> sapkeflykino Про
-          </div>
-          <h1 className="mt-5 text-4xl sm:text-6xl font-black text-foreground tracking-tight leading-[1.05]">
+          {/* Пилюля «SAPKEFLYKINO ПРО» разряженным капсом над крупным заголовком
+              убрана — это тот же шаблон ИИ-героя (hero-eyebrow-chip), что мы
+              сняли на главной. Раздел и так подписан в навигации, а заголовок
+              говорит сам за себя. */}
+          <h1 className="text-4xl sm:text-6xl font-black text-foreground tracking-tight leading-[1.05]">
             Смотри без рекламы <br className="hidden sm:block" />
             <span className="text-primary">и без ограничений</span>
           </h1>
-          <p className="mt-4 text-foreground/60 text-[15px] sm:text-lg max-w-2xl mx-auto leading-relaxed">
+          <p className="mt-4 text-foreground/75 text-[15px] sm:text-lg max-w-2xl mx-auto leading-relaxed">
             Максимальное качество, все озвучки, скачивание и совместный просмотр —
             в одной подписке на месяц. Без автосписаний.
           </p>
