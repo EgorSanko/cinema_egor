@@ -26,9 +26,9 @@ export function TVCard({ show }: TVCardProps) {
           />
           {/* Series badge + rating chip stacked top-left */}
           <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
-            <div className="bg-primary/90 text-white text-[12px] font-bold px-2 py-0.5 rounded-md uppercase">Сериал</div>
+            <div className="bg-primary text-[#0a0a0b] text-[12px] font-bold px-2 py-0.5 rounded-md uppercase">Сериал</div>
             {rating && (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur-sm text-[11px] font-bold text-foreground ring-1 ring-white/10">
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/85 backdrop-blur-sm text-[11px] font-bold text-foreground ring-1 ring-white/10">
                 <span className="text-amber-300">★</span>{rating}
               </div>
             )}

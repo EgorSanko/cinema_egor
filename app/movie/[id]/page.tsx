@@ -119,7 +119,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
                           alt={r.title || ""}
                           fill
                           sizes="(max-width: 640px) 33vw, 200px"
-                          className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                          className="object-cover brightness-[0.92] transition-[filter] duration-300 group-hover:brightness-110"
                         />
                       ) : null}
                       {r.vote_average > 0 && (

@@ -51,7 +51,7 @@ export default function FavoritesPage() {
               <Heart size={64} className="mx-auto text-muted-foreground/30 mb-4" />
               <p className="text-xl text-muted-foreground mb-2">Здесь пока пусто</p>
               <p className="text-sm text-muted-foreground mb-6">Нажмите ❤️ на фильме или сериале, чтобы добавить</p>
-              <Link href="/" className="px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors inline-block">Перейти к каталогу</Link>
+              <Link href="/" className="px-6 py-3 bg-primary hover:bg-primary text-[#0a0a0b] rounded-xl font-medium transition-colors inline-block">Перейти к каталогу</Link>
             </div>
           )}
 
@@ -63,7 +63,7 @@ export default function FavoritesPage() {
                     <Image src={getImageUrl(item.poster_path, "w342") || "/placeholder.svg"} alt={item.title} fill
                       className="object-cover brightness-[0.92] transition-[filter] duration-300 ease-out group-hover:brightness-110" sizes="(max-width: 768px) 50vw, 185px" />
                     {item.type === "tv" && (
-                      <div className="absolute top-2 left-2 bg-primary/90 text-white text-[12px] font-bold px-2 py-1 rounded-md uppercase z-10">Сериал</div>
+                      <div className="absolute top-2 left-2 bg-primary text-[#0a0a0b] text-[12px] font-bold px-2 py-1 rounded-md uppercase z-10">Сериал</div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                       <div className="absolute bottom-0 left-0 right-0 p-3">

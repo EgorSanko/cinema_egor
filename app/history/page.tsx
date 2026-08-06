@@ -77,7 +77,7 @@ export default function HistoryPage() {
               <Clock size={64} className="mx-auto text-muted-foreground/30 mb-4" />
               <p className="text-xl text-muted-foreground mb-2">История пуста</p>
               <p className="text-sm text-muted-foreground mb-6">Начните смотреть — ваши фильмы и сериалы появятся здесь</p>
-              <Link href="/" className="px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors inline-block">Перейти к каталогу</Link>
+              <Link href="/" className="px-6 py-3 bg-primary hover:bg-primary text-[#0a0a0b] rounded-xl font-medium transition-colors inline-block">Перейти к каталогу</Link>
             </div>
           )}
 

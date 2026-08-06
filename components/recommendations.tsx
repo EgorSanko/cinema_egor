@@ -113,7 +113,7 @@ export function Recommendations() {
                       sizes="(max-width: 768px) 50vw, 185px"
                     />
                     {item.media_type === "tv" && (
-                      <div className="absolute top-2 left-2 bg-primary/90 text-white text-[12px] font-bold px-2 py-1 rounded-md uppercase z-10">Сериал</div>
+                      <div className="absolute top-2 left-2 bg-primary text-[#0a0a0b] text-[12px] font-bold px-2 py-1 rounded-md uppercase z-10">Сериал</div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                       <div className="absolute bottom-0 left-0 right-0 p-3">

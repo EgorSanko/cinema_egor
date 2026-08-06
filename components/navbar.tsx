@@ -282,7 +282,7 @@ export function Navbar() {
                   alt={tariff === "pro" ? "sapkefly kino pro" : "sapkefly kino"}
                   decoding="async"
                   fetchPriority="high"
-                  className={`w-auto max-w-full object-contain object-left transition-transform duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)] ${
+                  className={`w-auto max-w-full object-contain object-left transition-[filter] duration-200 group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.45)] ${
                     tariff === "pro" ? "h-[58px]" : "h-11"
                   }`}
                 />

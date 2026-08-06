@@ -91,7 +91,7 @@ export default function StatusBucketPage({ params }: { params: Promise<{ bucket:
                   <Link href={it.type === "tv" ? `/tv/${it.id}` : `/movie/${it.id}`} className="block">
                     <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-foreground/[0.04] ring-1 ring-white/[0.06] group-hover:ring-primary/40 transition-all">
                       {it.poster_path ? (
-                        <Image src={`${POSTER}/w342${it.poster_path}`} alt={it.title} fill sizes="200px" className="object-cover transition-transform group-hover:scale-105" />
+                        <Image src={`${POSTER}/w342${it.poster_path}`} alt={it.title} fill sizes="200px" className="object-cover brightness-[0.92] transition-[filter] duration-300 group-hover:brightness-110" />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-foreground/30"><Film size={28} /></div>
                       )}

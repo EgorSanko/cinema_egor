@@ -29,7 +29,7 @@ export function MovieCard({ movie }: MovieCardProps) {
           />
           {/* Rating chip — always visible top-left so phone users see it without hovering */}
           {rating && (
-            <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur-sm text-[11px] font-bold text-foreground ring-1 ring-white/10">
+            <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/85 backdrop-blur-sm text-[11px] font-bold text-foreground ring-1 ring-white/10">
               <span className="text-amber-300">★</span>{rating}
             </div>
           )}

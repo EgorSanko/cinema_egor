@@ -507,7 +507,7 @@ export function TVHome({ trendingMovies, popularMovies, latestMovies, trendingTV
                           style={{ color: it.rating >= 7.5 ? "#facc15" : it.rating >= 5 ? "#a1a1aa" : "#ef4444" }}>⭐ {it.rating}</div>
                         {it.isSeries && <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-primary/90 text-[12px] font-bold text-white">Сериал</div>}
                         {it.progress != null && it.progress > 0 && <div className="absolute bottom-0 inset-x-0 h-[3px] bg-black/50"><div className="h-full bg-primary" style={{ width: `${it.progress}%` }} /></div>}
-                        {it.season && it.episode && <div className="absolute bottom-2 left-2 bg-primary/90 text-white text-[11px] font-bold px-1.5 py-0.5 rounded">S{it.season}E{it.episode}</div>}
+                        {it.season && it.episode && <div className="absolute bottom-2 left-2 bg-primary text-[#0a0a0b] text-[11px] font-bold px-1.5 py-0.5 rounded">S{it.season}E{it.episode}</div>}
                         {f && <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_50%_80%,hsl(var(--primary)/0.1)_0%,transparent_60%)]" />}
                       </div>
                       <div className="mt-2 text-[13px] font-semibold truncate transition-colors" style={{ color: f ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}>{it.title}</div>

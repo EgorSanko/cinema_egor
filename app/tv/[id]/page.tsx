@@ -124,7 +124,7 @@ export default async function TVPage({ params }: TVPageProps) {
                           alt={r.name || ""}
                           fill
                           sizes="(max-width: 640px) 33vw, 200px"
-                          className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                          className="object-cover brightness-[0.92] transition-[filter] duration-300 group-hover:brightness-110"
                         />
                       ) : null}
                       {r.number_of_seasons && (

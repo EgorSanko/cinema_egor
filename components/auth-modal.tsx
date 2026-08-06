@@ -237,7 +237,7 @@ export function AuthModal({ isOpen, onClose, reason }: AuthModalProps) {
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
-          <button type="submit" disabled={loading} className="w-full py-3 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+          <button type="submit" disabled={loading} className="w-full py-3 bg-primary hover:bg-primary text-[#0a0a0b] rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
             {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : (
               <>
                 {step === "login" && <><LogIn size={18} /> Войти</>}
