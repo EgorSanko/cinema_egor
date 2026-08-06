@@ -27,6 +27,18 @@ const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
   { label: "Жанры", href: "/genres", Icon: LayoutGrid },
 ];
 
+// Подставляет логотип по тарифу ДО первой отрисовки (см. место вставки ниже).
+// Выполняется синхронно при разборе HTML, поэтому нейтральный логотип не успевает
+// мелькнуть. Класс высоты правим тоже: у Pro-варианта она своя.
+const LOGO_BOOT = `(function(){try{
+var e=document.getElementById('brand-logo');if(!e)return;
+var t=localStorage.getItem('user')?localStorage.getItem('kino_tariff'):'free';
+if(t!=='pro'&&t!=='free')return;
+e.src='/logo-'+t+'.png';
+e.alt=t==='pro'?'sapkefly kino pro':'sapkefly kino';
+e.className=e.className.replace('h-11','#H#').replace('h-[58px]','#H#').replace('#H#',t==='pro'?'h-[58px]':'h-11');
+}catch(_){}})();`;
+
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -83,16 +95,16 @@ export function Navbar() {
   // подписки, и только затем приходит правда. Логотип успевал смениться трижды
   // за перезагрузку и прыгал. Поэтому помним последний известный тариф и
   // показываем его сразу, а перезаписываем только по достоверному ответу.
-  const [tariff, setTariff] = useState<"free" | "pro" | null>(null);
-
-  useEffect(() => {
+  // Читаем в ИНИЦИАЛИЗАТОРЕ (не в эффекте) — чтобы первый же клиентский рендер
+  // был с верным логотипом и React потом не менял src ещё раз.
+  const [tariff, setTariff] = useState<"free" | "pro" | null>(() => {
+    if (typeof window === "undefined") return null;
     try {
-      // Нет юзера в localStorage — это точно разлогин, тариф free без ожидания.
-      if (!localStorage.getItem("user")) { setTariff("free"); return; }
+      if (!localStorage.getItem("user")) return "free";
       const t = localStorage.getItem("kino_tariff");
-      if (t === "pro" || t === "free") setTariff(t);
-    } catch {}
-  }, []);
+      return t === "pro" || t === "free" ? t : null;
+    } catch { return null; }
+  });
 
   useEffect(() => {
     let hasUser = false;
@@ -265,6 +277,7 @@ export function Navbar() {
             <div className="flex items-center flex-shrink-0">
               <Link href="/" className="group flex h-[58px] w-[158px] items-center">
                 <img
+                  id="brand-logo"
                   src={tariff === "pro" ? "/logo-pro.png" : tariff === "free" ? "/logo-free.png" : "/logo.png"}
                   alt={tariff === "pro" ? "sapkefly kino pro" : "sapkefly kino"}
                   decoding="async"
@@ -274,6 +287,13 @@ export function Navbar() {
                   }`}
                 />
               </Link>
+              {/* HTML приходит статикой и не знает тариф, поэтому в разметке стоит
+                  нейтральный логотип. Этот скрипт выполняется СИНХРОННО при разборе
+                  страницы (сразу после <img>) и подменяет его на нужный ДО первой
+                  отрисовки — иначе полсекунды висел нейтральный, а потом прыгал на
+                  PRO. Дальше React рендерит ровно то же значение (его же читает
+                  инициализатор useState), поэтому повторной смены нет. */}
+              <script dangerouslySetInnerHTML={{ __html: LOGO_BOOT }} />
             </div>
 
             {/* Nav pill (desktop). min-w-0 + overflow-x-auto: когда пунктов много
