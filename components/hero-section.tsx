@@ -208,8 +208,8 @@ export function HeroSection({ movies }: HeroSectionProps) {
         })}
       </CarouselContent>
 
-      <CarouselPrevious className="left-4 sm:left-6 top-1/2 h-12 w-12 bg-background/40 border-white/20 backdrop-blur-md text-foreground/85 hover:bg-background/70 hover:text-foreground transition-opacity opacity-60 group-hover:opacity-100" />
-      <CarouselNext className="right-4 sm:right-6 top-1/2 h-12 w-12 bg-background/40 border-white/20 backdrop-blur-md text-foreground/85 hover:bg-background/70 hover:text-foreground transition-opacity opacity-60 group-hover:opacity-100" />
+      <CarouselPrevious className="left-auto right-[104px] top-auto bottom-6 -translate-y-0 h-11 w-11 bg-background/40 border-white/20 backdrop-blur-md text-foreground/85 hover:bg-background/70 hover:text-foreground transition-opacity opacity-60 group-hover:opacity-100" />
+      <CarouselNext className="right-6 top-auto bottom-6 -translate-y-0 h-11 w-11 bg-background/40 border-white/20 backdrop-blur-md text-foreground/85 hover:bg-background/70 hover:text-foreground transition-opacity opacity-60 group-hover:opacity-100" />
     </Carousel>
   );
 }

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Righteous } from "next/font/google";
+import { Geist, Geist_Mono, Righteous, Oswald } from "next/font/google";
 import Script from "next/script";
 import type React from "react";
 import "./globals.css";
@@ -13,6 +13,16 @@ import { SubscriptionEnforcer } from "@/components/subscription-enforcer";
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 const righteous = Righteous({ subsets: ["latin"], weight: "400", variable: "--font-brand" });
+// Заголовочный шрифт. Один Geist на весь сайт делал типографику безликой
+// (детектор Impeccable: single-font + overused-font — Geist в их списке
+// «заезженных» вместе с Inter/Roboto). Oswald — узкий гротеск в духе киноафиши:
+// длинные русские названия влезают в одну-две строки вместо трёх. Кириллица
+// подключена явно, иначе заголовки уехали бы в системный фолбэк.
+const oswald = Oswald({
+  subsets: ["latin", "cyrillic"],
+  weight: ["500", "600", "700"],
+  variable: "--font-display",
+});
 
 // Yandex.Metrika counter id. Set this to the number from metrika.yandex.ru
 // (Настройки счётчика → «Номер счётчика»). 0 = disabled until provided.
@@ -64,7 +74,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" className={`dark ${geist.variable} ${righteous.variable}`}>
+    <html lang="ru" className={`dark ${geist.variable} ${righteous.variable} ${oswald.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
         {/* Миграция застрявших на zenithjs («джетикс») → Alloha. Джетикс больше не
             основной источник (только тихий фолбэк). Двигаем ТОЛЬКО zenithjs/пустое,

@@ -134,6 +134,9 @@ html:not(.dark) a[href^="/person/"]:hover {
 	/* Geist — clean geometric grotesk, closest free analogue to SF Pro.
 	   Wired via geist.variable (--font-geist) on <html> in layout.tsx. */
 	--font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	/* Oswald — заголовочный. Тело остаётся на Geist: контраст «узкий акцидентный
+	   заголовок / нейтральный текст» и даёт типографическую иерархию. */
+	--font-display: var(--font-oswald), var(--font-geist), sans-serif;
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
 	--color-card: var(--card);
@@ -302,4 +305,16 @@ html:not(.dark) a[href^="/person/"]:hover {
 	/* fullscreenWeb (⛶ «на весь экран по ширине») ВОЗВРАЩЕНА на мобиле по просьбе —
 	   в портретной ориентации полезна (заполнить экран без нативного FS). Одна
 	   кнопка помещается: pip и стрелки серий скрыты, место есть. */
+}
+
+/* ── Заголовочная типографика ────────────────────────────────────────────────
+   Заголовки — узким Oswald, текст — нейтральным Geist. До этого весь сайт был
+   набран одним шрифтом: детектор Impeccable отмечал это как single-font +
+   overused-font (Geist у них в списке «заезженных» рядом с Inter/Roboto), а
+   визуально страница читалась безлико — заголовок и текст отличались только
+   жирностью. Oswald узкий, поэтому длинные русские названия занимают меньше
+   строк; трекинг чуть распускаем, иначе плотный набор слипается в капсе. */
+h1, h2 {
+	font-family: var(--font-display);
+	letter-spacing: 0.005em;
 }
