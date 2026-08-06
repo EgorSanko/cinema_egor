@@ -8,6 +8,7 @@ import {
   Menu, Search, X, User, LogOut, LogIn,
   Home, Tv, Layers, Users, LayoutGrid,
   Bookmark, ChevronDown, Heart, Clock, Send, Crown, Tv2,
+  Sparkles, ListVideo, Download, LifeBuoy, Inbox, Settings,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -326,20 +327,29 @@ export function Navbar() {
                 href="https://t.me/sapkeflykino"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 h-10 px-3 lg:px-3.5 rounded-full bg-sky-500/12 ring-1 ring-sky-500/30 text-sky-400 text-[12.5px] font-semibold hover:bg-sky-500/18 transition-colors"
+                /* Вторичное действие: плотная нейтральная подложка, без цветного
+                   оттенка. Была полупрозрачная синяя пилюля (12% заливки + рамка
+                   30%) — она и тянула третий цвет рядом с фирменным зелёным, и
+                   выглядела блёкло: «призрачная пилюля» это типовой признак
+                   сгенерированного интерфейса. */
+                className="inline-flex items-center gap-2 h-10 px-3.5 lg:px-4 rounded-full bg-foreground/[0.10] text-foreground text-[13px] font-semibold hover:bg-foreground/[0.16] transition-colors"
                 title="Наш Telegram-канал — новинки каждый день"
               >
-                <Send size={14} />
+                <Send size={15} />
                 <span className="hidden lg:inline">Telegram</span>
               </a>
 
               {/* Приложение для Android TV (телефонное снято — все через сайт). */}
               <Link
                 href="/download"
-                className="hidden lg:inline-flex items-center gap-1.5 h-10 px-3.5 rounded-full bg-primary/12 ring-1 ring-primary/30 text-primary text-[12.5px] font-semibold hover:bg-primary/18 transition-colors"
+                /* Основное действие в этой паре — сплошная заливка фирменным
+                   зелёным с тёмным текстом (~11:1). Появляется внятная иерархия
+                   «главное / второстепенное» вместо двух одинаково блёклых
+                   полупрозрачных пилюль. */
+                className="hidden lg:inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-[#0a0a0b] text-[13px] font-bold hover:brightness-110 transition-[filter]"
                 title="Приложение для Android TV"
               >
-                <Tv2 size={14} />
+                <Tv2 size={15} />
                 <span>ТВ</span>
               </Link>
 
@@ -467,24 +477,24 @@ export function Navbar() {
                           <Clock size={15} /> История
                         </Link>
                         <Link href="/wrapped" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-primary/90 hover:text-primary hover:bg-primary/5 transition-colors font-semibold">
-                          <span className="text-base leading-none">🎬</span> Год в кино
+                          <Sparkles size={15} /> Год в кино
                         </Link>
                         <Link href="/lists" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 transition-colors">
-                          <span className="text-base leading-none">📋</span> Мои списки
+                          <ListVideo size={15} /> Мои списки
                         </Link>
                         <Link href="/downloads" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 transition-colors">
-                          <span className="text-base leading-none">⬇️</span> Загрузки
+                          <Download size={15} /> Загрузки
                         </Link>
                         <Link href="/support" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 transition-colors">
-                          <span className="text-base leading-none">💬</span> Поддержка
+                          <LifeBuoy size={15} /> Поддержка
                         </Link>
                         {(process.env.NEXT_PUBLIC_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).includes(user.email?.toLowerCase() || "") && (
                           <>
                             <Link href="/admin/tickets" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 transition-colors border-t border-white/[0.06]">
-                              <span className="text-base leading-none">📨</span> Заявки (админ)
+                              <Inbox size={15} /> Заявки (админ)
                             </Link>
                             <Link href="/admin/logs" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 transition-colors">
-                              <span className="text-base leading-none">⚙️</span> Админ-логи
+                              <Settings size={15} /> Админ-логи
                             </Link>
                           </>
                         )}
@@ -607,14 +617,14 @@ export function Navbar() {
                       onClick={() => setIsOpen(false)}
                       className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 rounded-lg transition-colors"
                     >
-                      <span className="text-base leading-none">⬇️</span> Загрузки
+                      <Download size={15} /> Загрузки
                     </Link>
                     <Link
                       href="/support"
                       onClick={() => setIsOpen(false)}
                       className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-foreground/80 hover:text-foreground hover:bg-foreground/5 rounded-lg transition-colors"
                     >
-                      <span className="text-base leading-none">💬</span> Поддержка
+                      <LifeBuoy size={15} /> Поддержка
                     </Link>
                     {(process.env.NEXT_PUBLIC_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).includes(user.email?.toLowerCase() || "") && (
                       <>
@@ -623,14 +633,14 @@ export function Navbar() {
                           onClick={() => setIsOpen(false)}
                           className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 rounded-lg transition-colors"
                         >
-                          <span className="text-base leading-none">📨</span> Заявки (админ)
+                          <Inbox size={15} /> Заявки (админ)
                         </Link>
                         <Link
                           href="/admin/logs"
                           onClick={() => setIsOpen(false)}
                           className="flex items-center gap-3 px-3 py-2.5 text-[15px] text-amber-300/90 hover:text-amber-300 hover:bg-amber-400/5 rounded-lg transition-colors"
                         >
-                          <span className="text-base leading-none">⚙️</span> Админ-логи
+                          <Settings size={15} /> Админ-логи
                         </Link>
                       </>
                     )}
