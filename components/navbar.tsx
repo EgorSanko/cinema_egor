@@ -77,6 +77,39 @@ export function Navbar() {
   const { user, logout } = useAuth();
   const debouncedSearch = useDebounce(searchQuery, 300);
 
+  // ── Тариф для логотипа (free / pro) ──────────────────────────────────────
+  // Напрямую по isPro брать НЕЛЬЗЯ: на старте юзер ещё не прочитан из
+  // localStorage (email пуст → isPro=false, loading=false), потом идёт запрос
+  // подписки, и только затем приходит правда. Логотип успевал смениться трижды
+  // за перезагрузку и прыгал. Поэтому помним последний известный тариф и
+  // показываем его сразу, а перезаписываем только по достоверному ответу.
+  const [tariff, setTariff] = useState<"free" | "pro" | null>(null);
+
+  useEffect(() => {
+    try {
+      // Нет юзера в localStorage — это точно разлогин, тариф free без ожидания.
+      if (!localStorage.getItem("user")) { setTariff("free"); return; }
+      const t = localStorage.getItem("kino_tariff");
+      if (t === "pro" || t === "free") setTariff(t);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    let hasUser = false;
+    try { hasUser = !!localStorage.getItem("user"); } catch {}
+    if (!hasUser) {
+      setTariff("free");
+      try { localStorage.removeItem("kino_tariff"); } catch {}
+      return;
+    }
+    // Юзер есть, но auth/подписка ещё не догрузились — держим запомненный
+    // вариант, ничего не мигаем.
+    if (subLoading || !user?.email) return;
+    const t: "free" | "pro" = isPro ? "pro" : "free";
+    setTariff(t);
+    try { localStorage.setItem("kino_tariff", t); } catch {}
+  }, [isPro, subLoading, user?.email]);
+
   useEffect(() => {
     const fetchSuggestions = async () => {
       if (debouncedSearch.trim().length > 1) {
@@ -222,21 +255,22 @@ export function Navbar() {
           <div className="flex items-center justify-between h-16 gap-3">
             {/* Логотип САМ показывает тариф: у free — шильдик FREE, у Pro — корона
                 и золотой бейдж PRO (отдельные текстовые пилюли убраны, выглядели
-                хуже). Пока подписка грузится — нейтральный логотип, чтобы не
-                мигать FREE→PRO. У Pro-версии корона и бейдж съедают высоту, из-за
-                чего при равной высоте картинки надпись выходила мельче — поэтому
-                ей задана своя высота, так оба варианта смотрятся одинаково. */}
+                хуже). Вариант берём из ЗАПОМНЕННОГО тарифа (см. tariff выше), а не
+                напрямую из isPro: иначе при каждой перезагрузке логотип успевал
+                смениться трижды (FREE → нейтральный → PRO), пока читался юзер и
+                грузилась подписка — он «прыгал». Коробка фиксированного размера,
+                поэтому смена варианта не двигает шапку. У Pro корона и бейдж
+                съедают высоту, из-за чего при равной высоте надпись выходила
+                мельче — ему задана своя высота, так оба читаются одинаково. */}
             <div className="flex items-center flex-shrink-0">
-              <Link href="/" className="group flex items-center">
+              <Link href="/" className="group flex h-[58px] w-[158px] items-center">
                 <img
-                  src={subLoading ? "/logo.png" : isPro ? "/logo-pro.png" : "/logo-free.png"}
-                  alt={!subLoading && isPro ? "sapkefly kino pro" : "sapkefly kino"}
-                  width={170}
-                  height={44}
+                  src={tariff === "pro" ? "/logo-pro.png" : tariff === "free" ? "/logo-free.png" : "/logo.png"}
+                  alt={tariff === "pro" ? "sapkefly kino pro" : "sapkefly kino"}
                   decoding="async"
                   fetchPriority="high"
-                  className={`w-auto transition-all duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)] ${
-                    !subLoading && isPro ? "h-[58px]" : "h-11"
+                  className={`w-auto max-w-full object-contain object-left transition-transform duration-200 group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_18px_rgba(163,230,53,0.4)] ${
+                    tariff === "pro" ? "h-[58px]" : "h-11"
                   }`}
                 />
               </Link>
