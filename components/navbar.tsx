@@ -249,7 +249,9 @@ export function Navbar() {
   };
 
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
-  const initials = user?.name ? user.name.trim().charAt(0).toUpperCase() : "?";
+  // Инициал: имя → почта → «?». Раньше без имени в кружке висел знак вопроса —
+  // а имени нет у всех, кто заходил по QR-привязке с телефона.
+  const initials = (user?.name?.trim() || user?.email?.trim() || "?").charAt(0).toUpperCase();
 
   // Shared pill-container styles (the frosted-glass capsule)
   const pillContainer =
