@@ -201,9 +201,13 @@ export async function resolveAllohaEmbed(
 // Токен домен-locked на player.sapkeflykino.ru (в src он публичный — так задумано).
 export const ALLOHA_AD_TOKEN = "5df2e966475ea2b00c904164736c50";
 export const ALLOHA_PLAYER_HOST = "https://player.sapkeflykino.ru";
-// Рубильник монетизации free через плеер Alloha. false → free снова на нативный.
-// ВРЕМЕННО ВЫКЛ (2026-08-01): free-плеер player.sapkeflykino.ru отдавал 404 →
-// у free ничего не играло. Откат на нативный ArtPlayer до починки iframe-пути.
+// Рубильник монетизации free через плеер Alloha. false → free на нашем нативном.
+// РЕШЕНО ОСТАВИТЬ ВЫКЛ (2026-08-06). Плеер Alloha ПРОВЕРЕН и рабочий: отдаёт 200
+// (в т.ч. с RU-сервера — не под РКН), стримит с vkvideo.cloud, крутит рекламу.
+// Но его реклама идёт через IMA SDK + AdFox, которые режет любой адблок, а наш
+// пре-ролл встроен в поток и не блокируется. Т.е. их путь дал бы просмотры в
+// кабинете Alloha, но МЕНЬШЕ реальных показов. Плата за решение — счётчик в их
+// кабинете остаётся на нуле (наш нативный резолв им не виден).
 export const ALLOHA_AD_FOR_FREE = false;
 
 /** Строит URL iframe-плеера Alloha (наш токен) по TMDB id. Плеер сам резолвит
