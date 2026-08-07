@@ -100,7 +100,7 @@ const ringStyle = (focused: boolean, primary?: boolean): React.CSSProperties => 
   transition: "transform .15s ease-out, box-shadow .15s ease-out, background .15s ease-out",
   transform: focused ? "scale(1.06)" : "scale(1)",
   background: primary
-    ? focused ? "var(--primary)" : "color-mix(in srgb, var(--primary) 75%, transparent)"
+    ? focused ? "var(--primary)" : "rgba(163,230,53,0.75)"
     : focused ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.06)",
   color: primary ? "#0a0a0a" : focused ? "#fff" : "#a1a1aa",
   boxShadow: focused
@@ -1009,7 +1009,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                         className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-base font-semibold"
                         style={{
                           ...ringStyle(f),
-                          background: f ? "var(--primary)" : active ? "color-mix(in srgb, var(--primary) 18%, transparent)" : "rgba(255,255,255,0.05)",
+                          background: f ? "var(--primary)" : active ? "rgba(163,230,53,0.18)" : "rgba(255,255,255,0.05)",
                           color: f ? "#0a0a0a" : active ? "var(--primary)" : "#d4d4d8",
                         }}
                       >
@@ -1036,7 +1036,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                       className="rounded-xl px-5 py-4 text-left text-lg font-semibold"
                       style={{
                         ...ringStyle(f),
-                        background: f ? "var(--primary)" : active ? "color-mix(in srgb, var(--primary) 18%, transparent)" : "rgba(255,255,255,0.05)",
+                        background: f ? "var(--primary)" : active ? "rgba(163,230,53,0.18)" : "rgba(255,255,255,0.05)",
                         color: f ? "#0a0a0a" : active ? "var(--primary)" : "#d4d4d8",
                       }}
                     >
@@ -1098,7 +1098,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
           Back = Назад. */}
       {zone === "error" && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 px-12 text-center" style={{ background: "var(--background)" }}>
-          <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "color-mix(in srgb, var(--primary) 18%, transparent)" }}>
+          <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "rgba(163,230,53,0.18)" }}>
             <span className="text-3xl" style={{ color: "var(--primary)" }}>!</span>
           </div>
           <div className="flex flex-col items-center gap-2">
