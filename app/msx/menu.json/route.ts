@@ -99,6 +99,14 @@ export async function GET() {
           data: {
             type: "list",
             headline: "Проверка воспроизведения",
+            // Шаблон обязателен: без него MSX не знает размеров элементов и
+            // показывает «нет контента». Я его убирал, подозревая старую версию
+            // на телевизоре, — и сломал то, что работало. Возвращено.
+            template: {
+              type: "separate",
+              layout: "0,0,8,2",
+              color: "msx-glass",
+            },
             items: items.length
               ? items
               : [{ title: "Ничего не зарезолвилось", titleFooter: "проверьте бэкенд", icon: "error" }],
