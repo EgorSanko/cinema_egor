@@ -41,7 +41,26 @@ async function resolveQualities(p: Probe): Promise<Record<string, string>> {
 }
 
 export async function GET() {
-  const items: any[] = [];
+  // Диагностика по шагам. У телевизора Сани меню грузится, но нажатие НЕ
+  // приводит ни к одному запросу за видео — значит ломается раньше кодеков.
+  // Эти три пункта разделяют причины: работают ли действия вообще → тянет ли
+  // телевизор обычный файл с нашего домена → и только потом HLS.
+  const items: any[] = [
+    {
+      type: "default",
+      title: "1. Проверка отклика",
+      titleFooter: "должно открыться окно с текстом",
+      icon: "info",
+      action: "info:Действия работают. Переходите к пункту 2.",
+    },
+    {
+      type: "default",
+      title: "2. Обычное видео (файл MP4)",
+      titleFooter: "проверяем плеер и наш домен, без HLS",
+      icon: "play-arrow",
+      action: "video:https://sapkeflykino.ru/intro-logo-v2.mp4",
+    },
+  ];
 
   for (const p of PROBES) {
     const quality = await resolveQualities(p);
@@ -51,7 +70,7 @@ export async function GET() {
       const url = quality[q];
       if (!url) continue;
       items.push({
-        title: `${p.label} — ${q}p`,
+        title: `3. ${p.label} — ${q}p`,
         titleFooter: "нажмите OK, чтобы проверить воспроизведение",
         icon: "play-arrow",
         action: `video:${firstMirror(url)}`,
@@ -80,11 +99,6 @@ export async function GET() {
           data: {
             type: "list",
             headline: "Проверка воспроизведения",
-            template: {
-              type: "separate",
-              layout: "0,0,8,2",
-              color: "msx-glass",
-            },
             items: items.length
               ? items
               : [{ title: "Ничего не зарезолвилось", titleFooter: "проверьте бэкенд", icon: "error" }],
