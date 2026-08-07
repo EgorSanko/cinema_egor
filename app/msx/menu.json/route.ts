@@ -68,17 +68,29 @@ export async function GET() {
   }
 
   return NextResponse.json(
+    // По параметру «menu:» MSX ждёт ОБЪЕКТ МЕНЮ: массив menu, где у каждого
+    // пункта в data лежит объект контента. Сначала я отдал сразу контент —
+    // приложение ответило «Menu is missing» (проверено в самой MSX).
     {
-      type: "list",
-      headline: "SAPKEFLY KINO — проверка воспроизведения",
-      template: {
-        type: "separate",
-        layout: "0,0,8,2",
-        color: "msx-glass",
-      },
-      items: items.length
-        ? items
-        : [{ title: "Ничего не зарезолвилось", titleFooter: "проверьте бэкенд", icon: "error" }],
+      headline: "SAPKEFLY KINO",
+      menu: [
+        {
+          label: "Проверка воспроизведения",
+          icon: "play-arrow",
+          data: {
+            type: "list",
+            headline: "Проверка воспроизведения",
+            template: {
+              type: "separate",
+              layout: "0,0,8,2",
+              color: "msx-glass",
+            },
+            items: items.length
+              ? items
+              : [{ title: "Ничего не зарезолвилось", titleFooter: "проверьте бэкенд", icon: "error" }],
+          },
+        },
+      ],
     },
     {
       headers: {
