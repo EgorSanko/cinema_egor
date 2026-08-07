@@ -26,6 +26,14 @@ export async function GET() {
         color: "msx-black",
       },
     },
-    { headers: { "Cache-Control": "no-store" } },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+        // MSX — стороннее приложение (msx.benzac.de и веб-обёртки на ТВ), оно
+        // читает наш JSON кросс-доменно. Без этого заголовка браузер молча
+        // блокирует запрос, и MSX показывает «Data Load Error» (проверено).
+        "Access-Control-Allow-Origin": "*",
+      },
+    },
   );
 }
