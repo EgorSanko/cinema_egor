@@ -428,7 +428,16 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
           return;
         }
       } catch {}
-      // промах kino.pub → продолжаем в HDRezka ниже
+      // Промах kino.pub. Дальше по цепочке была HDRezka, но она забанена
+      // (HDREZKA_UP=false) → экран оставался пустым без объяснения. Пробуем
+      // Alloha, а если и там нет — говорим прямо. Симметрично сериалам.
+      if (!HDREZKA_UP) {
+        const ok = await resolveAllohaNative();
+        setLoading(false);
+        setTranslatorLoading(false);
+        if (!ok) setError("Этого фильма пока нет ни у одного источника. Загляните позже — каталог пополняется.");
+        return;
+      }
     }
     // Fallback chain — explicit arg > state > localStorage. Storage read covers
     // the race where the play button is tapped before the initial restore effect

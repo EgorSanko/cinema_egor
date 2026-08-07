@@ -624,7 +624,19 @@ export function TVPlayer({ show }: TVPlayerProps) {
           return;
         }
       } catch {}
-      // промах kino.pub → продолжаем в HDRezka ниже
+      // Промах kino.pub. Раньше отсюда шли «дальше в HDRezka», но HDRezka
+      // забанена (HDREZKA_UP=false) — цепочка упиралась в тупик и экран
+      // оставался ПУСТЫМ, без единого слова пользователю (репорт: «показывает
+      // только 1 серию, а 9-ю нет» — там у kino.pub просто нет этой серии).
+      // Теперь пробуем Alloha: у неё часто есть то, чего нет у kino.pub. Если и
+      // там пусто — говорим честно, а не молчим.
+      if (!HDREZKA_UP) {
+        const ok = await resolveAllohaNative(season, episode);
+        setLoading(false);
+        setTranslatorLoading(false);
+        if (!ok) setError("Этой серии пока нет ни у одного источника. Попробуйте другую серию или зайдите позже — каталог пополняется.");
+        return;
+      }
     }
     // Fallback chain — explicit arg > state > localStorage. Storage read covers
     // the race where the play button is tapped before the initial restore effect
