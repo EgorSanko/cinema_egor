@@ -85,6 +85,21 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`dark ${geist.variable} ${righteous.variable} ${oswald.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
+        {/* Ловушка ошибок для устройств, где мы не можем открыть консоль (ТВ,
+            приставки). Симптом, ради которого добавлено: на Android TV страница
+            входа грузилась, заставка проигрывала — и всё замирало, потому что
+            скрипты падали, а мы этого не видели. Скрипт нарочно написан на
+            СТАРОМ синтаксисе и без зависимостей: он обязан выполниться даже
+            там, где основной бандл не осилился, и шлёт ошибку картинкой (это
+            переживает любые ограничения на запросы). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){function s(m,x){try{var i=new Image();i.src='/tv-error?m='+encodeURIComponent(String(m).slice(0,300))+'&x='+encodeURIComponent(String(x||'').slice(0,120));}catch(e){}}" +
+              "window.onerror=function(m,src,l,c){s(m,(src||'')+':'+l+':'+c);};" +
+              "window.addEventListener('unhandledrejection',function(e){s('promise: '+((e&&e.reason&&e.reason.message)||e.reason),'');});})();",
+          }}
+        />
         {/* Миграция застрявших на zenithjs («джетикс») → Alloha. Джетикс больше не
             основной источник (только тихий фолбэк). Двигаем ТОЛЬКО zenithjs/пустое,
             явный выбор Про (hdrezka/kino.pub) не трогаем. До гидрации, чтобы навбар/
