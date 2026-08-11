@@ -17,7 +17,31 @@ import * as React from "react";
  */
 const RELOAD_FLAG = "kino_reloaded_after_deploy";
 
+/** Идёт ли сейчас просмотр — хоть один играющий <video> на странице. */
+function isWatching(): boolean {
+  try {
+    return Array.from(document.querySelectorAll("video")).some(
+      (v) => !v.paused && !v.ended && v.currentTime > 0 && v.readyState > 2,
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Отложенная перезагрузка: причина, по которой надо обновиться, пока человек
+// смотрит. Применим её, когда просмотр закончится.
+let pendingReason: string | null = null;
+
 function reloadOnce(reason: string) {
+  // ГЛАВНОЕ: не выдёргивать человека из фильма. Раньше любой деплой рассылал
+  // вкладкам «обновись», и страница перезагружалась ПОСРЕДИ ПРОСМОТРА — со
+  // стороны это выглядит как «ни с того ни с сего всё слетело» (репорт Егора).
+  // Свежий код никуда не денется: подхватится, когда просмотр закончится или
+  // при следующем переходе по сайту.
+  if (isWatching()) {
+    pendingReason = reason;
+    return;
+  }
   try {
     if (sessionStorage.getItem(RELOAD_FLAG)) return;
     sessionStorage.setItem(RELOAD_FLAG, reason);
@@ -55,6 +79,18 @@ export function ReloadOnStale() {
     const swTimer = setInterval(checkSW, 120000);
     const onVis = () => { if (document.visibilityState === "visible") checkSW(); };
     document.addEventListener("visibilitychange", onVis);
+
+    // Если обновление отложили из-за просмотра — применяем, как только человек
+    // досмотрел (ended) или закрыл плеер. На простую паузу НЕ реагируем: пауза
+    // это «отошёл за чаем», перезагружать в этот момент так же грубо.
+    const applyPending = () => {
+      if (!pendingReason || isWatching()) return;
+      const reason = pendingReason;
+      pendingReason = null;
+      reloadOnce(reason);
+    };
+    const pendingTimer = setInterval(applyPending, 5000);
+    document.addEventListener("ended", applyPending, true);
 
     // Catch ChunkLoadError from Webpack/Turbopack/Next.js — covers a wider
     // set of patterns now: dynamic import 404, RSC payload mismatch, "Minified
@@ -102,6 +138,8 @@ export function ReloadOnStale() {
     return () => {
       clearTimeout(clearGuard);
       clearInterval(swTimer);
+      clearInterval(pendingTimer);
+      document.removeEventListener("ended", applyPending, true);
       document.removeEventListener("visibilitychange", onVis);
       navigator.serviceWorker?.removeEventListener?.("message", onSwMessage);
       window.removeEventListener("error", onErr);
