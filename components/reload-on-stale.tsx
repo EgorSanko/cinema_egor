@@ -32,6 +32,45 @@ function isWatching(): boolean {
 // смотрит. Применим её, когда просмотр закончится.
 let pendingReason: string | null = null;
 
+const RELOAD_AT = "kino_reload_at";   // когда перезагружались в прошлый раз
+const RELOAD_N = "kino_reload_n";     // сколько раз подряд
+const COOLDOWN_MS = 60_000;           // не чаще раза в минуту
+const GIVE_UP_AFTER = 3;              // дальше — сдаёмся, лучше старая версия, чем петля
+
+/**
+ * Разрешена ли перезагрузка. Раньше защита снималась через 5 секунд, и при
+ * постоянной ошибке (например, закэшированный HTML ссылается на удалённые
+ * файлы сборки) страница уходила на новый круг каждые ~20 секунд — человек
+ * видел «само перезагружается посреди фильма». Теперь: не чаще раза в минуту,
+ * а после трёх попыток перестаём совсем.
+ */
+function mayReload(): boolean {
+  try {
+    const n = parseInt(sessionStorage.getItem(RELOAD_N) || "0", 10) || 0;
+    if (n >= GIVE_UP_AFTER) return false;
+    const at = parseInt(sessionStorage.getItem(RELOAD_AT) || "0", 10) || 0;
+    if (at && Date.now() - at < COOLDOWN_MS) return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+/** Сломан кэш: чистим его и снимаем service worker, иначе после перезагрузки
+ *  снова придёт тот же протухший HTML — и петля повторится. */
+async function dropCaches() {
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+    for (const r of regs) await r.unregister();
+  } catch {}
+  try {
+    if (window.caches) {
+      const keys = await caches.keys();
+      for (const k of keys) await caches.delete(k);
+    }
+  } catch {}
+}
+
 function reloadOnce(reason: string) {
   // ГЛАВНОЕ: не выдёргивать человека из фильма. Раньше любой деплой рассылал
   // вкладкам «обновись», и страница перезагружалась ПОСРЕДИ ПРОСМОТРА — со
@@ -42,21 +81,37 @@ function reloadOnce(reason: string) {
     pendingReason = reason;
     return;
   }
+  if (!mayReload()) return;
+
+  let n = 0;
   try {
-    if (sessionStorage.getItem(RELOAD_FLAG)) return;
+    n = (parseInt(sessionStorage.getItem(RELOAD_N) || "0", 10) || 0) + 1;
+    sessionStorage.setItem(RELOAD_N, String(n));
+    sessionStorage.setItem(RELOAD_AT, String(Date.now()));
     sessionStorage.setItem(RELOAD_FLAG, reason);
   } catch {}
+
+  // Со второго раза простой перезагрузки явно мало — чистим кэш и снимаем
+  // service worker, иначе вернётся тот же протухший HTML и круг повторится.
+  if (n >= 2) {
+    dropCaches().finally(() => setTimeout(() => location.reload(), 50));
+    return;
+  }
   // Use replace to drop history entry — and force a network fetch, not bfcache.
   setTimeout(() => location.reload(), 50);
 }
 
 export function ReloadOnStale() {
   React.useEffect(() => {
-    // Clear the guard after a successful initial render (5s) so a SECOND
-    // future deploy can still trigger reload in the same tab.
+    // Страница дожила до рендера — значит прошлая перезагрузка помогла, счётчик
+    // попыток сбрасываем. РАНЬШЕ здесь снимался сам запрет на перезагрузку через
+    // 5 секунд, и при постоянной ошибке страница уходила на новый круг каждые
+    // ~20 секунд (петля посреди просмотра). Теперь запрет держится минуту, а
+    // сбрасываем только счётчик — и то с задержкой, чтобы успеть отличить
+    // «загрузилось нормально» от «сразу опять сломалось».
     const clearGuard = setTimeout(() => {
-      try { sessionStorage.removeItem(RELOAD_FLAG); } catch {}
-    }, 5000);
+      try { sessionStorage.removeItem(RELOAD_N); } catch {}
+    }, 20000);
 
     // Listen for SW broadcasts
     const onSwMessage = (e: MessageEvent) => {
