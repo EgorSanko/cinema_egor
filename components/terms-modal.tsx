@@ -25,7 +25,14 @@ export function TermsModal() {
   return (
     // pointer-events-none на обёртке + auto на плашке → остальной сайт полностью
     // кликабелен, ловит клики только сама плашка. Никакого блокирующего фона.
-    <div className="fixed bottom-0 inset-x-0 z-40 p-3 sm:p-4 pointer-events-none">
+    //
+    // Два условия, без которых на телефоне плашку нельзя закрыть (жалоба Егора):
+    // 1) z-[60] — нижняя навигация висит на z-50 и раньше перекрывала плашку,
+    //    так что кнопка «Понятно» просто не нажималась: клик забирал навбар.
+    // 2) отступ снизу на высоту этой навигации (65px + вырез экрана) — иначе
+    //    плашка уезжает ровно под неё. На lg навбара нет (он lg:hidden),
+    //    поэтому там обычный отступ.
+    <div className="fixed bottom-0 inset-x-0 z-[60] px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+77px)] sm:px-4 sm:pt-4 lg:pb-4 pointer-events-none">
       <div className="pointer-events-auto mx-auto max-w-3xl rounded-2xl bg-card/95 backdrop-blur ring-1 ring-border shadow-2xl px-4 py-3 flex flex-col sm:flex-row items-center gap-3">
         <p className="text-[13px] text-foreground/80 leading-snug text-center sm:text-left flex-1">
           Продолжая пользоваться сайтом, вы соглашаетесь с{" "}
