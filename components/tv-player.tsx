@@ -480,6 +480,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
         if (alive && !ok && !startedRef.current) {
           const embed = await resolveIframeEmbed(show.id, "tv", selectedSeason, selectedEpisode, { allohaFallbackToZenith: true });
           if (alive && embed && !startedRef.current) setStreamData({ collaps: true, collapsEmbed: embed });
+          // Не нашлось нигде — раньше на этом месте экран просто молчал: ни
+          // потока, ни ошибки. Человек жал «смотреть», ничего не происходило,
+          // и он шёл писать заявку (жалоба на «Надежду Чикаго», 14.08 — у
+          // этого сериала действительно нет ни одного источника). Теперь
+          // говорим прямо, вместо того чтобы делать вид, что всё грузится.
+          else if (alive && !embed && !startedRef.current) {
+            setError("Этой серии пока нет ни у одного источника. Попробуйте другую серию или зайдите позже — каталог пополняется.");
+          }
         }
       })();
       return () => { alive = false; };
