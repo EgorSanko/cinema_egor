@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
 import type { WatchRoomState, ChatMessage, WatchMember } from "@/lib/watch-types";
+import { resolveAllohaHls, pickAllohaStream } from "@/lib/kinopub";
 import Hls from "hls.js";
 import {
   Users, Copy, Check, ArrowLeft, Send, Play, Pause, Loader2,
@@ -160,43 +161,45 @@ export default function WatchClient({ code }: Props) {
     }
   }, []);
 
-  // === FETCH STREAM FROM HDREZKA ===
-  const fetchStream = useCallback(async (movieTitle: string, movieYear: string, movieType: string, trId?: number, season?: number, episode?: number) => {
+  // === РЕЗОЛВ ПОТОКА — ALLOHA ===
+  // Раньше комната ходила в /hdrezka/api/search: поиск по НАЗВАНИЮ и году.
+  // Этот источник давно отдаёт пустоту на любой запрос (проверено: «Офис»,
+  // «Интерстеллар», «Миньоны» — везде {"error":"1","results":[]}), поэтому
+  // «Вместе» физически не могло включить ни одного тайтла.
+  //
+  // Теперь берём тот же Alloha, на котором работает основной плеер: матч по
+  // imdb-id — точный, без плясок с русским и оригинальным названием. Озвучки
+  // у Alloha идут списком без id, поэтому за id держим индекс в этом списке.
+  // Форма возвращаемых данных оставлена прежней — синхронизация с гостями,
+  // панель качества и переключение озвучки работают без изменений.
+  const fetchStream = useCallback(async (
+    movieId: number, movieType: string, trIdx?: number, season?: number, episode?: number,
+  ) => {
     try {
-      const q = encodeURIComponent(movieTitle);
-      const yr = movieYear ? `&year=${movieYear}` : "";
-      const tp = `&type=${movieType}`;
-      const ep = movieType === "tv" && season ? `&season=${season}&episode=${episode || 1}` : "";
-      const tr = trId ? `&translator_id=${trId}` : "";
-      const res = await fetch(`/hdrezka/api/search?q=${q}${yr}${tp}${ep}${tr}`);
-      const data = await res.json();
+      const a = await resolveAllohaHls(movieId, movieType === "tv" ? "tv" : "movie", season, episode);
+      if (!a) return null;
+      const idx = typeof trIdx === "number" && a.translations[trIdx] ? trIdx : 0;
+      const pick = pickAllohaStream(a, idx, "1080");
+      if (!pick) return null;
 
-      const processResult = (d: any) => {
-        streamUrlRef.current = d.stream;
-        setQuality(d.quality);
-        setStreams(d.streams || {});
-        if (d.translators?.length) setTranslators(d.translators);
-        if (d.translators?.[0]?.id && !trId) setTranslatorId(d.translators[0].id);
-        if (isHostRef.current && socketRef.current) {
-          socketRef.current.emit("set-stream", {
-            streamUrl: d.stream, quality: d.quality,
-            streams: d.streams || {}, translators: d.translators || [],
-            translatorId: trId || d.translators?.[0]?.id || null,
-          });
-        }
-        return d;
+      const d = {
+        stream: pick.url,
+        quality: pick.quality,
+        streams: a.translations[idx]?.quality || {},
+        translators: a.translations.map((t, i) => ({ id: i, name: t.name })),
       };
-
-      if (data.stream) return processResult(data);
-
-      if (data.results?.length) {
-        for (let i = 0; i < Math.min(data.results.length, 3); i++) {
-          const res2 = await fetch(`/hdrezka/api/search?q=${q}${yr}${tp}&index=${i}${ep}${tr}`);
-          const data2 = await res2.json();
-          if (data2.stream) return processResult(data2);
-        }
+      streamUrlRef.current = d.stream;
+      setQuality(d.quality);
+      setStreams(d.streams);
+      if (d.translators.length) setTranslators(d.translators);
+      setTranslatorId(idx);
+      if (isHostRef.current && socketRef.current) {
+        socketRef.current.emit("set-stream", {
+          streamUrl: d.stream, quality: d.quality,
+          streams: d.streams, translators: d.translators, translatorId: idx,
+        });
       }
-      return null;
+      return d;
     } catch { return null; }
   }, []);
 
@@ -392,19 +395,9 @@ export default function WatchClient({ code }: Props) {
       }
     };
     (async () => {
-      let data = await fetchStream(room.movieTitle, room.movieYear, room.movieType, undefined, room.season, room.episode);
-      // HDRezka indexes some titles only under their ORIGINAL name — if the
-      // localized title misses, look it up from TMDB and retry once.
-      if (!data) {
-        try {
-          const key = process.env.NEXT_PUBLIC_TMDB_API_KEY || "275c9d09780aadb4b13ff57a731eda00";
-          const t = await fetch(`/tmdb-api/${room.movieType}/${room.movieId}?api_key=${key}`).then((r) => r.json());
-          const orig = (t.original_title || t.original_name || "").trim();
-          if (orig && orig !== room.movieTitle) {
-            data = await fetchStream(orig, room.movieYear, room.movieType, undefined, room.season, room.episode);
-          }
-        } catch {}
-      }
+      // Подбора по оригинальному названию больше нет: Alloha ищет по imdb-id,
+      // а он у тайтла один — промахнуться названием невозможно.
+      const data = await fetchStream(room.movieId, room.movieType, undefined, room.season, room.episode);
       finish(data);
     })();
   }, [room, fetchStream]);
@@ -562,7 +555,7 @@ export default function WatchClient({ code }: Props) {
     // re-resolved the show from scratch and jumped back to S1E1.
     const isTv = room.movieType === "tv";
     const data = await fetchStream(
-      room.movieTitle, room.movieYear, room.movieType, trId,
+      room.movieId, room.movieType, trId,
       isTv ? season : undefined, isTv ? episode : undefined,
     );
     if (data) {
@@ -601,18 +594,9 @@ export default function WatchClient({ code }: Props) {
     setSeason(s);
     setEpisode(e);
     notify(`Переключаю на S${s}E${e}...`);
-    // Resolve the new episode with the same ru→original title fallback as initial load.
-    let data = await fetchStream(room.movieTitle, room.movieYear, "tv", translatorId || undefined, s, e);
-    if (!data) {
-      try {
-        const key = process.env.NEXT_PUBLIC_TMDB_API_KEY || "275c9d09780aadb4b13ff57a731eda00";
-        const t = await fetch(`/tmdb-api/tv/${room.movieId}?api_key=${key}`).then((r) => r.json());
-        const orig = (t.original_name || t.original_title || "").trim();
-        if (orig && orig !== room.movieTitle) {
-          data = await fetchStream(orig, room.movieYear, "tv", translatorId || undefined, s, e);
-        }
-      } catch {}
-    }
+    // Озвучку держим ту же: у Alloha это индекс, и 0 — валидный индекс,
+    // поэтому проверяем именно на null, а не через «||».
+    const data = await fetchStream(room.movieId, "tv", translatorId ?? undefined, s, e);
     if (data) {
       streamUrlRef.current = data.stream;
       loadStream(data.stream, 0);
