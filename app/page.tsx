@@ -1,4 +1,4 @@
-import { HeroIntro } from "@/components/hero-intro";
+import { HeroSection } from "@/components/hero-section";
 import { InfiniteScrollMovies } from "@/components/infinite-scroll-movies";
 import { MovieSection } from "@/components/movie-section";
 import { TVSection } from "@/components/tv-section";
@@ -29,7 +29,7 @@ export default async function Home() {
       <Navbar />
       <TermsModal />
       <main className="bg-background pb-20 sm:pb-0">
-        <HeroIntro movies={trendingMovies.slice(0, 8)} />
+        <HeroSection movies={trendingMovies.slice(0, 8)} />
         <div className="space-y-16 px-4 sm:px-6 lg:px-8 py-14 max-w-[1600px] mx-auto">
           <ContinueWatching />
           <Recommendations />
