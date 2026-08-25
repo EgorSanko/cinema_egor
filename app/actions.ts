@@ -44,7 +44,20 @@ function unifiedToTvCard(it: UnifiedItem): TvSearchCard {
 // then series, so the two groups stay visually separable in the rail.
 export async function searchTvUnifiedAction(query: string): Promise<TvSearchCard[]> {
   const { movies, tv } = await searchUnified(query, 3, 2);
-  return [...movies.map(unifiedToTvCard), ...tv.map(unifiedToTvCard)];
+  const m = movies.map(unifiedToTvCard);
+  const t = tv.map(unifiedToTvCard);
+  // ЧЕРЕДУЕМ фильм-сериал-фильм-сериал, а не «сначала все фильмы, потом все
+  // сериалы». Раньше был простой конкат, и ТВ-обёртка (она показывает первые
+  // 60 карточек) обрезала сериалы ЦЕЛИКОМ: по запросу «Холод» TMDB отдаёт 60
+  // фильмов — ровно лимит, сериалам не оставалось ни одного места. Сериал
+  // «Холод» при этом стоял ПЕРВЫМ в своей выдаче, но на экран не попадал.
+  // На сайте такого не было: там фильмы и сериалы в отдельных секциях.
+  const out: TvSearchCard[] = [];
+  for (let i = 0; i < Math.max(m.length, t.length); i++) {
+    if (i < m.length) out.push(m[i]);
+    if (i < t.length) out.push(t[i]);
+  }
+  return out;
 }
 
 export async function fetchMoreRelatedMovies(genreId: number, page: number) {
