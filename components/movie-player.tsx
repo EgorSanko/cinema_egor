@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { ProblemReport } from "./problem-report";
@@ -105,7 +105,19 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
       a = await resolveRutube(movie.title || "", yr, (movie as any).original_title);
       defQ = "Авто";
     } else {
-      a = await resolveAllohaHls(movie.id, "movie");
+      // Alloha — основной источник, но он умеет лежать целиком (см. ALLOHA_UP).
+      // Тогда не ждём его таймаут, а сразу идём в живые: cdnhub держит и фильмы,
+      // и сериалы, vkmovie — только фильмы, но берёт то, чего нет у cdnhub.
+      a = ALLOHA_UP ? await resolveAllohaHls(movie.id, "movie") : null;
+      if (!a) {
+        a = await resolveCdnHub(movie.id, "movie");
+        if (a) defQ = "1080p";
+      }
+      if (!a) {
+        const yr = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
+        a = await resolveVkMovie(movie.title || "", yr, (movie as any).original_title);
+        if (a) defQ = "1080p";
+      }
     }
     if (!a) return false;
     const pick = pickAllohaStream(a, 0, defQ);

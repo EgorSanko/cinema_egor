@@ -44,6 +44,22 @@ export function prewarmKinopub() {
 // Pro-дефолт и юзеров с hdrezka уводим на Alloha. Вернуть = поставить true.
 export const HDREZKA_UP = false;
 
+/**
+ * Рубильник Alloha. Держим true — Alloha остаётся основным источником: у неё
+ * больше всего озвучек и единственная 4K (Джон Уик 4: 11 дорожек против одной
+ * у cdnhub, «Интерстеллар» 2160 против 1080).
+ *
+ * Ставить false, только если Alloha ляжет НАДОЛГО: тогда резолв даже не будет
+ * пытаться к ней ходить и не потратит 25 секунд таймаута на каждом запуске.
+ * На короткие аварии реагировать не нужно — плеер сам уходит на cdnhub, см.
+ * resolveAllohaNative.
+ *
+ * История: 25.08.2026 у Alloha на полчаса легла вся плеерная инфраструктура —
+ * TCP и TLS проходили (сертификат валидный), а HTTP-ответа не было вовсе.
+ * Сайт при этом не проигрывал НИЧЕГО, потому что запасного пути не было.
+ */
+export const ALLOHA_UP = true;
+
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";

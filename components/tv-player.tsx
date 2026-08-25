@@ -33,7 +33,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -146,7 +146,13 @@ export function TVPlayer({ show }: TVPlayerProps) {
       a = await resolveCdnHub(show.id, "tv", season, episode);
       defQ = "1080p";
     } else {
-      a = await resolveAllohaHls(show.id, "tv", season, episode);
+      // Alloha умеет лечь целиком (см. ALLOHA_UP) — тогда сразу в cdnhub, не
+      // тратя 25 секунд на её таймаут. У cdnhub есть и сериалы посерийно.
+      a = ALLOHA_UP ? await resolveAllohaHls(show.id, "tv", season, episode) : null;
+      if (!a) {
+        a = await resolveCdnHub(show.id, "tv", season, episode);
+        if (a) defQ = "1080p";
+      }
     }
     if (!a) return false;
     // Пока ходили за потоком, мог стартовать резолв другой серии — тогда наш
