@@ -16,6 +16,34 @@
 (function () {
   "use strict";
 
+  // ── Диагностика ─────────────────────────────────────────────────────────
+  // На телевизоре нет консоли и нет способа посмотреть ошибку. Поэтому любую
+  // ошибку шлём себе КАРТИНКОЙ (переживает любые ограничения на запросы), а на
+  // экране держим строку состояния. Именно так мы нашли, что на старых ТВ не
+  // парсится основной сайт.
+  function diag(text) {
+    try {
+      var d = document.getElementById("diag");
+      if (d) d.innerHTML = String(text).replace(/</g, "&lt;");
+    } catch (e) {}
+  }
+  function report(what, extra) {
+    try {
+      var i = new Image();
+      i.src = "/tv-error?m=" + encodeURIComponent("tvapp: " + String(what).slice(0, 220)) +
+              "&x=" + encodeURIComponent(String(extra || "").slice(0, 120));
+    } catch (e) {}
+  }
+  window.onerror = function (m, src, line, col) {
+    diag("ошибка: " + m);
+    report(m, (src || "") + ":" + line + ":" + col);
+  };
+  try {
+    window.addEventListener("unhandledrejection", function (e) {
+      report("promise: " + ((e && e.reason && e.reason.message) || e.reason), "");
+    });
+  } catch (e) {}
+
   var TMDB_KEY = "275c9d09780aadb4b13ff57a731eda00";
   var TMDB = "/tmdb-api";
   var IMG = "/tmdb-img";
@@ -242,23 +270,27 @@
   // ── Вход по коду ────────────────────────────────────────────────────────
   var pollTimer = null;
   function startLogin() {
+    diag("экран входа: запрашиваю код…");
     show("login");
     el("login-box").innerHTML = '<div class="login-title">Вход</div><div class="login-hint">Получаю код…</div>';
     post("/api/tv-link", { action: "create", intent: "tv" }, function (d) {
       if (!d || !d.code) {
+        diag("код не получен — сервер не ответил");
+        report("tv-link: пустой ответ", "");
         el("login-box").innerHTML =
           '<div class="login-title">Вход</div>' +
           '<div class="login-hint">Не получилось получить код. Нажмите OK, чтобы повторить, ' +
           'или «назад» — и смотрите без входа.</div>';
         return;
       }
+      diag("код получен: " + d.code);
       var url = ORIGIN + "/link/" + d.code;
       el("login-box").innerHTML =
         '<div class="login-title">Вход</div>' +
         '<div class="login-code">' + esc(d.code) + "</div>" +
         '<div class="login-hint">Откройте на телефоне<br><b>' + esc(url) + "</b><br>" +
         "и подтвердите вход. Код живёт несколько минут.<br><br>" +
-        "Кнопка «назад» — смотреть без входа.</div>";
+        "<b>Не хотите входить? Нажмите OK — откроется каталог.</b></div>";
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(function () {
         post("/api/tv-link", { action: "status", code: d.code }, function (st) {
@@ -294,6 +326,7 @@
   }
 
   function enterHome() {
+    diag("главная: загружаю подборки…");
     show("home");
     el("who").innerHTML = S.user ? esc(S.user.name || S.user.email) : "Гость";
     loadHome();
@@ -314,7 +347,10 @@
 
     var base = rows.length - 3;  // три последних ряда догружаются с TMDB
     tmdb("/trending/movie/week", {}, function (d) {
-      rows[base].items = (d && d.results ? d.results : []).slice(0, 18); renderHome();
+      var r = (d && d.results ? d.results : []);
+      if (!r.length) { diag("тренды не пришли — проверьте интернет на телевизоре"); report("trending пуст", ""); }
+      else diag("готово · стрелки — выбор, OK — открыть");
+      rows[base].items = r.slice(0, 18); renderHome();
     });
     tmdb("/tv/popular", {}, function (d) {
       rows[base + 1].items = (d && d.results ? d.results : []).slice(0, 18); renderHome();
@@ -809,7 +845,12 @@
     if (S.screen === "player") return playerKey(c);
   }
 
-  function loginKey(c) { if (c === K.OK) startLogin(); }
+  // OK на экране входа = «смотреть без входа». Раньше OK перезапрашивал код,
+  // и уйти с этого экрана можно было только кнопкой «назад» — на телевизоре
+  // это неочевидно, человек упирался в экран входа и считал, что всё сломано.
+  function loginKey(c) {
+    if (c === K.OK) { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } enterHome(); }
+  }
 
   function homeKey(c) {
     var row = S.rows[S.focus.row];

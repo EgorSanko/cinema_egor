@@ -196,3 +196,12 @@ body {
   height: 198px; line-height: 198px; text-align: center;
   font-size: 22px; font-weight: bold; letter-spacing: 3px; color: #a3e635;
 }
+
+/* Строка состояния для диагностики на телевизоре. Мелкая и в углу, но всегда
+   на виду: именно она отличает «пусто, потому что сломалось» от «пусто,
+   потому что ещё грузится». */
+.diag {
+  position: absolute; left: 40px; bottom: 8px;
+  font-size: 13px; color: #71717a; max-width: 1200px;
+  white-space: nowrap; overflow: hidden;
+}
