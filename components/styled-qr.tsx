@@ -1,20 +1,25 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import * as React from "react";
+import qrcode from "qrcode-generator";
 
 /**
- * Branded, decorative QR code (kozakdenys/qr-code-styling) — rounded dots with a
- * dark→emerald gradient, lime brand corners, and the SAPKEFLY logo in the middle,
- * sitting on a white rounded card so a phone camera reads it reliably even off a
- * TV screen. Used by the QR-login flow (TV + website) and reusable anywhere.
+ * QR-код для входа с телефона.
  *
- * qr-code-styling touches the DOM, so it's created client-side only (dynamic
- * import inside the effect keeps it out of the SSR/standalone server bundle).
+ * Раньше здесь рисовала библиотека qr-code-styling — красивые круглые точки,
+ * но она опирается на современные возможности браузера. На телевизоре Егора
+ * (Samsung, Tizen 5.0) код просто НЕ ПОЯВЛЯЛСЯ: файл библиотеки загружался
+ * (виден в логах), а на экране оставалась пустота. Отладить это на телевизоре
+ * нечем — консоли там нет.
+ *
+ * Поэтому рисуем сами: обычный SVG из чёрных квадратов. Никакого холста,
+ * никаких новых API — такой код отображает любой движок, включая прошивки
+ * 2016 года. Логотип накладываем сверху отдельной картинкой.
  */
 export function StyledQR({
   value,
   size = 260,
-  logo = "/logo-192.png",
+  logo = null,
   className,
 }: {
   value: string;
@@ -22,76 +27,66 @@ export function StyledQR({
   logo?: string | null;
   className?: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  // Keep the instance across renders so we can `update()` instead of rebuilding.
-  const qrRef = useRef<any>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const QRCodeStyling = (await import("qr-code-styling")).default;
-      if (cancelled || !ref.current) return;
-
-      const options: any = {
-        width: size,
-        height: size,
-        type: "svg",
-        data: value,
-        margin: 8,
-        qrOptions: { errorCorrectionLevel: "H" }, // H → survives the center logo
-        dotsOptions: {
-          type: "rounded",
-          gradient: {
-            type: "linear",
-            rotation: Math.PI / 4,
-            colorStops: [
-              { offset: 0, color: "#0b0b12" },
-              { offset: 1, color: "#14532d" },
-            ],
-          },
-        },
-        cornersSquareOptions: { type: "extra-rounded", color: "#a3e635" },
-        cornersDotOptions: { type: "dot", color: "#16a34a" },
-        backgroundOptions: { color: "#ffffff" },
-        ...(logo
-          ? {
-              image: logo,
-              imageOptions: {
-                crossOrigin: "anonymous",
-                margin: 6,
-                imageSize: 0.34,
-                hideBackgroundDots: true,
-              },
-            }
-          : {}),
-      };
-
-      if (!qrRef.current) {
-        qrRef.current = new QRCodeStyling(options);
-        ref.current.innerHTML = "";
-        qrRef.current.append(ref.current);
-      } else {
-        qrRef.current.update(options);
+  const svg = React.useMemo(() => {
+    if (!value) return null;
+    try {
+      // 0 = автоподбор размера под длину строки; «M» — средняя коррекция
+      // ошибок: её хватает, чтобы код читался даже с логотипом по центру.
+      const qr = qrcode(0, "M");
+      qr.addData(value);
+      qr.make();
+      const count = qr.getModuleCount();
+      const cells: string[] = [];
+      for (let r = 0; r < count; r++) {
+        for (let c = 0; c < count; c++) {
+          if (qr.isDark(r, c)) cells.push(`M${c} ${r}h1v1h-1z`);
+        }
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [value, size, logo]);
+      return { path: cells.join(""), count };
+    } catch {
+      return null;
+    }
+  }, [value]);
+
+  if (!svg) {
+    // Не смогли построить код — показываем адрес текстом, чтобы человек всё
+    // равно мог войти, набрав его на телефоне.
+    return (
+      <div className={className} style={{ width: size, wordBreak: "break-all", fontSize: 14 }}>
+        {value}
+      </div>
+    );
+  }
 
   return (
-    <div
-      ref={ref}
-      className={className}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: 20,
-        overflow: "hidden",
-        background: "#fff",
-        boxShadow: "0 10px 40px -8px rgba(0,0,0,0.55)",
-      }}
-      aria-label="QR-код для входа"
-    />
+    <div className={className} style={{ position: "relative", width: size, height: size }}>
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${svg.count} ${svg.count}`}
+        shapeRendering="crispEdges"
+        style={{ display: "block", background: "#ffffff", borderRadius: 12 }}
+      >
+        <path d={svg.path} fill="#0a0a0b" />
+      </svg>
+      {logo ? (
+        <img
+          src={logo}
+          alt=""
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: Math.round(size * 0.22),
+            height: Math.round(size * 0.22),
+            marginLeft: -Math.round(size * 0.11),
+            marginTop: -Math.round(size * 0.11),
+            background: "#ffffff",
+            borderRadius: 8,
+            padding: 4,
+          }}
+        />
+      ) : null}
+    </div>
   );
 }
