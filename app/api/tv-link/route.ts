@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { hasVerifiedAccount } from "@/lib/subscription-server";
 
 /**
@@ -44,6 +46,44 @@ function genCode(len = 8): string {
 function sweep() {
   const now = Date.now();
   for (const [code, s] of sessions) if (now > s.expires) sessions.delete(code);
+}
+
+// ── Хранение кодов на диске ───────────────────────────────────────────────
+// Раньше коды жили только в памяти процесса, и КАЖДАЯ выкатка их стирала. За
+// вечер выкаток бывает десяток: человек наводит телефон на код, а сервер уже
+// отвечает «Код недействителен» (жалоба Егора). Теперь коды переживают
+// перезапуск. Всё в try/catch: не смогли прочитать или записать — работаем
+// как раньше, в памяти, но НЕ падаем.
+const LINK_FILE = path.join(
+  process.env.SYNC_DATA_DIR || process.cwd(),
+  "tv-link-sessions.json",
+);
+
+function loadSessions(): void {
+  try {
+    const raw = JSON.parse(fs.readFileSync(LINK_FILE, "utf-8"));
+    const now = Date.now();
+    for (const code of Object.keys(raw)) {
+      const s = raw[code];
+      if (s && s.expires > now) sessions.set(code, s);
+    }
+  } catch { /* файла ещё нет — нормально */ }
+}
+
+function saveSessions(): void {
+  try {
+    const out: Record<string, unknown> = {};
+    const now = Date.now();
+    for (const [code, s] of sessions) if (s.expires > now) out[code] = s;
+    fs.writeFileSync(LINK_FILE, JSON.stringify(out));
+  } catch { /* не смогли записать — не беда */ }
+}
+
+let loadedOnce = false;
+function ensureLoaded(): void {
+  if (loadedOnce) return;
+  loadedOnce = true;
+  loadSessions();
 }
 
 export async function POST(req: NextRequest) {
