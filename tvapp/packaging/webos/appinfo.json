@@ -1,0 +1,15 @@
+{
+  "id": "ru.sapkeflykino.tv",
+  "version": "1.0.0",
+  "vendor": "sapkeflykino",
+  "type": "web",
+  "main": "index.html",
+  "title": "SAPKEFLY KINO",
+  "icon": "icon.png",
+  "largeIcon": "icon.png",
+  "bgColor": "#0a0a0b",
+  "iconColor": "#a3e635",
+  "disableBackHistoryAPI": true,
+  "supportPortraitMode": false,
+  "requiredPermissions": ["time.query", "activity.operation"]
+}

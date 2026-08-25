@@ -1,115 +1,46 @@
 import { NextResponse } from "next/server";
 
 /**
- * Меню для Media Station X — ПРОБНИК.
+ * Главное меню для Media Station X.
  *
- * Задача этой версии одна: выяснить, проигрывает ли старый телевизор (Tizen 2.4,
- * 2016 г.) наш HLS-поток. Поэтому здесь всего пара тайтлов, зато в разных
- * качествах — чтобы сразу увидеть, что заходит, а что нет. Каталог, поиск и
- * серии добавим, только если проба удастся.
+ * Раньше здесь лежал диагностический набор из двух тайтлов — им проверяли,
+ * потянет ли старый телевизор наш HLS. Проверка пройдена, теперь это настоящее
+ * меню каталога; содержимое разделов отдаёт /msx/feed.json.
  *
- * Ссылки на поток резолвим ПРЯМО СЕЙЧАС, при запросе: у VK токены живут часами,
- * зашитые заранее ссылки протухли бы.
+ * Разделы грузятся ПО ССЫЛКЕ, а не все сразу: MSX подтягивает содержимое,
+ * когда человек заходит в раздел. Иначе на открытие меню уходили бы десятки
+ * секунд — резолв каждого тайтла ходит во внешние источники.
  */
 export const dynamic = "force-dynamic";
 
-type Probe = { label: string; imdb: string; type: "movie" | "tv"; season?: number; episode?: number };
-
-const PROBES: Probe[] = [
-  { label: "Лакомый кусок — фильм", imdb: "tt32642706", type: "movie" },
-  { label: "Офис — сезон 2, серия 1", imdb: "tt0386676", type: "tv", season: 2, episode: 1 },
-];
-
-/** Первое зеркало из строки вида "https://A... or https://B..." (Alloha отдаёт пару). */
-function firstMirror(url: string): string {
-  return String(url || "").split(" or ")[0].trim();
-}
-
-async function resolveQualities(p: Probe): Promise<Record<string, string>> {
-  const q = new URLSearchParams({ imdb: p.imdb, type: p.type });
-  if (p.type === "tv") {
-    q.set("season", String(p.season || 1));
-    q.set("episode", String(p.episode || 1));
-  }
-  try {
-    const r = await fetch(`https://kino.lead-seek.ru/hdrezka/api/alloha-hls?${q}`, { cache: "no-store" });
-    const d = await r.json();
-    return d?.translations?.[0]?.quality || {};
-  } catch {
-    return {};
-  }
-}
+const FEED = "https://sapkeflykino.ru/msx/feed.json";
 
 export async function GET() {
-  // Диагностика по шагам. У телевизора Сани меню грузится, но нажатие НЕ
-  // приводит ни к одному запросу за видео — значит ломается раньше кодеков.
-  // Эти три пункта разделяют причины: работают ли действия вообще → тянет ли
-  // телевизор обычный файл с нашего домена → и только потом HLS.
-  const items: any[] = [
-    {
-      type: "default",
-      title: "1. Проверка отклика",
-      titleFooter: "должно открыться окно с текстом",
-      icon: "info",
-      action: "info:Действия работают. Переходите к пункту 2.",
-    },
-    {
-      type: "default",
-      title: "2. Обычное видео (файл MP4)",
-      titleFooter: "проверяем плеер и наш домен, без HLS",
-      icon: "play-arrow",
-      action: "video:https://sapkeflykino.ru/intro-logo-v2.mp4",
-    },
-  ];
-
-  for (const p of PROBES) {
-    const quality = await resolveQualities(p);
-    // Порядок от лёгкого к тяжёлому: на телевизоре 2016 года 480p имеет больше
-    // шансов, чем 1080p, и по тому, что заиграет, сразу поймём потолок железа.
-    for (const q of ["480", "720", "1080"]) {
-      const url = quality[q];
-      if (!url) continue;
-      items.push({
-        title: `3. ${p.label} — ${q}p`,
-        titleFooter: "нажмите OK, чтобы проверить воспроизведение",
-        icon: "play-arrow",
-        action: `video:${firstMirror(url)}`,
-      });
-    }
-    if (!Object.keys(quality).length) {
-      items.push({
-        title: `${p.label} — поток не найден`,
-        titleFooter: "источник не отдал ссылку",
-        icon: "error",
-        action: "info:Источник сейчас не отдаёт этот тайтл",
-      });
-    }
-  }
-
   return NextResponse.json(
-    // По параметру «menu:» MSX ждёт ОБЪЕКТ МЕНЮ: массив menu, где у каждого
-    // пункта в data лежит объект контента. Сначала я отдал сразу контент —
-    // приложение ответило «Menu is missing» (проверено в самой MSX).
     {
       headline: "SAPKEFLY KINO",
+      // MSX ждёт ОБЪЕКТ МЕНЮ: массив menu, у каждого пункта — data с контентом
+      // или ссылкой на него. Если отдать сразу контент, приложение отвечает
+      // «Menu is missing» (проверено на живом телевизоре).
       menu: [
+        { label: "Сейчас в тренде", icon: "msx-white-soft:whatshot", data: `${FEED}?view=list&cat=trending` },
+        { label: "Сериалы", icon: "msx-white-soft:live-tv", data: `${FEED}?view=list&cat=tv` },
+        { label: "Новинки", icon: "msx-white-soft:new-releases", data: `${FEED}?view=list&cat=latest` },
         {
-          label: "Проверка воспроизведения",
-          icon: "play-arrow",
+          label: "О приложении",
+          icon: "msx-white-soft:info",
           data: {
             type: "list",
-            headline: "Проверка воспроизведения",
-            // Шаблон обязателен: без него MSX не знает размеров элементов и
-            // показывает «нет контента». Я его убирал, подозревая старую версию
-            // на телевизоре, — и сломал то, что работало. Возвращено.
-            template: {
-              type: "separate",
-              layout: "0,0,8,2",
-              color: "msx-glass",
-            },
-            items: items.length
-              ? items
-              : [{ title: "Ничего не зарезолвилось", titleFooter: "проверьте бэкенд", icon: "error" }],
+            headline: "SAPKEFLY KINO",
+            template: { type: "separate", layout: "0,0,8,2", color: "msx-glass" },
+            items: [
+              {
+                title: "Полная версия — в браузере телевизора",
+                titleFooter: "sapkeflykino.ru/tvapp/",
+                icon: "language",
+                action: "info:Откройте в браузере телевизора адрес sapkeflykino.ru/tvapp/ — там наш собственный интерфейс: поиск, продолжение просмотра, выбор озвучки и качества. Здесь, внутри Media Station X, интерфейс рисует она сама.",
+              },
+            ],
           },
         },
       ],
@@ -117,9 +48,8 @@ export async function GET() {
     {
       headers: {
         "Cache-Control": "no-store",
-        // MSX — стороннее приложение (msx.benzac.de и веб-обёртки на ТВ), оно
-        // читает наш JSON кросс-доменно. Без этого заголовка браузер молча
-        // блокирует запрос, и MSX показывает «Data Load Error» (проверено).
+        // Без этого заголовка MSX показывает «Data Load Error» — запрос к нам
+        // идёт кросс-доменно и молча блокируется браузером.
         "Access-Control-Allow-Origin": "*",
       },
     },

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Пакет для телевизоров Samsung (Tizen).
+
+  Приложение Tizen для ТВ — это обычное веб-приложение: те же index.html,
+  app.js и app.css, что лежат на сайте, плюс этот манифест. Никакого
+  нативного кода не требуется.
+
+  ВАЖНО про установку: .wgt обязан быть ПОДПИСАН. Подпись выдаётся в Tizen
+  Studio и привязывается к конкретному телевизору (его DUID), автоматом её
+  не сделать — нужен сам телевизор в режиме разработчика. Поэтому пакет
+  собирается неподписанным, шаг подписи описан в packaging/README.md.
+
+  Права: доступ в интернет и полноэкранное видео. Больше ничего не просим —
+  чем короче список, тем меньше вопросов при проверке.
+-->
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://sapkeflykino.ru/tv"
+        version="1.0.0"
+        viewmodes="maximized">
+  <name>SAPKEFLY KINO</name>
+  <description>Фильмы и сериалы</description>
+  <author href="https://sapkeflykino.ru">sapkeflykino</author>
+
+  <content src="index.html"/>
+  <icon src="icon.png"/>
+
+  <!-- 1920x1080: интерфейс свёрстан под 1280x720 и растягивается телевизором -->
+  <tizen:application id="sapkefly1.KinoTV"
+                     package="sapkefly1"
+                     required_version="2.4"/>
+  <tizen:profile name="tv"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/mediastorage"/>
+  <tizen:setting screen-orientation="landscape"
+                 context-menu="disable"
+                 background-support="disable"
+                 encryption="disable"
+                 hwkey-event="enable"/>
+
+  <!-- Без этого телевизор запретит запросы к нашим API и к видео -->
+  <access origin="*" subdomains="true"/>
+</widget>
