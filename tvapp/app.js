@@ -211,36 +211,28 @@
   function poster(p) { return p ? IMG + "/w342" + p : ""; }
   function titleOf(o) { return o.title || o.name || ""; }
   function yearOf(o) { return String(o.release_date || o.first_air_date || "").slice(0, 4); }
-  // ВАЖНО: доверяем полю type ТОЛЬКО если это наш "movie"/"tv". У TMDB в
-  // подробных данных сериала есть СВОЁ поле type со значением вроде "Scripted",
-  // и наивная проверка подставляла его в адрес запроса: получалось
-  // /tmdb-api/Scripted/2316/external_ids → 404, из-за чего у ВСЕХ сериалов не
-  // грузились ни сезоны, ни поток. Поймано прогоном в браузере.
+  // Тип тайтла. Порядок проверок важен и выстрадан боевым багом.
+  //
+  // 1) __kind — НАШЕ поле, ставится один раз при создании объекта и переживает
+  //    слияние с данными TMDB. Всё остальное — догадки.
+  // 2) type — только если это ровно "movie"/"tv". У TMDB в данных сериала есть
+  //    СВОЁ поле type со значением «Scripted», и оно затирало наш "tv".
+  // 3) признаки сериала важнее наличия заголовка: карточкам «Продолжить» мы
+  //    сами проставляем title обоим типам, поэтому «есть title = фильм» врал.
+  //
+  // Цена ошибки высокая: у TMDB нумерация фильмов и сериалов РАЗДЕЛЬНАЯ, и
+  // номер 318354 — это и сериал «Холод», и фильм «Сказочная Русь».
   function typeOf(o) {
+    if (!o) return "movie";
+    if (o.__kind === "movie" || o.__kind === "tv") return o.__kind;
     if (o.type === "movie" || o.type === "tv") return o.type;
-    return o.title ? "movie" : "tv";
+    if (o.name || o.first_air_date || o.number_of_seasons) return "tv";
+    return "movie";
   }
-  // Источник отдаёт озвучку технической строкой вида
-  // «(rus) AC3 20 @ 192 kbps - MVO 2x2 / Kravec». На телевизоре это нечитаемо,
-  // поэтому оставляем то, что человек и называет озвучкой: студию после тире.
-  // Если после чистки имена совпали (у сериалов бывает две дорожки с одним
-  // названием) — нумеруем, иначе в списке два одинаковых пункта.
-  function dubName(raw) {
-    var s = String(raw || "").replace(/^\s*\((?:rus|ru|eng|ukr|[a-z]{2,3})\)\s*/i, "");
-    var dash = s.lastIndexOf(" - ");
-    if (dash > -1) s = s.slice(dash + 3);
-    s = s.replace(/\b(AC3|AAC|E-?AC3|DTS|MP3)\b/gi, "")
-         .replace(/\d+\s*@\s*\d+\s*kbps/gi, "")
-         .replace(/\s{2,}/g, " ").trim();
-    return s || String(raw || "").trim() || "Дорожка";
-  }
-  function dubLabel(i) {
-    var list = S.play.translations, name = dubName((list[i] || {}).name);
-    var same = 0, pos = 0;
-    for (var j = 0; j < list.length; j++) {
-      if (dubName(list[j].name) === name) { same++; if (j === i) pos = same; }
-    }
-    return same > 1 ? name + " · " + pos : name;
+  /** Проставляет тип объекту раз и навсегда. */
+  function withKind(o, kind) {
+    if (o && !o.__kind) o.__kind = kind || typeOf(o);
+    return o;
   }
 
   function mmss(t) {
@@ -317,9 +309,12 @@
       var h = S.history[i];
       var pos = getPosition(h.id, h.type, h.season, h.episode);
       if (!pos || !pos.time) continue;
+      // title И name сразу оба — карточка не знает, что именно рисовать. Тип
+      // при этом фиксируем явно, иначе «есть title» позже читается как фильм.
       items.push({
         id: h.id, title: h.title, name: h.title, poster_path: h.poster_path,
-        type: h.type, __resume: pos.time, __season: h.season, __episode: h.episode
+        type: h.type, __kind: h.type === "tv" ? "tv" : "movie",
+        __resume: pos.time, __season: h.season, __episode: h.episode
       });
     }
     return items;
@@ -336,7 +331,13 @@
     var rows = [];
     var cont = continueRow();
     if (cont.length) rows.push({ title: "Продолжить просмотр", items: cont });
-    if (S.favorites.length) rows.push({ title: "Избранное", items: S.favorites.slice(0, 16) });
+    if (S.favorites.length) {
+      var favs = [];
+      for (var fi = 0; fi < Math.min(16, S.favorites.length); fi++) {
+        favs.push(withKind(S.favorites[fi], S.favorites[fi].type));
+      }
+      rows.push({ title: "Избранное", items: favs });
+    }
     rows.push({ title: "Найти фильм или сериал", items: [{ __search: true, title: "Поиск" }] });
     rows.push({ title: "Сейчас в тренде", items: [] });
     rows.push({ title: "Популярные сериалы", items: [] });
@@ -353,7 +354,9 @@
       rows[base].items = r.slice(0, 18); renderHome();
     });
     tmdb("/tv/popular", {}, function (d) {
-      rows[base + 1].items = (d && d.results ? d.results : []).slice(0, 18); renderHome();
+      var list = (d && d.results ? d.results : []).slice(0, 18);
+      for (var i = 0; i < list.length; i++) withKind(list[i], "tv");
+      rows[base + 1].items = list; renderHome();
     });
     tmdb("/movie/now_playing", {}, function (d) {
       rows[base + 2].items = (d && d.results ? d.results : []).slice(0, 18); renderHome();
@@ -447,8 +450,16 @@
         S.results = out.slice(0, 24);
         renderSearch();
       }
-      tmdb("/search/movie", { query: q }, function (d) { movies = (d && d.results ? d.results : []).slice(0, 12); done(); });
-      tmdb("/search/tv", { query: q }, function (d) { tv = (d && d.results ? d.results : []).slice(0, 12); done(); });
+      tmdb("/search/movie", { query: q }, function (d) {
+        movies = (d && d.results ? d.results : []).slice(0, 12);
+        for (var i = 0; i < movies.length; i++) withKind(movies[i], "movie");
+        done();
+      });
+      tmdb("/search/tv", { query: q }, function (d) {
+        tv = (d && d.results ? d.results : []).slice(0, 12);
+        for (var i = 0; i < tv.length; i++) withKind(tv[i], "tv");
+        done();
+      });
     }, 400);
   }
 
@@ -483,6 +494,9 @@
     var out = {};
     for (var k in a) if (a.hasOwnProperty(k)) out[k] = a[k];
     for (var k2 in b) if (b.hasOwnProperty(k2)) out[k2] = b[k2];
+    // Тип берём от ИСХОДНОГО объекта: в ответе TMDB своё поле type
+    // («Scripted» у сериалов), и без этой строки оно затирает правильный.
+    out.__kind = typeOf(a);
     return out;
   }
 
