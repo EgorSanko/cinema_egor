@@ -76,9 +76,12 @@ const QORDER = ["1080", "1080p", "720", "720p", "480", "480p", "2160", "360", "3
  * IMDb, затем запасной, затем поиск по названию. Без последнего шага тайтлы
  * без кода IMDb (свежие и российские) не играли бы вовсе.
  */
-async function resolveStream(
+type Track = { name: string; quality: Record<string, string> };
+
+/** Все дорожки источника — чтобы человек выбирал озвучку и качество сам. */
+async function resolveTracks(
   id: string, type: "movie" | "tv", season?: string, episode?: string,
-): Promise<{ url: string; label: string } | null> {
+): Promise<Track[]> {
   const details = await tmdb(`/${type}/${id}`);
   const ids = await tmdb(`/${type}/${id}/external_ids`);
   const imdb = ids?.imdb_id;
@@ -101,16 +104,75 @@ async function resolveStream(
     try {
       const d = await fetch(u, { cache: "no-store" }).then((r) => r.json());
       const tr = d?.translations;
-      if (!tr?.length) continue;
-      const q = tr[0].quality || {};
-      const key = QORDER.find((k) => q[k]) || Object.keys(q)[0];
-      if (!key) continue;
-      return { url: firstMirror(q[key]), label: `${tr[0].name || "дорожка"} · ${key}` };
+      if (tr?.length) return tr as Track[];
     } catch {
-      /* следующий источник */
+      /* пробуем следующий источник */
     }
   }
-  return null;
+  return [];
+}
+
+/** Название дорожки по-человечески: у источника это техническая строка
+ *  «(rus) AC3 20 @ 192 kbps - MVO 2x2 / Kravec», на телевизоре нечитаемо. */
+function dubName(raw: string): string {
+  let s = String(raw || "").replace(/^\s*\((?:rus|ru|eng|ukr|[a-z]{2,3})\)\s*/i, "");
+  const dash = s.lastIndexOf(" - ");
+  if (dash > -1) s = s.slice(dash + 3);
+  s = s.replace(/\b(AC3|AAC|E-?AC3|DTS|MP3)\b/gi, "")
+       .replace(/\d+\s*@\s*\d+\s*kbps/gi, "")
+       .replace(/\s{2,}/g, " ").trim();
+  return s || String(raw || "").trim() || "Дорожка";
+}
+
+function qualitiesOf(t: Track): string[] {
+  const q = t.quality || {};
+  const out = QORDER.filter((k) => q[k]);
+  return out.length ? out : Object.keys(q);
+}
+
+/** Экран выбора озвучки. */
+function tracksPage(headline: string, tracks: Track[], back: string) {
+  if (!tracks.length) {
+    return {
+      ...BRAND, type: "list", headline,
+      template: { ...TEMPLATE, layout: "0,0,8,2" },
+      items: [{
+        title: "Пока недоступно",
+        titleFooter: "ни один источник не отдал этот тайтл",
+        icon: "error",
+        action: "info:Попробуйте другую серию или зайдите позже — каталог пополняется.",
+      }],
+    };
+  }
+  return {
+    ...BRAND, type: "list", headline,
+    template: { ...TEMPLATE, layout: "0,0,8,1" },
+    items: tracks.map((t, i) => ({
+      title: dubName(t.name),
+      titleFooter: "качество: " + qualitiesOf(t).join(", "),
+      icon: "msx-white-soft:record-voice-over",
+      action: `content:${back}&tr=${i}`,
+    })),
+  };
+}
+
+/** Экран выбора качества выбранной озвучки. */
+function qualityPage(headline: string, track: Track) {
+  const qs = qualitiesOf(track);
+  return {
+    ...BRAND, type: "list", headline: headline + " · " + dubName(track.name),
+    template: { ...TEMPLATE, layout: "0,0,4,1" },
+    items: qs.map((q) => ({
+      title: q.replace(/p$/, "") + "p",
+      titleFooter: q === "2160" ? "4K" : "",
+      icon: "msx-white-soft:play-arrow",
+      // video:plugin: отдаёт воспроизведение НАШЕЙ странице вместо системного
+      // плеера телевизора. На Samsung 2016+ MSX играет через Tizen AVPlay, и он
+      // наш поток даже не запросил (в логах ноль обращений за видео), тогда как
+      // на LG с HTML5-плеером всё заиграло.
+      action: `video:plugin:https://sapkeflykino.ru/tvapp/msx-player.html?u=${encodeURIComponent(firstMirror(track.quality[q]))}`,
+    })),
+  };
 }
 
 function poster(p?: string | null) {
@@ -136,7 +198,7 @@ async function viewList(cat: string) {
 }
 
 /** Карточка: фильм играем сразу, у сериала показываем сезоны. */
-async function viewItem(id: string, type: "movie" | "tv") {
+async function viewItem(id: string, type: "movie" | "tv", tr?: string | null) {
   const d = await tmdb(`/${type}/${id}`);
   if (!d) return { ...BRAND, type: "list", headline: "Не найдено", items: [] };
 
@@ -156,26 +218,10 @@ async function viewItem(id: string, type: "movie" | "tv") {
     };
   }
 
-  const st = await resolveStream(id, "movie");
-  return {
-    ...BRAND,
-    type: "list",
-    headline: d.title,
-    template: { ...TEMPLATE, layout: "0,0,8,2" },
-    items: st
-      ? [{
-          title: "Смотреть",
-          titleFooter: st.label,
-          image: poster(d.poster_path),
-          action: `video:${st.url}`,
-        }]
-      : [{
-          title: "Пока недоступен",
-          titleFooter: "ни один источник не отдал этот фильм",
-          icon: "error",
-          action: "info:Попробуйте другой фильм или зайдите позже — каталог пополняется.",
-        }],
-  };
+  const tracks = await resolveTracks(id, "movie");
+  const back = `${SELF}?view=item&id=${id}&type=movie`;
+  if (tr != null && tracks[Number(tr)]) return qualityPage(d.title, tracks[Number(tr)]);
+  return tracksPage(d.title, tracks, back);
 }
 
 /** Список серий сезона. */
@@ -197,22 +243,12 @@ async function viewEps(id: string, season: string) {
 }
 
 /** Карточка серии с кнопкой воспроизведения. */
-async function viewPlay(id: string, season: string, episode: string) {
-  const st = await resolveStream(id, "tv", season, episode);
-  return {
-    ...BRAND,
-    type: "list",
-    headline: `Серия ${episode}`,
-    template: { ...TEMPLATE, layout: "0,0,8,2" },
-    items: st
-      ? [{ title: "Смотреть", titleFooter: st.label, icon: "play-arrow", action: `video:${st.url}` }]
-      : [{
-          title: "Серия недоступна",
-          titleFooter: "ни один источник её не отдал",
-          icon: "error",
-          action: "info:Попробуйте другую серию или зайдите позже.",
-        }],
-  };
+async function viewPlay(id: string, season: string, episode: string, tr: string | null) {
+  const tracks = await resolveTracks(id, "tv", season, episode);
+  const head = `Серия ${episode}`;
+  const back = `${SELF}?view=play&id=${id}&season=${season}&episode=${episode}`;
+  if (tr !== null && tracks[Number(tr)]) return qualityPage(head, tracks[Number(tr)]);
+  return tracksPage(head, tracks, back);
 }
 
 export async function GET(req: NextRequest) {
@@ -222,9 +258,10 @@ export async function GET(req: NextRequest) {
   const type = (p.get("type") === "tv" ? "tv" : "movie") as "movie" | "tv";
 
   let body: Any;
-  if (view === "item") body = await viewItem(id, type);
+  const tr = p.get("tr");
+  if (view === "item") body = await viewItem(id, type, tr);
   else if (view === "eps") body = await viewEps(id, p.get("season") || "1");
-  else if (view === "play") body = await viewPlay(id, p.get("season") || "1", p.get("episode") || "1");
+  else if (view === "play") body = await viewPlay(id, p.get("season") || "1", p.get("episode") || "1", tr);
   else body = await viewList(p.get("cat") || "trending");
 
   return NextResponse.json(body, { headers: HEADERS });

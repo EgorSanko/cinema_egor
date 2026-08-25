@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SAPKEFLY KINO — плеер</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000000; width: 100%; height: 100%; overflow: hidden; }
+  #v { width: 100%; height: 100%; background: #000000; display: block; }
+  #msg {
+    position: absolute; left: 0; right: 0; top: 46%;
+    text-align: center; color: #ffffff;
+    font-family: Arial, Helvetica, sans-serif; font-size: 22px;
+  }
+</style>
+</head>
+<body>
+<!--
+  Плеер для Media Station X.
+
+  Зачем он вообще нужен. MSX на телевизорах Samsung 2016+ играет НЕ HTML5-
+  плеером, а системным Tizen AVPlay. По логам с телевизора Егора видно, что
+  AVPlay наш поток даже не запросил: ноль обращений за плейлистом и ноль за
+  сегментами. На LG, где используется HTML5-плеер, тот же самый поток заиграл
+  сразу — 30 сегментов подряд.
+
+  По документации MSX плагин плеера — это просто HTML-страница, загружаемая в
+  iframe. Отдавая воспроизведение ей действием video:plugin:, мы обходим
+  AVPlay и играем обычным тегом video.
+
+  Управление (пауза, перемотка, позиция) остаётся за MSX — она общается со
+  страницей через свой интерфейс tvx-plugin. Своих кнопок здесь быть не
+  должно: события ввода сюда не доходят, так устроен плагин.
+
+  Только ES5: страница обязана выполниться на движке телевизора 2016 года.
+-->
+<video id="v" autoplay></video>
+<div id="msg">Загружаю…</div>
+
+<script src="https://msx.benzac.de/js/tvx-plugin.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  function param(name) {
+    var m = new RegExp("[?&]" + name + "=([^&]*)").exec(window.location.search);
+    return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : "";
+  }
+
+  var video = document.getElementById("v");
+  var msg = document.getElementById("msg");
+  var url = param("u");
+
+  function say(t) { msg.innerHTML = t ? String(t) : ""; }
+
+  if (!url) { say("Ссылка на поток не передана"); return; }
+
+  video.src = url;
+  video.addEventListener("loadedmetadata", function () { say(""); });
+  video.addEventListener("playing", function () { say(""); });
+  video.addEventListener("error", function () {
+    say("Телевизор не смог открыть этот поток");
+  });
+
+  // Связка с MSX: она сама рисует полосу прокрутки и обрабатывает пульт,
+  // а от нас ждёт события плеера. Без этого пауза и перемотка не работают.
+  if (window.TVXVideoPlugin) {
+    TVXVideoPlugin.setupPlayer({
+      play: function () { try { video.play(); } catch (e) {} },
+      pause: function () { try { video.pause(); } catch (e) {} },
+      stop: function () { try { video.pause(); } catch (e) {} },
+      getDuration: function () { return video.duration || 0; },
+      getPosition: function () { return video.currentTime || 0; },
+      setPosition: function (pos) { try { video.currentTime = pos; } catch (e) {} },
+      getSpeed: function () { return video.playbackRate || 1; },
+      setSpeed: function (s) { try { video.playbackRate = s; } catch (e) {} }
+    });
+    TVXVideoPlugin.init();
+    video.addEventListener("loadedmetadata", function () { TVXVideoPlugin.startPlayback(); });
+    video.addEventListener("ended", function () { TVXVideoPlugin.stopPlayback(); });
+    video.addEventListener("error", function () { TVXVideoPlugin.stopPlayback(); });
+  } else {
+    // Плагин не подгрузился (нет сети до msx.benzac.de) — играем как обычная
+    // страница. Управления не будет, но кино пойдёт.
+    try { video.play(); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
