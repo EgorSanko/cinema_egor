@@ -561,20 +561,57 @@
     show("player");
     hideSkip(); hideOverlay();
     msg("Ищу источник…");
+
     var type = typeOf(item);
+    var tail = (type === "tv" ? "&season=" + (season || 1) + "&episode=" + (episode || 1) : "");
+    var year = yearOf(item);
+
+    // Цепочка та же, что у веб-обёртки. Раньше здесь был один Alloha по imdb, и
+    // у тайтлов БЕЗ кода IMDb (свежие и российские — у TMDB его часто нет)
+    // получался тупик с сообщением «нет кода IMDb» вместо кино. Теперь: если
+    // кода нет, сразу идём в поиск по названию; если есть — сначала источники
+    // по коду, а поиск по названию остаётся последним запасным.
+    var steps = [];
+    function byName() {
+      if (type !== "movie") return null;   // vkmovie умеет только фильмы
+      var p = "title=" + encodeURIComponent(titleOf(item)) +
+              "&year=" + encodeURIComponent(year) + "&type=movie";
+      var ot = item.original_title || item.original_name;
+      if (ot && ot !== titleOf(item)) p += "&otitle=" + encodeURIComponent(ot);
+      return RESOLVE + "/vkmovie?" + p;
+    }
+
     tmdb("/" + type + "/" + item.id + "/external_ids", {}, function (ids) {
       var imdb = ids && ids.imdb_id;
-      if (!imdb) { msg("У этого тайтла нет кода IMDb — источник его не найдёт."); return; }
-      var tail = (type === "tv" ? "&season=" + (season || 1) + "&episode=" + (episode || 1) : "");
-      get(RESOLVE + "/alloha-hls?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail, function (d) {
-        if (d && d.translations && d.translations.length) { onTranslations(d); return; }
-        msg("Основной источник молчит, пробую запасной…");
-        get(RESOLVE + "/cdnhub?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail, function (d2) {
-          if (d2 && d2.translations && d2.translations.length) { onTranslations(d2); return; }
-          msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
-        });
-      });
+      if (imdb) {
+        steps.push({ url: RESOLVE + "/alloha-hls?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail,
+                     note: "" });
+        steps.push({ url: RESOLVE + "/cdnhub?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail,
+                     note: "Основной источник молчит, пробую запасной…" });
+      }
+      var nameUrl = byName();
+      if (nameUrl) steps.push({ url: nameUrl, note: "Ищу по названию…" });
+
+      if (!steps.length) {
+        msg(type === "tv"
+          ? "Этого сериала нет ни у одного источника — у него нет кода IMDb, а по названию сериалы не ищутся."
+          : "Этот фильм не удалось найти ни по коду, ни по названию.");
+        return;
+      }
+      tryStep(0);
     });
+
+    function tryStep(i) {
+      if (i >= steps.length) {
+        msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
+        return;
+      }
+      if (steps[i].note) msg(steps[i].note);
+      get(steps[i].url, function (d) {
+        if (d && d.translations && d.translations.length) { onTranslations(d); return; }
+        tryStep(i + 1);
+      });
+    }
   }
 
   function onTranslations(d) {
