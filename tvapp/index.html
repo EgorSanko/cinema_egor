@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280,initial-scale=1">
+<title>SAPKEFLY KINO</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!--
+  ТВ-клиент sapkeflykino.
+
+  Почему он отдельный, а не наш сайт в обёртке. Сайт собран Next.js 16 и
+  Tailwind 4: в бандле остаются `?.` и `??` (Next держит фиксированную
+  современную планку и browserslist игнорирует — проверено чистой сборкой), а в
+  CSS 903 раза встречается color-mix, плюс @layer и oklch. Это Chrome 111,
+  весна 2023 года. Движок телевизора 2016-2020 годов на таком JS падает на
+  первой строке, а содержимое @layer выбрасывает целиком — остаётся голый HTML.
+  Именно это мы и видели: три ТВ-устройства прислали
+  «Uncaught SyntaxError: Unexpected token .» и чёрный экран.
+
+  Поэтому здесь: только ES5 (var, function, никаких стрелок и шаблонных строк),
+  XMLHttpRequest вместо fetch, коллбэки вместо промисов, CSS без переменных и
+  современных функций цвета. Данные берём из тех же API, что и сайт.
+
+  Один и тот же каталог упаковывается во все форматы:
+    Android TV  — APK-обёртка (ставится с флешки)
+    Samsung     — .wgt  (config.xml)
+    LG          — .ipk  (appinfo.json)
+    Media Station X — JSON-фид /msx/
+-->
+<div id="app">
+  <div id="screen-home" class="screen">
+    <div class="brand">SAPKEFLY <span>KINO</span></div>
+    <div id="rows"></div>
+  </div>
+
+  <div id="screen-search" class="screen hidden">
+    <div class="brand">Поиск</div>
+    <div id="query" class="query">&nbsp;</div>
+    <div id="keyboard" class="keyboard"></div>
+    <div id="results" class="grid"></div>
+  </div>
+
+  <div id="screen-detail" class="screen hidden">
+    <div id="detail" class="detail"></div>
+  </div>
+
+  <div id="screen-player" class="screen hidden">
+    <video id="video" class="video" controls></video>
+    <div id="player-msg" class="player-msg"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

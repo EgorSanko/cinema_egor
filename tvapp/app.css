@@ -1,0 +1,103 @@
+/*
+  Стили ТВ-клиента. Осознанные ограничения ради старых телевизоров:
+    - никаких CSS-переменных (Chrome 49+, Tizen 2.4 их не знает);
+    - никаких @layer, oklch, color-mix — именно на них ломается наш сайт;
+    - цвета обычными hex/rgba;
+    - раскладка на flexbox без grid (grid появился в Chrome 57, flexbox — раньше);
+    - размеры в пикселях под 1280x720: телевизор сам растянет до своего разрешения,
+      а vw/vh на части старых прошивок считаются неверно.
+  Фокус помечаем ЯРКО и толсто: на диване человек сидит в трёх метрах от экрана
+  и тонкую подсветку не видит.
+*/
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0a0a0b;
+  color: #ffffff;
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
+  width: 1280px;
+  height: 720px;
+}
+
+.screen { position: absolute; top: 0; left: 0; width: 1280px; height: 720px; padding: 28px 40px; }
+.hidden { display: none; }
+
+.brand { font-size: 26px; font-weight: bold; letter-spacing: 2px; margin-bottom: 18px; }
+.brand span { color: #a3e635; }
+
+/* ── Горизонтальные ряды постеров ─────────────────────────────────────── */
+.row { margin-bottom: 26px; }
+.row-title { font-size: 20px; margin-bottom: 10px; color: #d4d4d8; }
+.row-strip { white-space: nowrap; overflow: hidden; height: 250px; }
+
+.card {
+  display: inline-block;
+  width: 152px;
+  height: 236px;
+  margin-right: 14px;
+  border: 3px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #18181b;
+  vertical-align: top;
+  position: relative;
+}
+.card img { width: 100%; height: 100%; display: block; }
+.card .cap {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.72);
+  font-size: 13px; padding: 4px 6px;
+  white-space: normal; line-height: 15px; max-height: 38px; overflow: hidden;
+}
+/* Фокус: рамка + подъём. transform поддерживается везде начиная с Chrome 36. */
+.card.focused {
+  border-color: #a3e635;
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px rgba(163, 230, 53, 0.35);
+}
+
+/* ── Поиск ─────────────────────────────────────────────────────────────── */
+.query {
+  font-size: 24px; padding: 8px 14px; background: #18181b;
+  border: 2px solid #3f3f46; border-radius: 6px; margin-bottom: 14px; min-height: 44px;
+}
+.keyboard { margin-bottom: 16px; }
+.krow { margin-bottom: 6px; }
+.key {
+  display: inline-block; min-width: 44px; height: 40px; line-height: 36px;
+  text-align: center; margin-right: 6px; padding: 0 8px;
+  background: #27272a; border: 2px solid transparent; border-radius: 6px; font-size: 18px;
+}
+.key.focused { border-color: #a3e635; background: #3f3f46; }
+
+.grid { white-space: nowrap; overflow: hidden; height: 250px; }
+
+/* ── Карточка тайтла ───────────────────────────────────────────────────── */
+.detail { display: flex; }
+.detail-poster { width: 260px; height: 390px; border-radius: 10px; background: #18181b; }
+.detail-info { margin-left: 28px; width: 880px; }
+.detail-title { font-size: 34px; font-weight: bold; margin-bottom: 8px; }
+.detail-meta { color: #a1a1aa; font-size: 17px; margin-bottom: 14px; }
+.detail-text { font-size: 17px; line-height: 25px; color: #d4d4d8; max-height: 175px; overflow: hidden; }
+.btn {
+  display: inline-block; margin-top: 20px; margin-right: 12px;
+  padding: 12px 28px; font-size: 19px; font-weight: bold;
+  background: #a3e635; color: #0a0a0b;
+  border: 3px solid transparent; border-radius: 26px;
+}
+.btn.focused { border-color: #ffffff; }
+.btn.secondary { background: #27272a; color: #ffffff; }
+
+/* ── Плеер ─────────────────────────────────────────────────────────────── */
+.video { width: 1280px; height: 720px; background: #000000; }
+.player-msg {
+  position: absolute; left: 0; right: 0; top: 320px;
+  text-align: center; font-size: 22px; color: #ffffff;
+}
+
+.toast {
+  position: absolute; left: 40px; bottom: 30px;
+  background: rgba(0, 0, 0, 0.85); border: 2px solid #3f3f46;
+  padding: 10px 18px; font-size: 18px; border-radius: 8px;
+}
