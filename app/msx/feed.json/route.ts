@@ -3,11 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * Каталог для Media Station X.
  *
- * MSX ставится из официальных магазинов Samsung и LG, поэтому это
- * единственный путь попасть на эти телевизоры без режима разработчика и
- * подписи. Ограничение принципиальное: MSX НЕ ЗАПУСКАЕТ наше приложение — она
- * рисует свой интерфейс по этому JSON и играет видео родным плеером ТВ. Наш
- * дизайн там невозможен, зато каталог и просмотр работают везде.
+ * MSX ставится из официальных магазинов Samsung и LG, поэтому это способ
+ * попасть на эти телевизоры без режима разработчика и подписи.
+ *
+ * Важно: MSX — White Label, и оформление здесь НАШЕ. По документации
+ * (Menu_Root_Object / Content_Root_Object) провайдер задаёт логотип, фон,
+ * заголовок и прозрачность — именно поэтому каталоги разных сервисов внутри
+ * MSX выглядят по-разному. Раскладку элементов задаёт она, всё остальное мы.
+ *
+ * Кроме того, MSX умеет ОТДАВАТЬ УПРАВЛЕНИЕ нашему приложению действием
+ * system:hbbtv:launch (см. меню) — тогда виден наш интерфейс целиком. Работает
+ * не на каждом телевизоре, поэтому этот каталог остаётся запасным путём.
  *
  * Один маршрут отдаёт все экраны, режим выбирается параметром view:
  *   list  — витрина категории (тренды / сериалы / новинки)
@@ -35,6 +41,15 @@ const TEMPLATE = {
   layout: "0,0,2,4",
   icon: "msx-white-soft:movie",
   color: "msx-glass",
+};
+
+// Фон и логотип на КАЖДОЙ странице каталога, иначе фирменным выглядит только
+// стартовое меню, а внутри разделов приложение обезличивается.
+const BRAND = {
+  logo: "https://sapkeflykino.ru/logo.png",
+  logoSize: "small",
+  background: "https://sapkeflykino.ru/intro-logo-v2.jpg",
+  transparent: 2,
 };
 
 type Any = Record<string, any>;
@@ -117,17 +132,18 @@ async function viewList(cat: string) {
     image: poster(m.poster_path),
     action: `content:${SELF}?view=item&id=${m.id}&type=${c.type}`,
   }));
-  return { type: "list", headline: c.title, template: TEMPLATE, items };
+  return { ...BRAND, type: "list", headline: c.title, template: TEMPLATE, items };
 }
 
 /** Карточка: фильм играем сразу, у сериала показываем сезоны. */
 async function viewItem(id: string, type: "movie" | "tv") {
   const d = await tmdb(`/${type}/${id}`);
-  if (!d) return { type: "list", headline: "Не найдено", items: [] };
+  if (!d) return { ...BRAND, type: "list", headline: "Не найдено", items: [] };
 
   if (type === "tv") {
     const seasons = (d.seasons || []).filter((s: Any) => s.season_number > 0);
     return {
+      ...BRAND,
       type: "list",
       headline: d.name,
       template: { ...TEMPLATE, layout: "0,0,4,1" },
@@ -142,6 +158,7 @@ async function viewItem(id: string, type: "movie" | "tv") {
 
   const st = await resolveStream(id, "movie");
   return {
+    ...BRAND,
     type: "list",
     headline: d.title,
     template: { ...TEMPLATE, layout: "0,0,8,2" },
@@ -166,6 +183,7 @@ async function viewEps(id: string, season: string) {
   const d = await tmdb(`/tv/${id}/season/${season}`);
   const eps = d?.episodes || [];
   return {
+    ...BRAND,
     type: "list",
     headline: `Сезон ${season}`,
     template: { ...TEMPLATE, layout: "0,0,8,1" },
@@ -182,6 +200,7 @@ async function viewEps(id: string, season: string) {
 async function viewPlay(id: string, season: string, episode: string) {
   const st = await resolveStream(id, "tv", season, episode);
   return {
+    ...BRAND,
     type: "list",
     headline: `Серия ${episode}`,
     template: { ...TEMPLATE, layout: "0,0,8,2" },
