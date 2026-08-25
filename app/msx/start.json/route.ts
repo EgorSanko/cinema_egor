@@ -20,6 +20,21 @@ export async function GET() {
       version: "1.0.0",
       parameter: "menu:https://sapkeflykino.ru/msx/menu.json",
       welcome: "none",
+      note: "Онлайн-кинотеатр: фильмы и сериалы",
+      // Объект launcher — формат сторонних лаунчеров и порталов MSX
+      // (msxplayer.ru и подобных). Именно так подключены Deeplex и остальные:
+      // портал показывает список приложений, и запуск идёт этим параметром.
+      // Без него нас в такой список просто не добавить.
+      //
+      // Внутри — link: на веб-версию MSX с НАШИМ стартовым параметром и
+      // leave=1: лаунчер закрывается, человек попадает сразу к нам.
+      launcher: {
+        parameter:
+          "link:https://msx.benzac.de/?start=menu:https://sapkeflykino.ru/msx/menu.json&leave=1",
+        icon: "movie",
+        image: "https://sapkeflykino.ru/icon-512.png",
+        color: "#a3e635",
+      },
       launcher: {
         icon: "blank",
         image: "https://sapkeflykino.ru/icon-512.png",
