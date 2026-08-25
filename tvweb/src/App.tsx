@@ -6,6 +6,24 @@ import { TvWatch } from "@/components/tv/tv-watch";
 import { loadRails, loadWatchMedia, type Rail } from "@/lib/api";
 
 /**
+ * Строка состояния в углу экрана.
+ *
+ * На телевизоре нет консоли, и «просто загрузка» неотличима от «приложение
+ * встало». По логам видно, что данные приходят и постеры качаются, а человек
+ * видит вечное ожидание — значит расходится внутреннее состояние с картинкой.
+ * Эта строка показывает, на каком шаге приложение сейчас, и снимает вопрос.
+ */
+function Diag({ text }: { text: string }) {
+  return (
+    <div style={{
+      position: "fixed", left: 8, bottom: 6, zIndex: 9999,
+      fontSize: 12, color: "#71717a", fontFamily: "Arial, sans-serif",
+      pointerEvents: "none", maxWidth: "90%", whiteSpace: "nowrap", overflow: "hidden",
+    }}>{text}</div>
+  );
+}
+
+/**
  * Маршрутизация без сервера.
  *
  * На сайте экраны были серверными страницами (/tv-home, /tv-search,
@@ -73,16 +91,26 @@ export default function App() {
     return () => { alive = false; };
   }, [route.name, (route as any).type, (route as any).id]);
 
-  if (route.name === "search") return <TvSearch />;
-  if (route.name === "login") return <TvLogin />;
+  const who = (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem("user") || "null");
+      return u && u.email ? u.email : "гость";
+    } catch { return "гость"; }
+  })();
+  const diag = `экран: ${route.name} · вход: ${who} · подборок: ${rails ? rails.length : "грузятся"}`;
+
+  if (route.name === "search") return (<><TvSearch /><Diag text={diag} /></>);
+  if (route.name === "login") return (<><TvLogin /><Diag text={diag} /></>);
 
   if (route.name === "watch") {
-    if (!media) return <Splash text={error || "Загружаю…"} />;
-    return <TvWatch media={media} />;
+    if (!media) return <Splash text={error || "Загружаю данные тайтла…"} />;
+    return (<><TvWatch media={media} /><Diag text={diag} /></>);
   }
 
-  if (!rails) return <Splash text={error || "Загружаю…"} onRetry={error ? () => { setError(""); setRails(null); } : undefined} />;
-  return <TvHome rails={rails} />;
+  if (!rails) {
+    return <Splash text={error || "Загружаю подборки…"} onRetry={error ? () => { setError(""); setRails(null); } : undefined} />;
+  }
+  return (<><TvHome rails={rails} /><Diag text={diag} /></>);
 }
 
 function Splash({ text, onRetry }: { text: string; onRetry?: () => void }) {
