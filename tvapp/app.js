@@ -235,6 +235,29 @@
     return o;
   }
 
+  // Источник отдаёт озвучку технической строкой вида
+  // «(rus) AC3 20 @ 192 kbps - MVO 2x2 / Kravec». На телевизоре это нечитаемо,
+  // поэтому оставляем то, что человек и называет озвучкой: студию после тире.
+  function dubName(raw) {
+    var s = String(raw || "").replace(/^\s*\((?:rus|ru|eng|ukr|[a-z]{2,3})\)\s*/i, "");
+    var dash = s.lastIndexOf(" - ");
+    if (dash > -1) s = s.slice(dash + 3);
+    s = s.replace(/(AC3|AAC|E-?AC3|DTS|MP3)/gi, "")
+         .replace(/\d+\s*@\s*\d+\s*kbps/gi, "")
+         .replace(/\s{2,}/g, " ").trim();
+    return s || String(raw || "").trim() || "Дорожка";
+  }
+  // У сериалов бывают две дорожки с одинаковым названием — нумеруем, иначе в
+  // списке два неотличимых пункта.
+  function dubLabel(i) {
+    var list = S.play.translations, name = dubName((list[i] || {}).name);
+    var same = 0, pos = 0;
+    for (var j = 0; j < list.length; j++) {
+      if (dubName(list[j].name) === name) { same++; if (j === i) pos = same; }
+    }
+    return same > 1 ? name + " · " + pos : name;
+  }
+
   function mmss(t) {
     t = Math.max(0, Math.floor(t || 0));
     var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
