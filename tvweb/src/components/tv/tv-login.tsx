@@ -177,9 +177,16 @@ export function TvLogin() {
     const foreign = (!!owner && owner !== u.email) || (!!prevUser && prevUser !== u.email);
     localStorage.setItem("user", JSON.stringify(u));
     setInfo("Загружаем вашу историю…");
+    // Ограничение по времени. Без него экран мог висеть на этой надписи
+    // бесконечно: на телевизоре сеть медленная, а профиль бывает под сотню
+    // килобайт. Человек видит вечную загрузку и считает, что вход не прошёл
+    // (жалоба Егора). Не успели за 15 секунд — заходим всё равно, история
+    // подтянется следующей синхронизацией.
+    const withTimeout = (p: Promise<unknown>) =>
+      Promise.race([p, new Promise((res) => setTimeout(res, 15000))]);
     try {
-      if (foreign) { clearLocalProfile(); await loadFromServer(u.email); }
-      else { await syncFromServer(u.email); }
+      if (foreign) { clearLocalProfile(); await withTimeout(loadFromServer(u.email)); }
+      else { await withTimeout(syncFromServer(u.email)); }
     } catch {}
     router.push("/tv-home");
   }

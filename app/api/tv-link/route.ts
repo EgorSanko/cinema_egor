@@ -47,6 +47,7 @@ function sweep() {
 }
 
 export async function POST(req: NextRequest) {
+  ensureLoaded();
   const body = await req.json().catch(() => ({}));
   const action = body.action as string;
   sweep();
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
       createdAt: now,
       expires: now + TTL,
     });
+    saveSessions();
     return NextResponse.json({ code, ttl: TTL });
   }
 
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest) {
     if (Date.now() > s.expires) { sessions.delete(code); return NextResponse.json({ error: "Код истёк" }, { status: 410 }); }
     s.status = "authorized";
     s.user = { email, name };
+    saveSessions();
     return NextResponse.json({ success: true });
   }
 
@@ -90,6 +93,7 @@ export async function POST(req: NextRequest) {
       // Single-use: hand the user over once, then void the code.
       const user = s.user;
       sessions.delete(code);
+      saveSessions();
       return NextResponse.json({ status: "authorized", user });
     }
     return NextResponse.json({ status: "pending" });
