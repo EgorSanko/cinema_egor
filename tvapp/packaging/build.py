@@ -20,7 +20,10 @@ import io, os, shutil, tarfile, time, zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(HERE)                       # tvapp/
 DIST = os.path.join(HERE, "dist")
-WEB_FILES = ["index.html", "app.js", "app.css"]
+# Внутрь пакетов кладём СОБРАННУЮ обёртку (tvweb/dist) — тот же код, что на
+# Android TV, скомпилированный в ES5. Раньше сюда шёл самописный клиент из
+# tvapp/, он остаётся запасным для совсем древних телевизоров.
+TVWEB_DIST = os.path.normpath(os.path.join(APP, "..", "tvweb", "dist"))
 ICON_SRC = os.path.join(APP, "..", "public", "icon-512.png")
 
 WEBOS_ID = "ru.sapkeflykino.tv"
@@ -33,8 +36,15 @@ def stage(extra_files):
     if os.path.isdir(tmp):
         shutil.rmtree(tmp)
     os.makedirs(tmp)
-    for f in WEB_FILES:
-        shutil.copy(os.path.join(APP, f), os.path.join(tmp, f))
+    if not os.path.isdir(TVWEB_DIST):
+        raise SystemExit("Сначала соберите обёртку: cd tvweb && npx vite build")
+    for name in os.listdir(TVWEB_DIST):
+        src = os.path.join(TVWEB_DIST, name)
+        dst = os.path.join(tmp, name)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy(src, dst)
     shutil.copy(ICON_SRC, os.path.join(tmp, "icon.png"))
     for src, dst in extra_files:
         shutil.copy(src, os.path.join(tmp, dst))
@@ -46,8 +56,10 @@ def build_wgt():
     out = os.path.join(DIST, "sapkeflykino-tv.wgt")
     # Файлы кладём в КОРЕНЬ архива: Tizen ищет config.xml именно там.
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        for name in sorted(os.listdir(src)):
-            z.write(os.path.join(src, name), name)
+        for root, _dirs, names in os.walk(src):
+            for name in sorted(names):
+                full = os.path.join(root, name)
+                z.write(full, os.path.relpath(full, src).replace("\\", "/"))
     shutil.rmtree(src)
     return out
 
@@ -87,10 +99,13 @@ def build_ipk():
     payload = []
     total = 0
     root = "./usr/palm/applications/" + WEBOS_ID + "/"
-    for name in sorted(os.listdir(src)):
-        data = io.open(os.path.join(src, name), "rb").read()
-        total += len(data)
-        payload.append((root + name, data))
+    for dirpath, _dirs, names in os.walk(src):
+        for name in sorted(names):
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, src).replace("\\", "/")
+            data = io.open(full, "rb").read()
+            total += len(data)
+            payload.append((root + rel, data))
     data_tar = _tar_gz(payload)
 
     control = (

@@ -51,13 +51,13 @@ export async function GET() {
                 title: "Запустить приложение",
                 titleFooter: "наш интерфейс: поиск, продолжение просмотра, озвучки",
                 icon: "launch",
-                action: "system:hbbtv:launch:https://sapkeflykino.ru/tvapp/",
+                action: "system:hbbtv:launch:https://sapkeflykino.ru/tvweb/",
               },
               {
                 title: "Открыть в браузере телевизора",
                 titleFooter: "если предыдущий пункт не сработал",
                 icon: "language",
-                action: "link:window:https://sapkeflykino.ru/tvapp/",
+                action: "link:window:https://sapkeflykino.ru/tvweb/",
               },
             ],
           },
@@ -75,9 +75,9 @@ export async function GET() {
             items: [
               {
                 title: "Полная версия — в браузере телевизора",
-                titleFooter: "sapkeflykino.ru/tvapp/",
+                titleFooter: "sapkeflykino.ru/tvweb/",
                 icon: "language",
-                action: "info:Каталог здесь работает на любом телевизоре. За полным интерфейсом — пункт «Полная версия» в меню или адрес sapkeflykino.ru/tvapp/ в браузере телевизора.",
+                action: "info:Каталог здесь работает на любом телевизоре. За полным интерфейсом — пункт «Полная версия» в меню или адрес sapkeflykino.ru/tvweb/ в браузере телевизора.",
               },
             ],
           },

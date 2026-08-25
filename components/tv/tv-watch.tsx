@@ -841,10 +841,23 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
           }
         // ── Серии column (2) ──
         } else {
-          if (isLeft) setPickerCol(1);
-          else if (isUp) setEpisodeIdx((i) => Math.max(0, i - 1));
-          else if (isDown) setEpisodeIdx((i) => Math.min(Math.max(0, pickerEpisodes.length - 1), i + 1));
-          else if (isEnter || isSpace || isPlayPause) {
+          // Серии нарисованы в ДВЕ колонки (grid-cols-2 ниже), поэтому ходить
+          // по ним надо как по сетке: вниз — через строку, вправо — на соседнюю
+          // ячейку. Раньше все четыре стрелки двигали номер на единицу, и
+          // «вниз» визуально уезжало вправо — листать было невозможно.
+          const EP_COLS = 2;
+          const last = Math.max(0, pickerEpisodes.length - 1);
+          if (isLeft) {
+            // Из левой колонки уходим к сезонам, из правой — на соседнюю слева.
+            if (episodeIdx % EP_COLS === 0) setPickerCol(1);
+            else setEpisodeIdx((i) => Math.max(0, i - 1));
+          } else if (isRight) {
+            setEpisodeIdx((i) => Math.min(last, i + 1));
+          } else if (isUp) {
+            setEpisodeIdx((i) => (i - EP_COLS >= 0 ? i - EP_COLS : i));
+          } else if (isDown) {
+            setEpisodeIdx((i) => (i + EP_COLS <= last ? i + EP_COLS : Math.min(last, i)));
+          } else if (isEnter || isSpace || isPlayPause) {
             const ep = pickerEpisodes[episodeIdx];
             if (ep) playEpisode(season, ep.episode_number);
           }
