@@ -35,11 +35,7 @@ export async function GET() {
         image: "https://sapkeflykino.ru/icon-512.png",
         color: "#a3e635",
       },
-      launcher: {
-        icon: "blank",
-        image: "https://sapkeflykino.ru/icon-512.png",
-        color: "msx-black",
-      },
+
     },
     {
       headers: {
