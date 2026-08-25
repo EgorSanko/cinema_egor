@@ -170,7 +170,10 @@ function qualityPage(headline: string, track: Track) {
       // плеера телевизора. На Samsung 2016+ MSX играет через Tizen AVPlay, и он
       // наш поток даже не запросил (в логах ноль обращений за видео), тогда как
       // на LG с HTML5-плеером всё заиграло.
-      action: `video:plugin:https://sapkeflykino.ru/tvapp/msx-player.html?u=${encodeURIComponent(firstMirror(track.quality[q]))}`,
+      // Передаём ОБА зеркала целиком: страница-плеер сама переключится на
+      // второе, если первое молчит. Раньше здесь бралось только первое, и
+      // мёртвое зеркало означало «кино не открылось».
+      action: `video:plugin:https://sapkeflykino.ru/tvapp/msx-player.html?u=${encodeURIComponent(track.quality[q])}`,
     })),
   };
 }

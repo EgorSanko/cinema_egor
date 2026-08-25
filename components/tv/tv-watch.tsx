@@ -449,6 +449,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // surfacing its dub list along the way. Returns the url or null.
   const fetchMeta = useCallback(async (): Promise<string | null> => {
     if (media.hdUrl) return media.hdUrl;
+    // HDRezka забанена (HDREZKA_UP=false) и на любой запрос отдаёт пустоту —
+    // в логах с телевизора видно по два бесполезных запроса на каждый тайтл.
+    // Поток резолвится через Alloha и без этого, поэтому просто не ходим.
+    if (!HDREZKA_UP) return null;
     const year = media.year || "";
     const ru = (media.title || "").replace(/["«»“”]/g, "").trim();
     const orig = (media.originalTitle || "").replace(/["«»“”]/g, "").trim();

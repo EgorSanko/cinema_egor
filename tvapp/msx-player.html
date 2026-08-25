@@ -54,10 +54,24 @@
 
   if (!url) { say("Ссылка на поток не передана"); return; }
 
-  video.src = url;
+  // Источник отдаёт зеркала парой. Держим оба: если первое молчит,
+  // переключаемся на второе, не выбрасывая человека из плеера.
+  var mirrors = url.split(" or ");
+  var mirrorIdx = 0;
+
+  function playMirror(i) {
+    mirrorIdx = i;
+    say(i > 0 ? "Первое зеркало не ответило, пробую второе…" : "Загружаю…");
+    video.src = mirrors[i].trim();
+    try { video.load(); } catch (e) {}
+    try { video.play(); } catch (e) {}
+  }
+
+  video.src = mirrors[0].trim();
   video.addEventListener("loadedmetadata", function () { say(""); });
   video.addEventListener("playing", function () { say(""); });
   video.addEventListener("error", function () {
+    if (mirrorIdx + 1 < mirrors.length) { playMirror(mirrorIdx + 1); return; }
     say("Телевизор не смог открыть этот поток");
   });
 
