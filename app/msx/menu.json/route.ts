@@ -63,10 +63,15 @@ export async function GET() {
                 title: "Запустить приложение",
                 titleFooter: "наш интерфейс: поиск, продолжение просмотра, озвучки",
                 icon: "launch",
-                action: "system:hbbtv:launch:https://sapkeflykino.ru/tvweb/",
+                // Обычный link: — ровно так открываются ВСЕ кинотеатры в
+                // портале NoName: Deeplex → link:http://smart.deeplex.cc,
+                // Zona, VoKino, Filmix, Lampa. Проверено по их списку.
+                // Раньше здесь стоял system:hbbtv:launch, и Samsung отвечал
+                // «Current platform does not support the action».
+                action: "link:https://sapkeflykino.ru/tvweb/",
               },
               {
-                title: "Открыть в браузере телевизора",
+                title: "Открыть в отдельном окне",
                 titleFooter: "если предыдущий пункт не сработал",
                 icon: "language",
                 action: "link:window:https://sapkeflykino.ru/tvweb/",
