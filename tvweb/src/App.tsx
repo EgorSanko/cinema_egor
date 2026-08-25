@@ -64,7 +64,14 @@ export default function App() {
   React.useEffect(() => {
     if (route.name !== "home" || rails) return;
     let alive = true;
+    // Страховка на самом верху: даже если загрузка подборок как-то повиснет,
+    // экран не останется в вечном ожидании — покажем понятную ошибку.
+    const guard = setTimeout(() => {
+      if (!alive) return;
+      setError("Подборки не загрузились за 20 секунд. Нажмите OK, чтобы повторить.");
+    }, 20000);
     loadRails().then((r) => {
+      clearTimeout(guard);
       if (!alive) return;
       if (!r.length) {
         // Пустой ответ — НЕ повод висеть в загрузке. Показываем причину и даём

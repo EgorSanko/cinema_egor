@@ -12,21 +12,45 @@ import { getImageUrl } from "./img";
 const TMDB = "/tmdb-api";
 const KEY = "275c9d09780aadb4b13ff57a731eda00";
 
-async function tmdb(path: string, params: Record<string, string> = {}): Promise<any> {
-  // `_` — метка времени, чтобы телевизор не отвечал из своего кэша.
-  // Без неё повторный запуск получал 304 «не изменилось» с ПУСТЫМ телом,
-  // разбор давал ничего, подборки выходили пустыми, и экран висел в
-  // бесконечной загрузке. В первый раз всё работало только потому, что
-  // ответы были свежие. Поймано на живом Samsung по логам.
+/**
+ * Запрос к TMDB через наш прокси.
+ *
+ * ЧЕРЕЗ XMLHttpRequest, а не fetch, и с жёстким ограничением по времени.
+ * Егор на телевизоре видел вечное «Загружаю подборки»: запрос НЕ завершался
+ * вовсе — ни успехом, ни ошибкой. Ожидание пяти запросов через Promise.all
+ * при этом не заканчивалось никогда. XHR даёт настоящий таймаут на старых
+ * движках, где fetch может зависнуть молча.
+ *
+ * Метка времени `_` — чтобы телевизор не ответил из своего кэша: пустой
+ * ответ 304 уже приводил к тому же вечному ожиданию.
+ */
+function tmdb(path: string, params: Record<string, string> = {}): Promise<any> {
   const q = new URLSearchParams({ api_key: KEY, language: "ru-RU", ...params });
   q.set("_", String(new Date().getTime()));
-  try {
-    const r = await fetch(`${TMDB}${path}?${q}`, { cache: "no-store" });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch {
-    return null;
-  }
+  const url = `${TMDB}${path}?${q}`;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v: any) => { if (!done) { done = true; resolve(v); } };
+    try {
+      const r = new XMLHttpRequest();
+      r.open("GET", url, true);
+      r.timeout = 12000;
+      r.onreadystatechange = () => {
+        if (r.readyState !== 4) return;
+        if (r.status >= 200 && r.status < 300) {
+          try { finish(JSON.parse(r.responseText)); } catch { finish(null); }
+        } else finish(null);
+      };
+      r.ontimeout = () => finish(null);
+      r.onerror = () => finish(null);
+      r.send();
+      // Страховка поверх штатного таймаута: на части прошивок ontimeout
+      // не срабатывает вовсе, и запрос остаётся висеть.
+      setTimeout(() => finish(null), 14000);
+    } catch {
+      finish(null);
+    }
+  });
 }
 
 // ── Поиск (был серверным действием) ──────────────────────────────────────
