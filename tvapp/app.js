@@ -32,7 +32,9 @@
     rows: [], focus: { row: 0, col: 0 },
     query: "", kbLayout: 0, kb: { row: 0, col: 0 }, results: [],
     detail: null, detailFocus: 0, seasons: [], season: 1, episodes: [], epFocus: 0, detailZone: "buttons",
-    play: { item: null, season: 0, episode: 0, translations: [], tr: 0, quality: "", panel: null, panelFocus: 0 },
+    play: { item: null, season: 0, episode: 0, translations: [], tr: 0, quality: "",
+            overlay: "none", zone: "buttons", ctrl: 1, tab: 0, setIdx: 0,
+            skipTime: null, epList: [] },
     history: [], favorites: [],
     stack: []
   };
@@ -181,7 +183,38 @@
   function poster(p) { return p ? IMG + "/w342" + p : ""; }
   function titleOf(o) { return o.title || o.name || ""; }
   function yearOf(o) { return String(o.release_date || o.first_air_date || "").slice(0, 4); }
-  function typeOf(o) { return o.type ? o.type : (o.title ? "movie" : "tv"); }
+  // ВАЖНО: доверяем полю type ТОЛЬКО если это наш "movie"/"tv". У TMDB в
+  // подробных данных сериала есть СВОЁ поле type со значением вроде "Scripted",
+  // и наивная проверка подставляла его в адрес запроса: получалось
+  // /tmdb-api/Scripted/2316/external_ids → 404, из-за чего у ВСЕХ сериалов не
+  // грузились ни сезоны, ни поток. Поймано прогоном в браузере.
+  function typeOf(o) {
+    if (o.type === "movie" || o.type === "tv") return o.type;
+    return o.title ? "movie" : "tv";
+  }
+  // Источник отдаёт озвучку технической строкой вида
+  // «(rus) AC3 20 @ 192 kbps - MVO 2x2 / Kravec». На телевизоре это нечитаемо,
+  // поэтому оставляем то, что человек и называет озвучкой: студию после тире.
+  // Если после чистки имена совпали (у сериалов бывает две дорожки с одним
+  // названием) — нумеруем, иначе в списке два одинаковых пункта.
+  function dubName(raw) {
+    var s = String(raw || "").replace(/^\s*\((?:rus|ru|eng|ukr|[a-z]{2,3})\)\s*/i, "");
+    var dash = s.lastIndexOf(" - ");
+    if (dash > -1) s = s.slice(dash + 3);
+    s = s.replace(/\b(AC3|AAC|E-?AC3|DTS|MP3)\b/gi, "")
+         .replace(/\d+\s*@\s*\d+\s*kbps/gi, "")
+         .replace(/\s{2,}/g, " ").trim();
+    return s || String(raw || "").trim() || "Дорожка";
+  }
+  function dubLabel(i) {
+    var list = S.play.translations, name = dubName((list[i] || {}).name);
+    var same = 0, pos = 0;
+    for (var j = 0; j < list.length; j++) {
+      if (dubName(list[j].name) === name) { same++; if (j === i) pos = same; }
+    }
+    return same > 1 ? name + " · " + pos : name;
+  }
+
   function mmss(t) {
     t = Math.max(0, Math.floor(t || 0));
     var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
@@ -271,6 +304,7 @@
     var cont = continueRow();
     if (cont.length) rows.push({ title: "Продолжить просмотр", items: cont });
     if (S.favorites.length) rows.push({ title: "Избранное", items: S.favorites.slice(0, 16) });
+    rows.push({ title: "Найти фильм или сериал", items: [{ __search: true, title: "Поиск" }] });
     rows.push({ title: "Сейчас в тренде", items: [] });
     rows.push({ title: "Популярные сериалы", items: [] });
     rows.push({ title: "Новинки", items: [] });
@@ -278,7 +312,7 @@
     S.focus = { row: 0, col: 0 };
     renderHome();
 
-    var base = rows.length - 3;
+    var base = rows.length - 3;  // три последних ряда догружаются с TMDB
     tmdb("/trending/movie/week", {}, function (d) {
       rows[base].items = (d && d.results ? d.results : []).slice(0, 18); renderHome();
     });
@@ -291,6 +325,10 @@
   }
 
   function cardHtml(item, focused) {
+    if (item.__search) {
+      return '<div class="card searchcard' + (focused ? " focused" : "") + '">' +
+        '<div class="searchglyph">ПОИСК</div><div class="cap">Название фильма или сериала</div></div>';
+    }
     var img = poster(item.poster_path);
     var badge = typeOf(item) === "tv" ? "сериал" : "фильм";
     var resume = "";
@@ -496,6 +534,8 @@
   }
 
   // ── Плеер ───────────────────────────────────────────────────────────────
+  // Устройство ровно как в веб-обёртке: оверлей «нет → управление → настройки»,
+  // панель сама прячется через 5 секунд, таймлайн — отдельная зона фокуса.
   function firstMirror(u) { return String(u || "").split(" or ")[0]; }
 
   var QORDER = ["2160", "1440", "1080", "1080p", "720", "720p", "480", "480p", "360", "360p"];
@@ -505,11 +545,21 @@
     for (var k in q) if (q.hasOwnProperty(k)) return { url: q[k], q: k };
     return null;
   }
+  function qualityList() {
+    var t = S.play.translations[S.play.tr] || {};
+    var q = t.quality || {}, out = [];
+    for (var i = 0; i < QORDER.length; i++) if (q[QORDER[i]]) out.push(QORDER[i]);
+    if (!out.length) for (var k in q) if (q.hasOwnProperty(k)) out.push(k);
+    return out;
+  }
 
   function startPlayback(item, season, episode) {
     S.play.item = item; S.play.season = season || 0; S.play.episode = episode || 0;
-    S.play.translations = []; S.play.tr = 0; S.play.panel = null;
+    S.play.translations = []; S.play.tr = 0; S.play.overlay = "none";
+    S.play.zone = "buttons"; S.play.ctrl = 1; S.play.skipTime = null;
+    S.play.epList = (typeOf(item) === "tv") ? S.episodes.slice(0) : [];
     show("player");
+    hideSkip(); hideOverlay();
     msg("Ищу источник…");
     var type = typeOf(item);
     tmdb("/" + type + "/" + item.id + "/external_ids", {}, function (ids) {
@@ -517,30 +567,28 @@
       if (!imdb) { msg("У этого тайтла нет кода IMDb — источник его не найдёт."); return; }
       var tail = (type === "tv" ? "&season=" + (season || 1) + "&episode=" + (episode || 1) : "");
       get(RESOLVE + "/alloha-hls?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail, function (d) {
-        var tr = d && d.translations;
-        if (tr && tr.length) { onTranslations(tr); return; }
-        // Alloha молчит — идём во второй источник, как это делает сайт.
+        if (d && d.translations && d.translations.length) { onTranslations(d); return; }
         msg("Основной источник молчит, пробую запасной…");
         get(RESOLVE + "/cdnhub?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail, function (d2) {
-          var tr2 = d2 && d2.translations;
-          if (tr2 && tr2.length) { onTranslations(tr2); return; }
+          if (d2 && d2.translations && d2.translations.length) { onTranslations(d2); return; }
           msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
         });
       });
     });
   }
 
-  function onTranslations(list) {
-    S.play.translations = list;
-    // Держим озвучку между сериями по ИМЕНИ: индексы между эпизодами не совпадают.
+  function onTranslations(d) {
+    S.play.translations = d.translations;
+    // skipTime от Alloha — окно заставки, по нему показываем «Пропустить».
+    S.play.skipTime = d.skipTime || null;
+    // Озвучку держим между сериями по ИМЕНИ: индексы между эпизодами разъезжаются.
     var want = lsGet("kino_tv_tr_" + S.play.item.id, null);
     var idx = 0;
     if (want) {
-      for (var i = 0; i < list.length; i++) {
-        if (String(list[i].name).toLowerCase() === String(want).toLowerCase()) { idx = i; break; }
+      for (var i = 0; i < d.translations.length; i++) {
+        if (String(d.translations[i].name).toLowerCase() === String(want).toLowerCase()) { idx = i; break; }
       }
     }
-    S.play.tr = idx;
     playTranslation(idx, true);
   }
 
@@ -558,68 +606,131 @@
       var p = getPosition(S.play.item.id, typeOf(S.play.item), S.play.season, S.play.episode);
       if (p && p.time > 5) resumeAt = p.time;
     } else {
-      resumeAt = v.currentTime || 0;      // смена озвучки/качества — не терять место
+      resumeAt = v.currentTime || 0;   // смена озвучки и качества не теряет место
     }
     msg("Загружаю…");
     v.src = firstMirror(pick.url);
     v.onloadedmetadata = function () {
-      if (resumeAt > 0 && resumeAt < (v.duration || 1e9)) {
-        try { v.currentTime = resumeAt; } catch (e) {}
-      }
+      if (resumeAt > 0 && resumeAt < (v.duration || 1e9)) { try { v.currentTime = resumeAt; } catch (e) {} }
       msg("");
       try { v.play(); } catch (e) {}
+      flashOverlay();
     };
     v.onerror = function () {
-      // Samsung и LG играют HLS сами, Android-WebView — нет.
       msg("Телевизор не смог открыть этот поток. Нажмите OK и выберите другую озвучку.");
     };
-    renderPlayerBar();
+    v.ontimeupdate = onTimeUpdate;
+    v.onended = onEnded;
   }
 
   function msg(t) { el("player-msg").innerHTML = t ? esc(t) : ""; }
 
-  function renderPlayerBar() {
-    var t = S.play.translations[S.play.tr];
-    var item = S.play.item;
-    var sub = "";
-    if (typeOf(item) === "tv" && S.play.season) sub = " · S" + S.play.season + "E" + S.play.episode;
-    el("player-bar").innerHTML =
-      '<b>' + esc(titleOf(item)) + "</b>" + esc(sub) +
-      '  <span class="dim">озвучка:</span> ' + esc(t ? t.name : "—") +
-      '  <span class="dim">качество:</span> ' + esc(S.play.quality || "—") +
-      '  <span class="dim">OK — меню</span>';
+  // ── Оверлей управления ──────────────────────────────────────────────────
+  var hideTimer = null;
+  function flashOverlay() {
+    S.play.overlay = "controls";
+    renderControls();
+    armHide();
+  }
+  function armHide() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () {
+      if (S.play.overlay === "controls") { S.play.overlay = "none"; hideOverlay(); }
+    }, 5000);
+  }
+  function hideOverlay() {
+    el("controls").className = "controls hidden";
+    el("settings").className = "settings hidden";
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   }
 
-  function renderPanel() {
-    var p = S.play.panel;
-    if (!p) { el("player-panel").className = "panel hidden"; return; }
-    var h = "", i;
-    if (p === "menu") {
-      var opts = ["Озвучка", "Качество", "Продолжить просмотр"];
-      for (i = 0; i < opts.length; i++) {
-        h += '<div class="pitem' + (S.play.panelFocus === i ? " focused" : "") + '">' + esc(opts[i]) + "</div>";
-      }
-    } else if (p === "tr") {
+  var CBTN = ["-10", "Пауза", "+10", "Настройки", "Выход"];
+  function renderControls() {
+    if (S.play.overlay !== "controls") { hideOverlay(); return; }
+    var v = el("video"), item = S.play.item;
+    var sub = (typeOf(item) === "tv" && S.play.season) ? (" · S" + S.play.season + "E" + S.play.episode) : "";
+    el("ctitle").innerHTML = "<b>" + esc(titleOf(item)) + "</b>" + esc(sub) +
+      '  <span class="dim">озвучка</span> ' + esc(S.play.translations.length ? dubLabel(S.play.tr) : "—") +
+      '  <span class="dim">качество</span> ' + esc(S.play.quality || "—");
+    el("timeline").className = "timeline" + (S.play.zone === "timeline" ? " focused" : "");
+    var h = "";
+    for (var i = 0; i < CBTN.length; i++) {
+      var label = (i === 1) ? (v.paused ? "Пуск" : "Пауза") : CBTN[i];
+      h += '<span class="cbtn' + (S.play.zone === "buttons" && S.play.ctrl === i ? " focused" : "") + '">' + esc(label) + "</span>";
+    }
+    el("cbuttons").innerHTML = h;
+    el("controls").className = "controls";
+    updateProgress();
+  }
+  function updateProgress() {
+    var v = el("video");
+    var d = v.duration || 0, c = v.currentTime || 0;
+    el("tlfill").style.width = (d ? Math.min(100, (c / d) * 100) : 0) + "%";
+    el("tcur").innerHTML = mmss(c);
+    el("tdur").innerHTML = mmss(d);
+  }
+
+  function showSkip() { el("skip").className = "skip"; }
+  function hideSkip() { el("skip").className = "skip hidden"; }
+
+  function onTimeUpdate() {
+    if (S.play.overlay === "controls") updateProgress();
+    var v = el("video"), st = S.play.skipTime;
+    if (st && st.start != null && st.end != null) {
+      if (v.currentTime >= st.start && v.currentTime < st.end) showSkip(); else hideSkip();
+    }
+  }
+
+  function onEnded() {
+    var item = S.play.item;
+    if (typeOf(item) !== "tv") { goBack(); return; }
+    // Следующая серия того же сезона, если она есть в загруженном списке.
+    var list = S.play.epList, next = null;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].episode_number === S.play.episode && list[i + 1]) { next = list[i + 1]; break; }
+    }
+    if (!next) { toast("Сезон закончился"); goBack(); return; }
+    toast("Следующая серия: " + (next.name || ("Серия " + next.episode_number)));
+    startPlayback(item, S.play.season, next.episode_number);
+  }
+
+  // ── Настройки в плеере ──────────────────────────────────────────────────
+  function renderSettings() {
+    if (S.play.overlay !== "settings") { el("settings").className = "settings hidden"; return; }
+    var h = '<div class="tabs">' +
+      '<span class="tab' + (S.play.tab === 0 ? " current" : "") + (S.play.zone === "tabs" && S.play.tab === 0 ? " focused" : "") + '">Озвучка</span>' +
+      '<span class="tab' + (S.play.tab === 1 ? " current" : "") + (S.play.zone === "tabs" && S.play.tab === 1 ? " focused" : "") + '">Качество</span>' +
+      "</div>";
+    var i;
+    if (S.play.tab === 0) {
       for (i = 0; i < S.play.translations.length; i++) {
-        h += '<div class="pitem' + (S.play.panelFocus === i ? " focused" : "") +
-             (i === S.play.tr ? " current" : "") + '">' + esc(S.play.translations[i].name) + "</div>";
+        h += '<div class="pitem' + (S.play.zone === "list" && S.play.setIdx === i ? " focused" : "") +
+             (i === S.play.tr ? " current" : "") + '">' + esc(dubLabel(i)) + "</div>";
       }
-    } else if (p === "q") {
+    } else {
       var qs = qualityList();
       for (i = 0; i < qs.length; i++) {
-        h += '<div class="pitem' + (S.play.panelFocus === i ? " focused" : "") +
+        h += '<div class="pitem' + (S.play.zone === "list" && S.play.setIdx === i ? " focused" : "") +
              (qs[i] === S.play.quality ? " current" : "") + '">' + esc(qs[i]) + "</div>";
       }
     }
-    el("player-panel").innerHTML = h;
-    el("player-panel").className = "panel";
+    el("settings").innerHTML = h;
+    el("settings").className = "settings";
   }
-  function qualityList() {
-    var t = S.play.translations[S.play.tr] || {};
-    var q = t.quality || {}, out = [];
-    for (var i = 0; i < QORDER.length; i++) if (q[QORDER[i]]) out.push(QORDER[i]);
-    if (!out.length) for (var k in q) if (q.hasOwnProperty(k)) out.push(k);
-    return out;
+  function settingsLen() {
+    return S.play.tab === 0 ? S.play.translations.length : qualityList().length;
+  }
+
+  function seek(delta) {
+    var v = el("video");
+    if (!v.duration) return;
+    try { v.currentTime = Math.max(0, Math.min(v.duration, (v.currentTime || 0) + delta)); } catch (e) {}
+    updateProgress();
+  }
+  function togglePlay() {
+    var v = el("video");
+    if (v.paused) { try { v.play(); } catch (e) {} } else v.pause();
+    renderControls();
   }
 
   // Сохранение позиции: раз в 10 секунд и при выходе.
@@ -646,7 +757,8 @@
     try { v.pause(); } catch (e) {}
     v.removeAttribute("src");
     try { v.load(); } catch (e) {}
-    S.play.panel = null;
+    S.play.overlay = "none";
+    hideOverlay(); hideSkip();
   }
 
   // ── Управление ──────────────────────────────────────────────────────────
@@ -676,6 +788,7 @@
       var it = row.items[S.focus.col];
       if (!it) return;
       S.stack.push("home");
+      if (it.__search) { openSearch(); return; }
       openDetail(it);
     }
   }
@@ -769,35 +882,87 @@
 
   function playerKey(c) {
     var v = el("video");
-    if (S.play.panel) {
-      var len = S.play.panel === "menu" ? 3 : (S.play.panel === "tr" ? S.play.translations.length : qualityList().length);
-      if (c === K.DOWN) { S.play.panelFocus = Math.min(S.play.panelFocus + 1, len - 1); renderPanel(); }
-      else if (c === K.UP) { S.play.panelFocus = Math.max(S.play.panelFocus - 1, 0); renderPanel(); }
-      else if (c === K.OK) {
-        if (S.play.panel === "menu") {
-          if (S.play.panelFocus === 0) { S.play.panel = "tr"; S.play.panelFocus = S.play.tr; }
-          else if (S.play.panelFocus === 1) { S.play.panel = "q"; S.play.panelFocus = 0; }
-          else { S.play.panel = null; try { v.play(); } catch (e) {} }
-        } else if (S.play.panel === "tr") {
-          S.play.panel = null; playTranslation(S.play.panelFocus, false);
+
+    // Настройки: вкладки сверху, список под ними.
+    if (S.play.overlay === "settings") {
+      if (S.play.zone === "tabs") {
+        if (c === K.RIGHT || c === K.LEFT) {
+          S.play.tab = S.play.tab === 0 ? 1 : 0; S.play.setIdx = 0; renderSettings();
+        } else if (c === K.DOWN) { S.play.zone = "list"; S.play.setIdx = 0; renderSettings(); }
+        else if (c === K.OK) { S.play.zone = "list"; S.play.setIdx = 0; renderSettings(); }
+        return;
+      }
+      if (c === K.DOWN) { S.play.setIdx = Math.min(S.play.setIdx + 1, settingsLen() - 1); renderSettings(); }
+      else if (c === K.UP) {
+        if (S.play.setIdx === 0) { S.play.zone = "tabs"; }
+        else S.play.setIdx--;
+        renderSettings();
+      } else if (c === K.OK) {
+        if (S.play.tab === 0) {
+          S.play.overlay = "controls"; S.play.zone = "buttons";
+          playTranslation(S.play.setIdx, false);
         } else {
           var qs = qualityList();
-          S.play.quality = qs[S.play.panelFocus];
-          S.play.panel = null; playTranslation(S.play.tr, false);
+          S.play.quality = qs[S.play.setIdx];
+          S.play.overlay = "controls"; S.play.zone = "buttons";
+          playTranslation(S.play.tr, false);
         }
-        renderPanel(); renderPlayerBar();
+        renderSettings(); renderControls(); armHide();
       }
       return;
     }
-    if (c === K.OK) { S.play.panel = "menu"; S.play.panelFocus = 0; try { v.pause(); } catch (e) {} renderPanel(); }
-    else if (c === K.PLAY || c === K.PLAYPAUSE || c === K.PAUSE) { if (v.paused) { try { v.play(); } catch (e) {} } else v.pause(); }
-    else if (c === K.RIGHT || c === K.FWD) { try { v.currentTime = Math.min((v.currentTime || 0) + 10, v.duration || 0); } catch (e) {} }
-    else if (c === K.LEFT || c === K.REW) { try { v.currentTime = Math.max((v.currentTime || 0) - 10, 0); } catch (e) {} }
+
+    // Кнопка «Пропустить заставку» перехватывает OK, пока висит.
+    if (S.play.overlay === "none" && el("skip").className.indexOf("hidden") === -1 && c === K.OK) {
+      if (S.play.skipTime && S.play.skipTime.end) {
+        try { v.currentTime = S.play.skipTime.end; } catch (e) {}
+      }
+      hideSkip();
+      return;
+    }
+
+    // Панель скрыта: любая стрелка/OK её показывает, перемотка работает вслепую.
+    if (S.play.overlay === "none") {
+      if (c === K.OK || c === K.UP || c === K.DOWN) { flashOverlay(); return; }
+      if (c === K.RIGHT || c === K.FWD) { seek(10); flashOverlay(); return; }
+      if (c === K.LEFT || c === K.REW) { seek(-10); flashOverlay(); return; }
+      if (c === K.PLAY || c === K.PLAYPAUSE || c === K.PAUSE) { togglePlay(); flashOverlay(); return; }
+      return;
+    }
+
+    // Панель видна.
+    armHide();
+    if (S.play.zone === "timeline") {
+      if (c === K.RIGHT || c === K.FWD) { seek(10); }
+      else if (c === K.LEFT || c === K.REW) { seek(-10); }
+      else if (c === K.DOWN) { S.play.zone = "buttons"; renderControls(); }
+      else if (c === K.OK) { togglePlay(); }
+      return;
+    }
+    // Зона кнопок.
+    if (c === K.RIGHT) { S.play.ctrl = Math.min(S.play.ctrl + 1, CBTN.length - 1); renderControls(); }
+    else if (c === K.LEFT) { S.play.ctrl = Math.max(S.play.ctrl - 1, 0); renderControls(); }
+    else if (c === K.UP) { S.play.zone = "timeline"; renderControls(); }
+    else if (c === K.PLAY || c === K.PLAYPAUSE || c === K.PAUSE) { togglePlay(); }
+    else if (c === K.OK) {
+      if (S.play.ctrl === 0) seek(-10);
+      else if (S.play.ctrl === 1) togglePlay();
+      else if (S.play.ctrl === 2) seek(10);
+      else if (S.play.ctrl === 3) {
+        S.play.overlay = "settings"; S.play.zone = "tabs"; S.play.tab = 0; S.play.setIdx = 0;
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        el("controls").className = "controls hidden";
+        renderSettings();
+      }
+      else if (S.play.ctrl === 4) { stopPlayback(); show("detail"); renderDetail(); }
+    }
   }
 
   function goBack() {
     if (S.screen === "player") {
-      if (S.play.panel) { S.play.panel = null; renderPanel(); try { el("video").play(); } catch (e) {} return; }
+      // «Назад» сначала сворачивает то, что открыто, и только потом выходит.
+      if (S.play.overlay === "settings") { S.play.overlay = "controls"; S.play.zone = "buttons"; renderSettings(); renderControls(); armHide(); return; }
+      if (S.play.overlay === "controls") { S.play.overlay = "none"; hideOverlay(); return; }
       stopPlayback(); show("detail"); renderDetail(); return;
     }
     if (S.screen === "detail") { var p = S.stack.pop(); show(p === "search" ? "search" : "home"); if (p !== "search") renderHome(); return; }

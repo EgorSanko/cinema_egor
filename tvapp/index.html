@@ -39,7 +39,7 @@
   <div id="screen-home" class="screen hidden">
     <div class="topbar">
       <div class="brand">SAPKEFLY <span>KINO</span></div>
-      <div class="who">Вы: <b id="who">Гость</b> &nbsp;·&nbsp; влево с первой карточки — поиск</div>
+      <div class="who">Вы: <b id="who">Гость</b> &nbsp;·&nbsp; стрелки — выбор, OK — открыть, «назад» — выход</div>
     </div>
     <div class="viewport"><div id="rows"></div></div>
   </div>
@@ -57,8 +57,16 @@
 
   <div id="screen-player" class="screen hidden">
     <video id="video" class="video"></video>
-    <div id="player-bar" class="player-bar"></div>
-    <div id="player-panel" class="panel hidden"></div>
+    <!-- Пропуск заставки: Alloha отдаёт skipTime, показываем кнопку в это окно -->
+    <div id="skip" class="skip hidden">Пропустить заставку — OK</div>
+    <!-- Оверлей управления: сам прячется через 5 секунд, как в веб-обёртке -->
+    <div id="controls" class="controls hidden">
+      <div id="ctitle" class="ctitle"></div>
+      <div id="timeline" class="timeline"><div id="tlfill" class="tlfill"></div></div>
+      <div class="times"><span id="tcur">0:00</span><span id="tdur">0:00</span></div>
+      <div id="cbuttons" class="cbuttons"></div>
+    </div>
+    <div id="settings" class="settings hidden"></div>
     <div id="player-msg" class="player-msg"></div>
   </div>
 

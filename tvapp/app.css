@@ -112,7 +112,7 @@ body {
   display: inline-block; margin-right: 8px; padding: 7px 16px; font-size: 16px;
   background: #27272a; border: 2px solid transparent; border-radius: 18px;
 }
-.season.current { background: #3f3f46; }
+.season.current { background: #a3e635; color: #0a0a0b; font-weight: bold; }
 .season.focused { border-color: #a3e635; }
 
 .eps { margin-top: 16px; height: 168px; overflow: hidden; }
@@ -127,20 +127,44 @@ body {
 
 /* ── Плеер ─────────────────────────────────────────────────────────────── */
 .video { width: 1280px; height: 720px; background: #000000; position: absolute; top: 0; left: 0; }
-.player-bar {
+
+/* Оверлей управления. Прячется сам через 5 секунд — на телевизоре постоянная
+   панель поверх картинки раздражает сильнее, чем на телефоне. */
+.controls {
   position: absolute; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.8); padding: 12px 26px; font-size: 17px;
+  background: rgba(0, 0, 0, 0.82); padding: 18px 40px 22px 40px;
 }
-.player-bar .dim { color: #a1a1aa; }
-.player-msg {
-  position: absolute; left: 0; right: 0; top: 330px;
-  text-align: center; font-size: 22px;
+.ctitle { font-size: 19px; margin-bottom: 12px; }
+.ctitle .dim { color: #a1a1aa; }
+
+.timeline {
+  height: 8px; background: #3f3f46; border-radius: 4px; position: relative;
+  border: 2px solid transparent;
 }
-.panel {
-  position: absolute; right: 40px; top: 90px; width: 400px; max-height: 500px;
-  overflow: hidden; background: rgba(0, 0, 0, 0.9);
-  border: 2px solid #3f3f46; border-radius: 10px; padding: 10px;
+.timeline.focused { border-color: #a3e635; }
+.tlfill { height: 100%; background: #a3e635; border-radius: 4px; width: 0; }
+.times { display: flex; justify-content: space-between; font-size: 15px; color: #a1a1aa; margin-top: 6px; }
+
+.cbuttons { margin-top: 12px; }
+.cbtn {
+  display: inline-block; min-width: 62px; height: 44px; line-height: 40px;
+  text-align: center; margin-right: 10px; padding: 0 16px; font-size: 18px;
+  background: #27272a; border: 2px solid transparent; border-radius: 8px;
 }
+.cbtn.focused { border-color: #a3e635; background: #3f3f46; }
+
+.settings {
+  position: absolute; right: 40px; top: 70px; width: 430px; max-height: 540px;
+  overflow: hidden; background: rgba(0, 0, 0, 0.92);
+  border: 2px solid #3f3f46; border-radius: 10px; padding: 12px;
+}
+.tabs { margin-bottom: 10px; }
+.tab {
+  display: inline-block; padding: 7px 16px; margin-right: 8px; font-size: 17px;
+  background: #27272a; border: 2px solid transparent; border-radius: 16px;
+}
+.tab.current { background: #3f3f46; }
+.tab.focused { border-color: #a3e635; }
 .pitem {
   padding: 10px 14px; font-size: 18px; border: 2px solid transparent;
   border-radius: 6px; margin-bottom: 4px;
@@ -148,8 +172,27 @@ body {
 .pitem.current { color: #a3e635; }
 .pitem.focused { border-color: #a3e635; background: #27272a; }
 
+.skip {
+  position: absolute; right: 40px; bottom: 110px;
+  background: #a3e635; color: #0a0a0b; font-weight: bold; font-size: 19px;
+  padding: 12px 22px; border-radius: 26px;
+}
+
+.player-msg {
+  position: absolute; left: 0; right: 0; top: 330px;
+  text-align: center; font-size: 22px;
+}
+
 .toast {
   position: absolute; left: 40px; bottom: 26px;
   background: rgba(0, 0, 0, 0.88); border: 2px solid #3f3f46;
   padding: 10px 18px; font-size: 18px; border-radius: 8px;
+}
+
+/* Карточка «Поиск» первым рядом. Прогон в браузере показал, что жест «влево
+   с первой карточки» не находится: на телевизоре нужен видимый пункт. */
+.searchcard { background: #18181b; }
+.searchglyph {
+  height: 198px; line-height: 198px; text-align: center;
+  font-size: 22px; font-weight: bold; letter-spacing: 3px; color: #a3e635;
 }
