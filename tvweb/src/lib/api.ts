@@ -13,10 +13,17 @@ const TMDB = "/tmdb-api";
 const KEY = "275c9d09780aadb4b13ff57a731eda00";
 
 async function tmdb(path: string, params: Record<string, string> = {}): Promise<any> {
+  // `_` — метка времени, чтобы телевизор не отвечал из своего кэша.
+  // Без неё повторный запуск получал 304 «не изменилось» с ПУСТЫМ телом,
+  // разбор давал ничего, подборки выходили пустыми, и экран висел в
+  // бесконечной загрузке. В первый раз всё работало только потому, что
+  // ответы были свежие. Поймано на живом Samsung по логам.
   const q = new URLSearchParams({ api_key: KEY, language: "ru-RU", ...params });
+  q.set("_", String(new Date().getTime()));
   try {
-    const r = await fetch(`${TMDB}${path}?${q}`);
-    return r.ok ? await r.json() : null;
+    const r = await fetch(`${TMDB}${path}?${q}`, { cache: "no-store" });
+    if (!r.ok) return null;
+    return await r.json();
   } catch {
     return null;
   }
@@ -84,6 +91,8 @@ export async function loadRails(): Promise<Rail[]> {
     { title: "Сериалы в тренде", cards: R(popT).slice(0, 18).map(tvCard) },
   ];
   return rails.filter((r) => r.cards.length > 0);
+  // ВАЖНО: если тут вернётся пустой список, экран покажет пустую главную, а не
+  // повиснет — за это отвечает проверка в App.tsx.
 }
 
 // ── Данные для экрана просмотра (была серверная страница) ────────────────

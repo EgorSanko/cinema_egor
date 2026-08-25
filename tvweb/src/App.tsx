@@ -48,7 +48,14 @@ export default function App() {
     let alive = true;
     loadRails().then((r) => {
       if (!alive) return;
-      if (!r.length) setError("Не удалось загрузить подборки. Проверьте интернет на телевизоре.");
+      if (!r.length) {
+        // Пустой ответ — НЕ повод висеть в загрузке. Показываем причину и даём
+        // повторить: на телевизоре человек иначе видит только вечный экран
+        // «Загружаю…» и считает, что приложение сломано.
+        setError("Не удалось загрузить подборки. Нажмите OK, чтобы повторить.");
+        return;
+      }
+      setError("");
       setRails(r);
     });
     return () => { alive = false; };
@@ -74,11 +81,19 @@ export default function App() {
     return <TvWatch media={media} />;
   }
 
-  if (!rails) return <Splash text={error || "Загружаю…"} />;
+  if (!rails) return <Splash text={error || "Загружаю…"} onRetry={error ? () => { setError(""); setRails(null); } : undefined} />;
   return <TvHome rails={rails} />;
 }
 
-function Splash({ text }: { text: string }) {
+function Splash({ text, onRetry }: { text: string; onRetry?: () => void }) {
+  // Повтор по любой кнопке пульта — на телевизоре нет мыши, а тыкать OK
+  // человек будет в первую очередь.
+  React.useEffect(() => {
+    if (!onRetry) return;
+    const h = () => onRetry();
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onRetry]);
   return (
     <div style={{
       position: "fixed", left: 0, top: 0, right: 0, bottom: 0,
