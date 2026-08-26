@@ -289,8 +289,13 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       <header
         // Закреплена сверху: раньше уезжала совсем, и «Поиск»/«Выйти» становились
         // недоступны, пока не пролистаешь обратно.
-        className="sticky top-0 z-30 px-12 pt-8 pb-4 flex items-center gap-4"
-        style={{ background: "var(--background)" }}
+        className="sticky z-30 px-12 pt-8 pb-4 flex items-center gap-4"
+        // top НЕ ноль. Закреплённый элемент отсчитывается от края ЭКРАНА, а не
+        // от отступа, который мы задали содержимому. При нуле шапка при
+        // прокрутке уезжала ровно в ту полосу, которую телевизор срезает: Егор
+        // не видел ни логотипа, ни «Поиска», сколько бы ни листал. Измерено:
+        // до прокрутки шапка была на 54 точках, после — на нуле.
+        style={{ top: "5vh", background: "var(--background)" }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
