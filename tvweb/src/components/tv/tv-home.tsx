@@ -282,8 +282,17 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
 
   return (
     <main
-      className="min-h-screen bg-background text-foreground select-none"
-      style={{ background: "var(--background)" }}
+      className="bg-background text-foreground select-none"
+      // ЛИСТАЕТСЯ НЕ ВСЯ СТРАНИЦА, А ТОЛЬКО ОБЛАСТЬ С КАРТОЧКАМИ.
+      //
+      // Так устроен Deeplex, и поэтому у него шапка никуда не девается. У нас
+      // прокручивалась вся страница: шапка уезжала за верх кадра, а когда я
+      // закрепил её поверх — стала перекрывать карточки. Оба варианта плохие.
+      //
+      // Теперь экран — колонка фиксированной высоты: шапка сверху, под ней
+      // область, которая листается сама. Шапке физически некуда уехать, и
+      // перекрывать она ничего не может. Никаких закреплений не нужно.
+      style={{ background: "var(--background)", height: "100%", overflow: "hidden" }}
     >
       {/* Top bar — brand logo + email + focusable controls (Поиск / Выйти) */}
       <header
@@ -390,7 +399,13 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       </header>
 
       {/* Vertical stack of rails */}
-      <div className="flex flex-col gap-7 pb-16">
+      <div
+        className="flex flex-col gap-7 pb-16"
+        // Высота — всё, что осталось под шапкой. calc и обычная прокрутка
+        // понятны любому движку; ни flex-1, ни новых свойств здесь нет
+        // намеренно: именно на них мы уже дважды обожглись.
+        style={{ height: "calc(100% - 92px)", overflowY: "auto" }}
+      >
         {rails.map((rail, rIdx) => (
           <section key={rail.title}>
             <h2 className="px-12 mb-2 text-xl font-bold text-foreground">
