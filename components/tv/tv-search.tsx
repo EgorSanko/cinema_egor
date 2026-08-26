@@ -43,8 +43,15 @@ function rowsFor(mode: Mode): KeyDef[][] {
   return [...LETTERS[mode].map(ROW), ACTION_ROW];
 }
 
-const KEY = 46; // px — compact key size
-const RESULTS_PER_ROW = 6; // fluid columns (1fr) so they always fit the TV width
+// Клавиша меньше: клавиатура занимала 662 точки из 1280, и результатам
+// оставалась узкая полоса — карточки выходили по 123 точки, названия не
+// читались. Уменьшение клавиши отдаёт результатам почти двести точек ширины.
+const KEY = 36; // px — compact key size
+// Три столбца, а не шесть. Шесть осталось от раскладки во всю ширину; когда
+// клавиатура переехала влево, карточки сжались до шестидесяти точек: названия
+// превращались в «Холод в…», плашка «СЕРИАЛ» — в «СЕРИА», правый столбец резался
+// краем. Три столбца дают читаемый размер.
+const RESULTS_PER_ROW = 3;
 
 /**
  * TV "10-foot UI" search. Fully D-pad / remote driven, no mouse, no TextInput.
@@ -304,9 +311,9 @@ export function TvSearch() {
           aria-label="Экранная клавиатура"
           style={{ flexShrink: 0, marginRight: 32, overflowY: "auto" }}
         >
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-1.5">
             {rows.map((row, rIdx) => (
-              <div key={rIdx} className="flex gap-2.5">
+              <div key={rIdx} className="flex gap-1.5">
                 {row.map((k, cIdx) => {
                   const focused = focus.zone === "keyboard" && focus.row === rIdx && focus.col === cIdx;
                   const isAction = !!k.action;
@@ -388,8 +395,13 @@ export function TvSearch() {
                   >
                     <div
                       className="relative overflow-hidden rounded-xl bg-card"
+                      // Пропорции постера держим отступом снизу в процентах от
+                      // ШИРИНЫ (150% = 2:3), а не свойством aspect-ratio: его
+                      // телевизоры не знают (оно с Chrome 88), и карточка у них
+                      // схлопывалась. Приём старый и понятен любому движку.
                       style={{
-                        aspectRatio: "2 / 3",
+                        width: "100%",
+                        paddingBottom: "150%",
                         boxShadow: focused
                           ? "0 0 0 4px var(--primary), 0 16px 40px rgba(0,0,0,0.6)"
                           : "0 4px 16px rgba(0,0,0,0.4)",
@@ -402,10 +414,17 @@ export function TvSearch() {
                           alt={card.title}
                           loading="lazy"
                           draggable={false}
-                          className="block h-full w-full object-cover"
+                          className="object-cover"
+                          // Растягиваем по четырём краям: родитель задаёт
+                          // пропорции отступом, поэтому «сто процентов высоты»
+                          // здесь не сработало бы.
+                          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%" }}
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center px-3 text-center text-base font-semibold text-muted-foreground">
+                        <div
+                          className="flex items-center justify-center px-3 text-center text-base font-semibold text-muted-foreground"
+                          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%" }}
+                        >
                           {card.title}
                         </div>
                       )}
@@ -422,24 +441,27 @@ export function TvSearch() {
                         {isTv ? "Сериал" : "Фильм"}
                       </span>
 
-                      {/* Title overlay — always legible, strongest on focus */}
-                      <div
-                        className="absolute inset-x-0 bottom-0 px-2 pb-1.5 pt-6"
+                    </div>
+
+                    {/* Название ПОД постером. Поверх картинки оно налезало на
+                        изображение и обрезалось до «Холод в…». */}
+                    <div style={{ marginTop: 8, paddingLeft: 2, paddingRight: 2 }}>
+                      <p
+                        className="text-sm font-semibold leading-tight"
                         style={{
-                          background: "linear-gradient(to top, rgba(0,0,0,0.92), rgba(0,0,0,0))",
+                          color: focused ? "var(--primary)" : "#fff",
+                          // Две строки максимум, без современных свойств:
+                          // фиксированная высота и скрытие лишнего.
+                          height: 34,
+                          overflow: "hidden",
                         }}
+                        title={card.title}
                       >
-                        <p
-                          className="line-clamp-2 text-xs font-bold leading-tight"
-                          style={{ color: focused ? "var(--primary)" : "#fff" }}
-                          title={card.title}
-                        >
-                          {card.title}
-                        </p>
-                        {card.year && (
-                          <p className="text-[11px] text-white/70">{card.year}</p>
-                        )}
-                      </div>
+                        {card.title}
+                      </p>
+                      {card.year && (
+                        <p className="text-xs" style={{ color: "#a1a1aa" }}>{card.year}</p>
+                      )}
                     </div>
                   </button>
                 );
