@@ -91,18 +91,31 @@ export async function searchTvUnifiedAction(query: string): Promise<TvSearchCard
 // ── Полки главного экрана (были серверной страницей) ─────────────────────
 export type Rail = { title: string; cards: any[] };
 
+// Размер постера для полок.
+//
+// Было w500. Пять полок по 18 карточек — это 90 картинок 500×750, а в памяти
+// каждая занимает около полутора мегабайт в распакованном виде. Полтораста
+// мегабайт разом Samsung 2019 года не держит: по шагам загрузки видно, что
+// страница умирает примерно через секунду после старта — ровно когда
+// отрисовывается главная. Отложенная загрузка тут не спасает: `loading="lazy"`
+// на этом движке не поддерживается вовсе (она появилась в Chrome 76).
+//
+// w342 при ширине карточки 200 точек остаётся чётким, а памяти просит вдвое
+// меньше. Остальное добирает оконная отрисовка в tv-home.
+const RAIL_POSTER = "w342";
+
 function movieCard(m: any) {
   return {
     id: m.id, type: "movie" as const, title: m.title,
     year: String(m.release_date || "").slice(0, 4),
-    poster: getImageUrl(m.poster_path, "w500"),
+    poster: getImageUrl(m.poster_path, RAIL_POSTER),
   };
 }
 function tvCard(t: any) {
   return {
     id: t.id, type: "tv" as const, title: t.name,
     year: String(t.first_air_date || "").slice(0, 4),
-    poster: getImageUrl(t.poster_path, "w500"),
+    poster: getImageUrl(t.poster_path, RAIL_POSTER),
   };
 }
 
@@ -117,15 +130,15 @@ export async function loadRails(): Promise<Rail[]> {
   ]);
   const R = (d: any) => (d && d.results ? d.results : []);
   const rails: Rail[] = [
-    { title: "В тренде", cards: R(trendM).slice(0, 18).map(movieCard) },
-    { title: "Новинки", cards: R(latest).slice(0, 18).map(movieCard) },
-    { title: "Популярные сериалы", cards: R(trendT).slice(0, 18).map(tvCard) },
+    { title: "В тренде", cards: R(trendM).slice(0, 14).map(movieCard) },
+    { title: "Новинки", cards: R(latest).slice(0, 14).map(movieCard) },
+    { title: "Популярные сериалы", cards: R(trendT).slice(0, 14).map(tvCard) },
     {
       title: "Высокий рейтинг",
       cards: R(popM).slice().sort((a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0))
-        .slice(0, 18).map(movieCard),
+        .slice(0, 14).map(movieCard),
     },
-    { title: "Сериалы в тренде", cards: R(popT).slice(0, 18).map(tvCard) },
+    { title: "Сериалы в тренде", cards: R(popT).slice(0, 14).map(tvCard) },
   ];
   return rails.filter((r) => r.cards.length > 0);
   // ВАЖНО: если тут вернётся пустой список, экран покажет пустую главную, а не
@@ -153,16 +166,16 @@ export function loadRailsCb(done: (rails: Rail[]) => void): void {
     finished = true;
     var R = function (d: any) { return d && d.results ? d.results : []; };
     var rails: Rail[] = [
-      { title: "В тренде", cards: R(got.trendM).slice(0, 18).map(movieCard) },
-      { title: "Новинки", cards: R(got.latest).slice(0, 18).map(movieCard) },
-      { title: "Популярные сериалы", cards: R(got.trendT).slice(0, 18).map(tvCard) },
+      { title: "В тренде", cards: R(got.trendM).slice(0, 14).map(movieCard) },
+      { title: "Новинки", cards: R(got.latest).slice(0, 14).map(movieCard) },
+      { title: "Популярные сериалы", cards: R(got.trendT).slice(0, 14).map(tvCard) },
       {
         title: "Высокий рейтинг",
         cards: R(got.popM).slice()
           .sort(function (a: any, b: any) { return (b.vote_average || 0) - (a.vote_average || 0); })
-          .slice(0, 18).map(movieCard),
+          .slice(0, 14).map(movieCard),
       },
-      { title: "Сериалы в тренде", cards: R(got.popT).slice(0, 18).map(tvCard) },
+      { title: "Сериалы в тренде", cards: R(got.popT).slice(0, 14).map(tvCard) },
     ];
     done(rails.filter(function (r) { return r.cards.length > 0; }));
   }

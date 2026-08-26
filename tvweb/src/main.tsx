@@ -26,6 +26,13 @@ window.onerror = function (m, src, line, col) {
 // ответов. Отсюда и вечное «Загружаю подборки».
 //
 // Кто успел первым — тот и работает, второй тихо уходит.
+function beacon(t: string) {
+  try {
+    var i = new Image();
+    i.src = "/tv-error?m=" + encodeURIComponent("этап: " + t);
+  } catch (e) {}
+}
+
 var w = window as any;
 if (!w.__SAPKEFLY_TV_MOUNTED__) {
   w.__SAPKEFLY_TV_MOUNTED__ = true;
@@ -53,7 +60,11 @@ if (!w.__SAPKEFLY_TV_MOUNTED__) {
   // вовсе, и экран замирал на «готовлю подборки» без единой ошибки.
   loadRailsCb(function (rails) {
     // Перерисовываем тем же синхронным способом — см. пояснение выше.
+    // Сигналы ВОКРУГ отрисовки главной: именно на ней Samsung умирал молча.
+    // Если придёт «до», но не придёт «после» — падение точно здесь.
+    beacon("рисую главную: полок " + rails.length);
     render(<App initialRails={rails} />, el);
+    beacon("главная нарисована");
     // Отмечаемся живыми: по этой метке сторож в index.html понимает, что
     // выход рисовать не нужно.
     (window as any).__SAPKEFLY_TV_READY__ = true;

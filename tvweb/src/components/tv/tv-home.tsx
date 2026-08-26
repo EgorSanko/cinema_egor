@@ -270,6 +270,16 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
     );
   }
 
+  // Какие карточки показывать картинкой: соседние полки и окно вокруг
+  // выбранной карточки. Всё остальное — серая заглушка того же размера, так
+  // что вёрстка не прыгает, а память не забивается.
+  const РЯДОМ_ПОЛОК = 1;
+  const РЯДОМ_КАРТОЧЕК = 7;
+  const рядом = (rIdx: number, cIdx: number) =>
+    Math.abs(rIdx - focus.rail) <= РЯДОМ_ПОЛОК &&
+    cIdx <= Math.max(focus.index, 0) + РЯДОМ_КАРТОЧЕК &&
+    cIdx >= Math.max(focus.index, 0) - РЯДОМ_КАРТОЧЕК;
+
   return (
     <main
       className="min-h-screen bg-background text-foreground select-none"
@@ -381,15 +391,27 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                           : "0 4px 16px rgba(0,0,0,0.4)",
                       }}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={card.poster}
-                        alt={card.title}
-                        loading="lazy"
-                        draggable={false}
-                        className="block w-full object-cover"
-                        style={{ aspectRatio: "2 / 3" }}
-                      />
+                      {/* ОКОННАЯ ОТРИСОВКА.
+                          Картинку создаём только у карточек рядом с фокусом.
+                          Раньше рисовались все девяносто сразу, и Samsung
+                          2019 года падал на этом молча: страница умирала
+                          через секунду после старта. `loading="lazy"` не
+                          помощник — этот движок её не знает. */}
+                      {рядом(rIdx, cIdx) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={card.poster}
+                          alt={card.title}
+                          draggable={false}
+                          className="block w-full object-cover"
+                          style={{ aspectRatio: "2 / 3" }}
+                        />
+                      ) : (
+                        <div
+                          className="block w-full"
+                          style={{ aspectRatio: "2 / 3", background: "rgba(255,255,255,.06)" }}
+                        />
+                      )}
                     </div>
                     <div className="mt-2.5 px-1">
                       <p
