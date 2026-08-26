@@ -51,7 +51,7 @@ const KEY = 36; // px — compact key size
 // клавиатура переехала влево, карточки сжались до шестидесяти точек: названия
 // превращались в «Холод в…», плашка «СЕРИАЛ» — в «СЕРИА», правый столбец резался
 // краем. Три столбца дают читаемый размер.
-const RESULTS_PER_ROW = 3;
+const RESULTS_PER_ROW = 4;
 
 /**
  * TV "10-foot UI" search. Fully D-pad / remote driven, no mouse, no TextInput.
@@ -370,8 +370,18 @@ export function TvSearch() {
             </div>
           ) : results.length > 0 ? (
             <div
-              className="grid gap-x-5 gap-y-6 pr-4"
-              style={{ gridTemplateColumns: `repeat(${RESULTS_PER_ROW}, minmax(0, 1fr))` }}
+              className="pr-4"
+              // БЕЗ сеточной раскладки.
+              //
+              // Сетка (display:grid) есть не на всех телевизорах, а когда её нет,
+              // каждая карточка растягивается на всю ширину — Егор так и описал:
+              // «карточки на весь экран». Отступы между ячейками (gap) там тоже
+              // не работают.
+              //
+              // Поэтому раскладываем карточки строчными блоками с долей ширины:
+              // это понимает любой движок с 2000-х. Отступы — обычными полями
+              // внутри ячейки.
+              style={{ fontSize: 0 }}
             >
               {results.map((card, idx) => {
                 const row = Math.floor(idx / RESULTS_PER_ROW);
@@ -390,8 +400,18 @@ export function TvSearch() {
                       open(card);
                     }}
                     onFocus={() => setFocus({ zone: "results", row, col })}
-                    className="group w-full rounded-xl text-left outline-none transition-transform duration-150 ease-out"
-                    style={{ transform: focused ? "scale(1.08)" : "scale(1)" }}
+                    className="group rounded-xl text-left outline-none transition-transform duration-150 ease-out"
+                    style={{
+                      display: "inline-block",
+                      verticalAlign: "top",
+                      width: `${100 / RESULTS_PER_ROW}%`,
+                      paddingLeft: 8,
+                      paddingRight: 8,
+                      paddingBottom: 18,
+                      boxSizing: "border-box",
+                      fontSize: 14, // возвращаем размер: у контейнера он обнулён
+                      transform: focused ? "scale(1.06)" : "scale(1)",
+                    }}
                   >
                     <div
                       className="relative overflow-hidden rounded-xl bg-card"
