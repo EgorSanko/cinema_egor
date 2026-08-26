@@ -63,35 +63,10 @@ export default function App({ initialRails, booting }: { initialRails?: Rail[] |
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // Главная: полки грузим один раз и держим — возврат из просмотра не должен
-  // заново дёргать TMDB, на телевизоре это заметная пауза.
-  React.useEffect(() => {
-    if (route.name !== "home" || rails) return;
-    let alive = true;
-    // Страховка на самом верху: даже если загрузка подборок как-то повиснет,
-    // экран не останется в вечном ожидании — покажем понятную ошибку.
-    const guard = setTimeout(() => {
-      if (!alive) return;
-      setError("Подборки не загрузились за 20 секунд. Нажмите OK, чтобы повторить.");
-    }, 20000);
-    // Пока ждём — раз в секунду перерисовываем экран, чтобы счётчик был живым.
-    const tick = setInterval(() => { if (alive) setTickCount((n) => n + 1); }, 1000);
-    loadRails().then((r) => {
-      clearTimeout(guard);
-      clearInterval(tick);
-      if (!alive) return;
-      if (!r.length) {
-        // Пустой ответ — НЕ повод висеть в загрузке. Показываем причину и даём
-        // повторить: на телевизоре человек иначе видит только вечный экран
-        // «Загружаю…» и считает, что приложение сломано.
-        setError("Не удалось загрузить подборки. Нажмите OK, чтобы повторить.");
-        return;
-      }
-      setError("");
-      setRails(r);
-    });
-    return () => { alive = false; };
-  }, [route.name, rails]);
+  // Подборки здесь НЕ грузим. Их приносит main.tsx до запуска приложения.
+  // Раньше загрузка была и там, и тут — телевизор ходил за одними и теми же
+  // данными дважды (в логах десять запросов вместо пяти), а два независимых
+  // ответа переписывали состояние друг друга.
 
   React.useEffect(() => {
     if (route.name !== "watch") { setMedia(null); return; }

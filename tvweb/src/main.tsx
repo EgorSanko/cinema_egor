@@ -41,5 +41,14 @@ if (!w.__SAPKEFLY_TV_MOUNTED__) {
   // вовсе, и экран замирал на «готовлю подборки» без единой ошибки.
   loadRailsCb(function (rails) {
     root.render(<App initialRails={rails} />);
+    // Отмечаемся живыми: по этой метке сторож в index.html понимает, что
+    // выход рисовать не нужно.
+    (window as any).__SAPKEFLY_TV_READY__ = true;
+    // Строки проверки загрузки нужны, только пока приложение не запустилось.
+    // Как дошли до подборок — убираем, иначе они висят поверх интерфейса.
+    try {
+      var b = document.getElementById("boot");
+      if (b && b.parentNode) b.parentNode.removeChild(b);
+    } catch (e) {}
   });
 }

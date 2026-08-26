@@ -7,6 +7,72 @@
 </head>
 <body style="margin:0;background:#0a0a0b">
 <div id="root"></div>
+<!--
+  Проверка «до всего». Запускается ПЕРВОЙ, на голом ES5, без React и без
+  обещаний. Пишет свои шаги прямо на экран и шлёт их нам картинкой.
+
+  Зачем: на телевизоре Егора экран замирал на «готовлю подборки», при этом
+  ошибок не приходило и запросы не уходили — то есть код останавливался
+  где-то раньше, а увидеть где было нечем. Если React запустится нормально,
+  он просто перерисует экран поверх и этих строк никто не увидит.
+-->
+<div id="boot" style="display:none"></div>
+<script>
+(function () {
+  var box = document.getElementById("boot");
+  var lines = [];
+  function step(t) {
+    lines.push(t);
+    if (box) box.innerHTML = lines.join(String.fromCharCode(10));
+    try {
+      var i = new Image();
+      i.src = "/tv-error?m=" + encodeURIComponent("boot: " + t);
+    } catch (e) {}
+  }
+  step("1. страница загружена");
+  try {
+    var r = new XMLHttpRequest();
+    r.open("GET", "/tmdb-api/movie/popular?api_key=275c9d09780aadb4b13ff57a731eda00&language=ru-RU&_=" + new Date().getTime(), true);
+    r.timeout = 10000;
+    r.onreadystatechange = function () {
+      if (r.readyState !== 4) return;
+      step("3. ответ: код " + r.status + ", длина " + (r.responseText || "").length);
+      try {
+        var d = JSON.parse(r.responseText);
+        step("4. разобрано, фильмов: " + ((d.results || []).length));
+      } catch (e) { step("4. РАЗБОР НЕ УДАЛСЯ: " + e); }
+    };
+    r.ontimeout = function () { step("3. ТАЙМАУТ запроса"); };
+    r.onerror = function () { step("3. ОШИБКА сети"); };
+    r.send();
+    step("2. запрос отправлен");
+  } catch (e) {
+    step("2. НЕ СМОГ отправить запрос: " + e);
+  }
+  step("5. проверка Promise: " + (typeof Promise));
+  setTimeout(function () { step("6. таймеры работают"); }, 1500);
+
+  // СТОРОЖ. Обёртка запускается сразу из MSX, без меню. Если она не поднимется,
+  // без этого сторожа человек остаётся один на один с вечной загрузкой и выйти
+  // может только переустановкой MSX — так уже было. Поэтому: не показали
+  // подборки за 14 секунд — рисуем выход и уводим в меню по любой кнопке.
+  setTimeout(function () {
+    if (window.__SAPKEFLY_TV_READY__) return;
+    var root = document.getElementById("root");
+    if (root) {
+      root.innerHTML =
+        '<div style="position:fixed;left:0;top:0;right:0;bottom:0;background:#0a0a0b;' +
+        'color:#fff;font:24px Arial,sans-serif;display:flex;align-items:center;' +
+        'justify-content:center;text-align:center;padding:40px">' +
+        'Приложение не запустилось.<br><br>Нажмите любую кнопку — откроется меню.' +
+        "</div>";
+    }
+    var go = function () { window.location.href = "https://msx.benzac.de/?start=menu:https://sapkeflykino.ru/msx/menu.json"; };
+    document.addEventListener("keydown", go);
+    setTimeout(go, 20000);
+  }, 14000);
+})();
+</script>
 <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
