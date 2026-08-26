@@ -667,22 +667,40 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     // С zone в списке эффект повторяется, когда плеер появился, и подключает.
   }, [data?.stream, isPro, adDone, zone]);
 
-  // Video element events → progress/paused state.
+  // Слежение за временем: отсюда берётся полоса прогресса и надписи времени.
+  //
+  // В зависимостях ОБЯЗАТЕЛЬНО zone. Ссылка на видео появляется раньше, чем
+  // экран переключается в режим просмотра, а сам <video> рисуется только в этом
+  // режиме — значит в момент запуска эффекта вешать слушатели ещё не на что.
+  // Без zone эффект больше не повторялся, слушатели не вешались никогда, время
+  // и длительность оставались нулями, и ПОЛОСА ПРОГРЕССА ВСЕГДА БЫЛА ПУСТОЙ.
+  // Ровно на это Егор и жаловался: «шкала не показывает прогресс».
+  //
+  // Это та же ловушка, что была с подключением потока к плееру, — там zone уже
+  // добавлен, а здесь пропустили.
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     const onTime = () => { setPt(v.currentTime); setPd(v.duration || 0); };
+    const onMeta = () => { setPd(v.duration || 0); setPt(v.currentTime); };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+    // Длительность узнаём и отдельным событием: у потокового видео она
+    // появляется не сразу, и первого timeupdate может не хватить.
     v.addEventListener("timeupdate", onTime);
+    v.addEventListener("durationchange", onMeta);
+    v.addEventListener("loadedmetadata", onMeta);
     v.addEventListener("play", onPlay);
     v.addEventListener("pause", onPause);
+    onMeta();
     return () => {
       v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("durationchange", onMeta);
+      v.removeEventListener("loadedmetadata", onMeta);
       v.removeEventListener("play", onPlay);
       v.removeEventListener("pause", onPause);
     };
-  }, [data?.stream]);
+  }, [data?.stream, zone]);
 
   // Periodic position save (drives resume + the site's continue-watching sync).
   useEffect(() => {
