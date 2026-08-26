@@ -9,6 +9,71 @@
 </style></head>
 <body style="margin:0;background:#0a0a0b">
 <div id="root"></div>
+<script>
+/*
+  Проверка отступов во флекс-раскладке.
+
+  `gap` внутри flex появился в Chrome 84. Телевизоры Егора старше: на них он
+  молча не действует, и все ТВ-экраны слипаются — полки главной наезжают друг
+  на друга, карточки стоят вплотную, панель плеера сбивается в кучу. В обычном
+  браузере этого не видно, поэтому вёрстка казалась исправной.
+
+  Проверяем не строкой в стилях (для сеток `gap` поддерживается и там, где для
+  флекса ещё нет), а измерением: два блока по десять точек с отступом десять
+  должны дать тридцать.
+*/
+(function () {
+  try {
+    var w = document.createElement("div");
+    w.style.cssText = "display:flex;gap:10px;position:absolute;visibility:hidden;top:-9999px";
+    var a = document.createElement("span"), b = document.createElement("span");
+    a.style.cssText = b.style.cssText = "display:block;width:10px;height:1px";
+    w.appendChild(a); w.appendChild(b);
+    (document.body || document.documentElement).appendChild(w);
+    var есть = w.getBoundingClientRect().width >= 29;
+    w.parentNode.removeChild(w);
+    if (!есть) {
+      document.documentElement.className += " no-flex-gap";
+    }
+  } catch (e) {
+    // Не смогли проверить — считаем, что отступов нет: поля лишними не будут.
+    document.documentElement.className += " no-flex-gap";
+  }
+})();
+</script>
+<style>
+/* Поля вместо отступов — включаются только по признаку выше. */
+.no-flex-gap .flex.gap-1:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-1:not(.flex-col) > * + * { margin-left: 0.25rem; }
+.no-flex-gap .flex.flex-col.gap-1 > * + * { margin-top: 0.25rem; }
+.no-flex-gap .flex.gap-1\.5:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-1\.5:not(.flex-col) > * + * { margin-left: 0.375rem; }
+.no-flex-gap .flex.flex-col.gap-1\.5 > * + * { margin-top: 0.375rem; }
+.no-flex-gap .flex.gap-2:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-2:not(.flex-col) > * + * { margin-left: 0.5rem; }
+.no-flex-gap .flex.flex-col.gap-2 > * + * { margin-top: 0.5rem; }
+.no-flex-gap .flex.gap-2\.5:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-2\.5:not(.flex-col) > * + * { margin-left: 0.625rem; }
+.no-flex-gap .flex.flex-col.gap-2\.5 > * + * { margin-top: 0.625rem; }
+.no-flex-gap .flex.gap-3:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-3:not(.flex-col) > * + * { margin-left: 0.75rem; }
+.no-flex-gap .flex.flex-col.gap-3 > * + * { margin-top: 0.75rem; }
+.no-flex-gap .flex.gap-4:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-4:not(.flex-col) > * + * { margin-left: 1rem; }
+.no-flex-gap .flex.flex-col.gap-4 > * + * { margin-top: 1rem; }
+.no-flex-gap .flex.gap-5:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-5:not(.flex-col) > * + * { margin-left: 1.25rem; }
+.no-flex-gap .flex.flex-col.gap-5 > * + * { margin-top: 1.25rem; }
+.no-flex-gap .flex.gap-6:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-6:not(.flex-col) > * + * { margin-left: 1.5rem; }
+.no-flex-gap .flex.flex-col.gap-6 > * + * { margin-top: 1.5rem; }
+.no-flex-gap .flex.gap-7:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-7:not(.flex-col) > * + * { margin-left: 1.75rem; }
+.no-flex-gap .flex.flex-col.gap-7 > * + * { margin-top: 1.75rem; }
+.no-flex-gap .flex.gap-8:not(.flex-col) > * + *,
+.no-flex-gap .inline-flex.gap-8:not(.flex-col) > * + * { margin-left: 2rem; }
+.no-flex-gap .flex.flex-col.gap-8 > * + * { margin-top: 2rem; }
+</style>
 <!--
   Проверка «до всего». Запускается ПЕРВОЙ, на голом ES5, без React и без
   обещаний. Пишет свои шаги прямо на экран и шлёт их нам картинкой.
@@ -138,7 +203,6 @@
   }, 14000);
 })();
 </script>
-
   <script crossorigin id="vite-legacy-polyfill" src="/tvweb/assets/polyfills-legacy-Dah9VB6j.js"></script>
   <script crossorigin id="vite-legacy-entry" data-src="/tvweb/assets/index-legacy-DltZMkdQ.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
 </body>
