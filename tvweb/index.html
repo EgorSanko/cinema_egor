@@ -87,7 +87,33 @@
     step("2. НЕ СМОГ отправить запрос: " + e);
   }
   step("5. проверка Promise: " + (typeof Promise));
-  setTimeout(function () { step("6. таймеры работают"); }, 1500);
+  // ЧЕТЫРЕ РАЗНЫХ МЕХАНИЗМА ВРЕМЕНИ.
+  //
+  // На Samsung (Tizen 5) внутри MSX шаги 1-5 приходят, а шаг из обычного
+  // setTimeout — никогда. На LG приходит, и там всё работает. React обновляет
+  // экран через свою очередь, а очередь стоит на таймерах: отсюда вечная
+  // загрузка при живой сети. Проверяем, что именно мертво, — от этого зависит
+  // способ обхода.
+  setTimeout(function () { step("6. таймер 1500"); }, 1500);
+  setTimeout(function () { step("6a. таймер 300"); }, 300);
+  var iv = setInterval(function () { clearInterval(iv); step("6b. интервал"); }, 500);
+  try {
+    var rafN = 0;
+    var tick = function () {
+      rafN++;
+      if (rafN === 30) step("6c. кадры (rAF) идут");
+      if (rafN < 30) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  } catch (e) { step("6c. rAF НЕТ: " + e); }
+  try {
+    var mc = new MessageChannel();
+    mc.port1.onmessage = function () { step("6d. MessageChannel живой"); };
+    mc.port2.postMessage(1);
+  } catch (e) { step("6d. MessageChannel НЕТ: " + e); }
+  try {
+    Promise.resolve().then(function () { step("6e. микрозадачи идут"); });
+  } catch (e) { step("6e. промисы НЕТ: " + e); }
 
   // СТОРОЖ. Обёртка запускается сразу из MSX, без меню. Если она не поднимется,
   // без этого сторожа человек остаётся один на один с вечной загрузкой и выйти

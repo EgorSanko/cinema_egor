@@ -527,9 +527,18 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     ? validSeasons.filter((s) => (availTree[s.season_number]?.length ?? 0) > 0)
     : validSeasons;
   const _treeEps = availTree?.[season];
-  const pickerEpisodes: Episode[] = (_treeEps && _treeEps.length)
+  const _allEps: Episode[] = (_treeEps && _treeEps.length)
     ? _treeEps.map((n) => episodes.find((e) => e.episode_number === n) || { episode_number: n, name: `Серия ${n}`, still_path: null, air_date: "" })
     : episodes;
+  // Только ВЫШЕДШИЕ серии. У «Холода» TMDB отдаёт десять, а вышло шесть:
+  // остальные с датой в будущем и без кадра. В списке они выглядели обычными,
+  // человек заходил и упирался в пустоту. Серию без даты не прячем — это чаще
+  // пробел в данных, чем будущий эфир.
+  const pickerEpisodes: Episode[] = (() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const aired = _allEps.filter((e) => !e.air_date || e.air_date <= today);
+    return aired.length ? aired : _allEps;
+  })();
   const playerDubs = (() => {
     if (!episodeDubIds || episodeDubIds.length === 0) return translators;
     const allow = new Set(episodeDubIds);
@@ -848,7 +857,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
           // по ним надо как по сетке: вниз — через строку, вправо — на соседнюю
           // ячейку. Раньше все четыре стрелки двигали номер на единицу, и
           // «вниз» визуально уезжало вправо — листать было невозможно.
-          const EP_COLS = 2;
+          const EP_COLS = 1; // одна колонка: «вниз» = следующая серия
           const last = Math.max(0, pickerEpisodes.length - 1);
           if (isLeft) {
             // Из левой колонки уходим к сезонам, из правой — на соседнюю слева.
@@ -1069,7 +1078,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
               {pickerEpisodes.length === 0 ? (
                 <p className="text-muted-foreground">Загрузка серий…</p>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   {pickerEpisodes.map((ep, i) => {
                     const f = pickerCol === 2 && episodeIdx === i;
                     return (
@@ -1077,13 +1086,21 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                         key={ep.episode_number}
                         onClick={() => playEpisode(season, ep.episode_number)}
                         ref={(node) => { if (f && node) node.scrollIntoView({ block: "nearest" }); }}
-                        className="flex items-center gap-3 rounded-xl px-4 py-3 text-left"
+                        className="flex items-center gap-4 rounded-xl p-3 text-left"
                         style={ringStyle(f)}
                       >
-                        <span className="text-xl font-bold tabular-nums" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>
-                          {ep.episode_number}
+                        {/* Кадр серии — как на сайте. Размер фиксируем, чтобы
+                            строки не прыгали, когда кадра нет. */}
+                        <span className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg"
+                          style={{ width: "10.5rem", height: "5.9rem", background: "rgba(255,255,255,.07)" }}>
+                          {ep.still_path
+                            ? <img src={`/tmdb-img/w300${ep.still_path}`} alt="" className="h-full w-full object-cover" loading="lazy" />
+                            : <span className="text-2xl font-bold tabular-nums opacity-40">{ep.episode_number}</span>}
                         </span>
-                        <span className="truncate text-base font-medium">{ep.name || `Серия ${ep.episode_number}`}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold" style={{ color: f ? "#0a0a0a" : "var(--primary)" }}>Серия {ep.episode_number}</span>
+                          <span className="block truncate text-lg font-medium">{ep.name || `Серия ${ep.episode_number}`}</span>
+                        </span>
                       </button>
                     );
                   })}

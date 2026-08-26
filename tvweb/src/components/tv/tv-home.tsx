@@ -20,7 +20,8 @@ export type TvRail = {
 };
 
 // Card geometry — large, readable from across a room.
-const CARD_W = 158; // px
+// 158 было мало: на 1080p подпись под постером не читалась с дивана.
+const CARD_W = 200; // px
 
 // Header controls, navigated left/right when the header row is focused.
 // "sport" появляется только у Про (прямой эфир — платная фича).
@@ -275,7 +276,12 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       style={{ background: "var(--background)" }}
     >
       {/* Top bar — brand logo + email + focusable controls (Поиск / Выйти) */}
-      <header className="px-12 pt-8 pb-4 flex items-center gap-4">
+      <header
+        // Закреплена сверху: раньше уезжала совсем, и «Поиск»/«Выйти» становились
+        // недоступны, пока не пролистаешь обратно.
+        className="sticky top-0 z-30 px-12 pt-8 pb-4 flex items-center gap-4"
+        style={{ background: "var(--background)" }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
@@ -332,14 +338,16 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       </header>
 
       {/* Vertical stack of rails */}
-      <div className="flex flex-col gap-5 pb-10">
+      <div className="flex flex-col gap-7 pb-16">
         {rails.map((rail, rIdx) => (
           <section key={rail.title}>
             <h2 className="px-12 mb-2 text-xl font-bold text-foreground">
               {rail.title}
             </h2>
             <div
-              className="flex gap-3 overflow-x-auto px-12 pb-2"
+              // ВАЖНО: overflow-x режет и по вертикали — подпись под постером обрезалась
+              // пополам, а карточка в фокусе упиралась в край. Отсюда запас.
+              className="flex gap-4 overflow-x-auto px-12 pt-2 pb-6"
               style={{ scrollbarWidth: "none" }}
             >
               {rail.cards.map((card, cIdx) => {
@@ -383,14 +391,14 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                         style={{ aspectRatio: "2 / 3" }}
                       />
                     </div>
-                    <div className="mt-2 px-1">
+                    <div className="mt-2.5 px-1">
                       <p
-                        className="truncate text-sm font-semibold text-foreground"
+                        className="truncate text-base font-semibold text-foreground"
                         title={card.title}
                       >
                         {card.title}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-sm text-muted-foreground">
                         {card.year}
                       </p>
                     </div>

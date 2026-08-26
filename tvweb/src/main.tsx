@@ -1,5 +1,5 @@
 import * as React from "react";
-import { createRoot } from "react-dom/client";
+import { render } from "react-dom";
 import App from "./App";
 import { loadRailsCb } from "@/lib/api";
 import "./index.css";
@@ -35,12 +35,25 @@ if (!w.__SAPKEFLY_TV_MOUNTED__) {
   // живой сети — то есть эффект, который эти запросы делает, не выполнялся
   // вовсе. Так приложение получает данные сразу и от эффектов не зависит.
   var el = document.getElementById("root")!;
-  var root = createRoot(el);
-  root.render(<App initialRails={null} booting />);
+
+  // СИНХРОННАЯ ОТРИСОВКА, как у Deeplex.
+  //
+  // Раньше здесь был createRoot — новый способ из React 18. Он рисует не сразу,
+  // а через собственную очередь, и очередь эта работает на таймерах. На Samsung
+  // (Tizen 5) внутри MSX таймеры не срабатывают: по нашим шагам загрузки видно,
+  // что запросы проходят, а сигнал из обычного setTimeout не приходит НИКОГДА,
+  // тогда как на LG приходит и всё работает. Данные приезжали, а перерисовать
+  // экран было нечем — отсюда вечная загрузка ровно на одном телевизоре.
+  //
+  // Deeplex, который на этом же Samsung работает, собран на React 17 (проверено:
+  // в их вендорном чанке 17.0.2), а он рисует синхронно. Старый способ render()
+  // в React 18 остался и делает ровно это.
+  render(<App initialRails={null} booting />, el);
   // Колбэк, а не обещание: на телевизоре Егора Promise.all не разрешался
   // вовсе, и экран замирал на «готовлю подборки» без единой ошибки.
   loadRailsCb(function (rails) {
-    root.render(<App initialRails={rails} />);
+    // Перерисовываем тем же синхронным способом — см. пояснение выше.
+    render(<App initialRails={rails} />, el);
     // Отмечаемся живыми: по этой метке сторож в index.html понимает, что
     // выход рисовать не нужно.
     (window as any).__SAPKEFLY_TV_READY__ = true;

@@ -16,7 +16,7 @@ const ok = (name, good, detail) => { if (!good) fails++; console.log((good ? "  
   page.on("console", (m) => { if (m.type() === "error") errs.push(m.text().slice(0, 120)); });
 
   console.log("\n1. СТАРТОВЫЙ ПАРАМЕТР MSX");
-  await page.goto("https://msx.benzac.de/?start=content:https://sapkeflykino.ru/msx/launch.json", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto("https://msx.benzac.de/?start=content:https://sapkeflykino.ru/msx/start.json", { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForTimeout(12000);
   const body1 = (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, " ");
   ok("без предупреждения о ссылке", !/Link Validation|press continue/i.test(body1));

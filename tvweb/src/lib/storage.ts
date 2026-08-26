@@ -306,12 +306,38 @@ export function toggleFavorite(item: FavoriteItem): boolean {
 
 // === HISTORY ===
 
+/**
+ * Починка типа записи.
+ *
+ * В истории Егора лежала запись «Холода» с типом `movie`, хотя у неё стояла
+ * дата первого эфира и не было даты выхода в прокат — так бывает только у
+ * сериала. «Продолжить просмотр» открывал по ней movie/318354, а под этим
+ * номером в TMDB лежит СОВСЕМ ДРУГОЙ тайтл («Сказочная Русь») без кода IMDb.
+ * Источнику нечего было искать, и тайтл «не отдавался», хотя на сайте
+ * открывался нормально — там путь /tv/318354.
+ *
+ * Номера у фильмов и сериалов в TMDB независимы и пересекаются, поэтому
+ * потерянный тип — это не «неточность», а другой фильм.
+ */
+function fixType<T extends { type?: string; first_air_date?: string; release_date?: string }>(r: T): T {
+  if (r && r.type === "movie" && r.first_air_date && !r.release_date) {
+    return { ...r, type: "tv" as T["type"] };
+  }
+  return r;
+}
+
 export function getHistory(): HistoryItem[] {
   if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem("kino_history") || "[]"); } catch { return []; }
+  // Чиним на чтении, а не только на записи: испорченные записи уже разъехались
+  // по устройствам и по серверной копии, и переписывать их все негде.
+  try {
+    const raw = JSON.parse(localStorage.getItem("kino_history") || "[]");
+    return Array.isArray(raw) ? raw.map(fixType) : [];
+  } catch { return []; }
 }
 
 export function addToHistory(item: HistoryItem): void {
+  item = fixType(item);
   const history = getHistory();
   // Dedupe key: movies = id+type (one row per movie), TV = id+type+season+episode
   // (one row per episode so /wrapped + achievements count cumulative hours
