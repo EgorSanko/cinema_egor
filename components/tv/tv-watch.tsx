@@ -755,10 +755,25 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // the filled bar + current-time label track the playhead immediately.
   const scrub = useCallback((delta: number) => {
     const v = videoRef.current;
-    if (!v || !v.duration) return;
+    // Сигнал о перемотке: у Егора шкала «не работает», а в браузере работает.
+    // Смотрим, что видит сам плеер — длительность, доступные для перемотки
+    // отрезки и результат присвоения.
+    const отчёт = (этап: string, эл: HTMLVideoElement | null) => {
+      try {
+        const s = эл && эл.seekable && эл.seekable.length
+          ? эл.seekable.start(0).toFixed(0) + "-" + эл.seekable.end(эл.seekable.length - 1).toFixed(0)
+          : "нет";
+        const i = new Image();
+        i.src = "/tv-error?m=" + encodeURIComponent(
+          "шкала " + этап + ": длительность=" + (эл ? String(эл.duration) : "нет") +
+          " время=" + (эл ? эл.currentTime.toFixed(1) : "нет") + " отрезки=" + s);
+      } catch {}
+    };
+    if (!v || !v.duration) { отчёт("отказ", v); return; }
     const next = Math.max(0, Math.min(v.duration, v.currentTime + delta));
     v.currentTime = next;
     setPt(next);
+    отчёт("после", v);
   }, []);
 
   // ── Error card: retry the resolve, or go back. ──
@@ -794,8 +809,19 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // switch via the effect below, since a new manifest resets playbackRate to 1).
   const changeSpeed = useCallback((v: number) => {
     setSpeed(v);
-    if (videoRef.current) videoRef.current.playbackRate = v;
-    flash(`Скорость: ${v}×`);
+    const эл = videoRef.current;
+    if (!эл) return;
+    эл.playbackRate = v;
+    // ПРОВЕРЯЕМ, что телевизор принял. Часть телевизоров смену скорости в
+    // потоковом видео просто игнорирует: значение не меняется, и человек жмёт
+    // впустую, думая, что сломано приложение. Лучше честно сказать.
+    const принято = Math.abs(эл.playbackRate - v) < 0.01;
+    flash(принято ? `Скорость: ${v}×` : "Телевизор не умеет менять скорость");
+    try {
+      const i = new Image();
+      i.src = "/tv-error?m=" + encodeURIComponent(
+        "скорость: просили " + v + ", стало " + эл.playbackRate);
+    } catch {}
   }, [flash]);
 
   useEffect(() => {
@@ -1413,7 +1439,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                         else { exit(); }
                       }}
                       className="inline-flex items-center justify-center rounded-full"
-                      style={{ ...ringStyle(f, i === 1), width: i === 1 ? 68 : 54, height: i === 1 ? 68 : 54 }}
+                      // Раньше у паузы (i === 1) была жёстко включена «основная»
+                      // подсветка: она горела зелёным ВСЕГДА, независимо от того,
+                      // где стоит курсор, и читалась как выбранная. Теперь
+                      // подсвечивается только та кнопка, на которой курсор;
+                      // пауза остаётся крупнее — этого достаточно, чтобы её
+                      // выделить.
+                      style={{ ...ringStyle(f), width: i === 1 ? 68 : 54, height: i === 1 ? 68 : 54 }}
                       aria-label={b.label}
                     >
                       {b.ic}
