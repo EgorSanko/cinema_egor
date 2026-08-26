@@ -165,8 +165,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
   // ── Playback / overlay state ──
   const [zone, setZone] = useState<Zone>(isSeries ? "picker" : "loading");
+
   // The in-player overlay state machine: none → controls → settings.
   const [overlay, setOverlay] = useState<Overlay>("none");
+  // Свежие значения для обработчика «назад» ниже: он живёт вне перерисовок и
+  // иначе видел бы состояние на момент своей установки.
+  const overlayRef = useRef<Overlay>("none");
+  overlayRef.current = overlay;
   const [playing, setPlaying] = useState(true);
   const [pt, setPt] = useState(0);
   const [pd, setPd] = useState(0);
@@ -573,7 +578,20 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     const attachSeek = () => { if (seekTarget > 0) { try { v.currentTime = seekTarget; } catch {} } };
 
     if (url.includes(".m3u8") && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        // Ограничиваем буфер. Без этого hls.js копит вперёд и НАЗАД сколько
+        // влезет: на телевизоре это и лишняя работа при старте, и прямой риск
+        // падения по памяти — тот самый механизм, из-за которого главная с
+        // девяноста постерами убивала страницу на Samsung.
+        maxBufferLength: 30,      // секунд вперёд
+        maxMaxBufferLength: 60,
+        backBufferLength: 30,     // сколько держим позади (по умолчанию — всё)
+        // Просим первый кусок сразу, не дожидаясь полного разбора плейлиста:
+        // на глаз это заметно сокращает паузу до картинки.
+        startFragPrefetch: true,
+      });
       hlsRef.current = hls;
       hls.loadSource(url);
       hls.attachMedia(v);
@@ -816,6 +834,42 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       router.push("/tv-home");
     }
   }, [isSeries, router, saveNow]);
+
+
+  // ════════════════════════════════════════════════════════════════
+  // КНОПКА «НАЗАД» НА ТЕЛЕВИЗОРАХ, ГДЕ ОНА НЕ ДОХОДИТ ДО СТРАНИЦЫ
+  // ════════════════════════════════════════════════════════════════
+  //
+  // На LG Егора пульт присылает нам ТОЛЬКО стрелки и «ОК» — за всё время ни
+  // одного события от «назад». Телевизор обрабатывает её сам и уходит назад по
+  // истории, унося весь просмотр: человек открывал настройки, жал «назад» и
+  // вылетал из серии вместо закрытия настроек. Добавить её код в обработчик
+  // клавиш нельзя — события просто нет.
+  //
+  // Поэтому ловим не кнопку, а её последствие. Пока открыт просмотр, держим в
+  // истории лишний шаг: «назад» тратится на него, страница никуда не уходит, а
+  // нам приходит popstate — и мы сами решаем, что закрыть. После каждого
+  // срабатывания шаг восстанавливаем.
+  useEffect(() => {
+    try { history.pushState({ tvBack: true }, ""); } catch { return; }
+    const onPop = () => {
+      const o = overlayRef.current;
+      if (o === "settings") {
+        setOverlay("controls");
+        revealControls();
+      } else if (o === "controls") {
+        setOverlay("none");
+      } else {
+        // Оверлеев нет — «назад» означает выход, как и задумано.
+        exit();
+        return;
+      }
+      try { history.pushState({ tvBack: true }, ""); } catch {}
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exit, revealControls]);
 
   // ════════════════════════════════════════════════════════════════
   // REMOTE / KEYBOARD — e.key AND legacy e.keyCode.
