@@ -47,9 +47,12 @@ function parse(hash: string): Route {
   return { name: "home" };
 }
 
-export default function App() {
+export default function App({ initialRails, booting }: { initialRails?: Rail[] | null; booting?: boolean } = {}) {
   const [route, setRoute] = React.useState<Route>(() => parse(window.location.hash));
-  const [rails, setRails] = React.useState<Rail[] | null>(null);
+  // Подборки приходят снаружи (их грузит main.tsx до запуска приложения) —
+  // так экран не зависит от того, выполнятся ли эффекты React на этом движке.
+  const [rails, setRails] = React.useState<Rail[] | null>(initialRails ?? null);
+  React.useEffect(() => { if (initialRails) setRails(initialRails); }, [initialRails]);
   const [media, setMedia] = React.useState<any | null>(null);
   const [error, setError] = React.useState("");
   const [, setTickCount] = React.useState(0);   // только чтобы перерисовать счётчик
@@ -118,10 +121,15 @@ export default function App() {
     return (<><TvWatch media={media} /><Diag text={diag} /></>);
   }
 
+  if (rails && rails.length === 0) {
+    return <Splash text="Подборки не загрузились. Нажмите OK, чтобы повторить." onRetry={() => window.location.reload()} />;
+  }
   if (!rails) {
     // Показываем ЖИВОЙ счётчик: сколько запросов ушло, сколько вернулось, что
     // с последним. Иначе «Загружаю подборки» ничего не говорит о причине.
-    const net = `запросов ${netState.ответили}/${netState.начато}, ошибок ${netState.ошибок}`;
+    const net = booting
+      ? "готовлю подборки…"
+      : `запросов ${netState.ответили}/${netState.начато}, ошибок ${netState.ошибок}`;
     return (
       <Splash
         text={(error || "Загружаю подборки…") + "  ·  " + net + (netState.последний ? "  ·  " + netState.последний : "")}

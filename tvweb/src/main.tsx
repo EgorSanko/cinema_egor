@@ -1,6 +1,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { loadRails } from "@/lib/api";
 import "./index.css";
 
 // Ловушка ошибок: на телевизоре нет консоли, и «чёрный экран» неотличим от
@@ -28,5 +29,17 @@ window.onerror = function (m, src, line, col) {
 var w = window as any;
 if (!w.__SAPKEFLY_TV_MOUNTED__) {
   w.__SAPKEFLY_TV_MOUNTED__ = true;
-  createRoot(document.getElementById("root")!).render(<App />);
+
+  // Подборки грузим ДО запуска приложения, обычным кодом, не полагаясь на
+  // эффекты React. На телевизоре Егора счётчик показывал «запросов 0/0» при
+  // живой сети — то есть эффект, который эти запросы делает, не выполнялся
+  // вовсе. Так приложение получает данные сразу и от эффектов не зависит.
+  var el = document.getElementById("root")!;
+  var root = createRoot(el);
+  root.render(<App initialRails={null} booting />);
+  loadRails().then(function (rails) {
+    root.render(<App initialRails={rails} />);
+  }, function () {
+    root.render(<App initialRails={[]} />);
+  });
 }
