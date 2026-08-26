@@ -3,7 +3,7 @@ import { TvHome } from "@/components/tv/tv-home";
 import { TvSearch } from "@/components/tv/tv-search";
 import { TvLogin } from "@/components/tv/tv-login";
 import { TvWatch } from "@/components/tv/tv-watch";
-import { loadRails, loadWatchMedia, type Rail } from "@/lib/api";
+import { loadRails, loadWatchMedia, netState, type Rail } from "@/lib/api";
 
 /**
  * Строка состояния в углу экрана.
@@ -52,6 +52,7 @@ export default function App() {
   const [rails, setRails] = React.useState<Rail[] | null>(null);
   const [media, setMedia] = React.useState<any | null>(null);
   const [error, setError] = React.useState("");
+  const [, setTickCount] = React.useState(0);   // только чтобы перерисовать счётчик
 
   React.useEffect(() => {
     const onHash = () => { setRoute(parse(window.location.hash)); };
@@ -70,8 +71,11 @@ export default function App() {
       if (!alive) return;
       setError("Подборки не загрузились за 20 секунд. Нажмите OK, чтобы повторить.");
     }, 20000);
+    // Пока ждём — раз в секунду перерисовываем экран, чтобы счётчик был живым.
+    const tick = setInterval(() => { if (alive) setTickCount((n) => n + 1); }, 1000);
     loadRails().then((r) => {
       clearTimeout(guard);
+      clearInterval(tick);
       if (!alive) return;
       if (!r.length) {
         // Пустой ответ — НЕ повод висеть в загрузке. Показываем причину и даём
@@ -115,7 +119,15 @@ export default function App() {
   }
 
   if (!rails) {
-    return <Splash text={error || "Загружаю подборки…"} onRetry={error ? () => { setError(""); setRails(null); } : undefined} />;
+    // Показываем ЖИВОЙ счётчик: сколько запросов ушло, сколько вернулось, что
+    // с последним. Иначе «Загружаю подборки» ничего не говорит о причине.
+    const net = `запросов ${netState.ответили}/${netState.начато}, ошибок ${netState.ошибок}`;
+    return (
+      <Splash
+        text={(error || "Загружаю подборки…") + "  ·  " + net + (netState.последний ? "  ·  " + netState.последний : "")}
+        onRetry={error ? () => { setError(""); setRails(null); } : undefined}
+      />
+    );
   }
   return (<><TvHome rails={rails} /><Diag text={diag} /></>);
 }

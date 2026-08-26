@@ -39,6 +39,8 @@ export default defineConfig({
       // Object.assign, современные методы массивов.
       additionalLegacyPolyfills: ["regenerator-runtime/runtime"],
       renderLegacyChunks: true,
+      // Обе сборки остаются: без современной Vite перестаёт выпускать CSS.
+      // От их одновременного запуска защищает замок в main.tsx.
       modernPolyfills: false,
     }),
   ],

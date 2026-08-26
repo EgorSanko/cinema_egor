@@ -24,18 +24,31 @@ const KEY = "275c9d09780aadb4b13ff57a731eda00";
  * Метка времени `_` — чтобы телевизор не ответил из своего кэша: пустой
  * ответ 304 уже приводил к тому же вечному ожиданию.
  */
+/** Живой отчёт о запросах — его показывает экран загрузки. На телевизоре это
+ *  единственный способ увидеть, где рвётся: консоли нет, а логи сервера
+ *  показывают честные 200, хотя приложение ответа как будто не получает. */
+export const netState = { начато: 0, ответили: 0, ошибок: 0, последний: "" };
+
 function tmdb(path: string, params: Record<string, string> = {}): Promise<any> {
   const q = new URLSearchParams({ api_key: KEY, language: "ru-RU", ...params });
   q.set("_", String(new Date().getTime()));
   const url = `${TMDB}${path}?${q}`;
+  netState.начато++;
   return new Promise((resolve) => {
     let done = false;
-    const finish = (v: any) => { if (!done) { done = true; resolve(v); } };
+    const finish = (v: any) => {
+      if (done) return;
+      done = true;
+      netState.ответили++;
+      if (v == null) netState.ошибок++;
+      resolve(v);
+    };
     try {
       const r = new XMLHttpRequest();
       r.open("GET", url, true);
       r.timeout = 12000;
       r.onreadystatechange = () => {
+        netState.последний = path + " состояние " + r.readyState + " код " + r.status;
         if (r.readyState !== 4) return;
         if (r.status >= 200 && r.status < 300) {
           try { finish(JSON.parse(r.responseText)); } catch { finish(null); }
