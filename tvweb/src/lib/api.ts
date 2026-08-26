@@ -132,6 +132,91 @@ export async function loadRails(): Promise<Rail[]> {
   // повиснет — за это отвечает проверка в App.tsx.
 }
 
+/**
+ * Загрузка подборок БЕЗ обещаний — только колбэки и таймеры.
+ *
+ * Предыдущая версия висела вечно даже после того, как все запросы получили
+ * таймауты: на телевизоре Егора экран замирал на «готовлю подборки», а ошибок
+ * не приходило вовсе. Значит подводит не сеть, а сам механизм обещаний в
+ * подставной реализации для старых движков — Promise.all не разрешался.
+ *
+ * Здесь его нет: пять запросов, счётчик завершений и общий срок 15 секунд.
+ * Что успело — то и показываем, остальное игнорируем.
+ */
+export function loadRailsCb(done: (rails: Rail[]) => void): void {
+  var got: Record<string, any> = {};
+  var left = 5;
+  var finished = false;
+
+  function build() {
+    if (finished) return;
+    finished = true;
+    var R = function (d: any) { return d && d.results ? d.results : []; };
+    var rails: Rail[] = [
+      { title: "В тренде", cards: R(got.trendM).slice(0, 18).map(movieCard) },
+      { title: "Новинки", cards: R(got.latest).slice(0, 18).map(movieCard) },
+      { title: "Популярные сериалы", cards: R(got.trendT).slice(0, 18).map(tvCard) },
+      {
+        title: "Высокий рейтинг",
+        cards: R(got.popM).slice()
+          .sort(function (a: any, b: any) { return (b.vote_average || 0) - (a.vote_average || 0); })
+          .slice(0, 18).map(movieCard),
+      },
+      { title: "Сериалы в тренде", cards: R(got.popT).slice(0, 18).map(tvCard) },
+    ];
+    done(rails.filter(function (r) { return r.cards.length > 0; }));
+  }
+
+  function one(key: string, path: string) {
+    xhrJson(path, function (data) {
+      got[key] = data;
+      left--;
+      if (left <= 0) build();
+    });
+  }
+
+  one("trendM", "/trending/movie/week");
+  one("popM", "/movie/popular");
+  one("latest", "/movie/now_playing");
+  one("trendT", "/trending/tv/week");
+  one("popT", "/tv/popular");
+
+  // Общий срок: не дождались всех — показываем то, что успело прийти.
+  setTimeout(build, 15000);
+}
+
+/** Один запрос к TMDB через наш прокси. Колбэк вызывается ровно один раз. */
+function xhrJson(path: string, cb: (data: any) => void): void {
+  var url = TMDB + path + "?api_key=" + KEY + "&language=ru-RU&_=" + new Date().getTime();
+  var called = false;
+  function once(v: any) {
+    if (called) return;
+    called = true;
+    netState.ответили++;
+    if (v == null) netState.ошибок++;
+    cb(v);
+  }
+  netState.начато++;
+  try {
+    var r = new XMLHttpRequest();
+    r.open("GET", url, true);
+    r.timeout = 12000;
+    r.onreadystatechange = function () {
+      netState.последний = path + " состояние " + r.readyState + " код " + r.status;
+      if (r.readyState !== 4) return;
+      if (r.status >= 200 && r.status < 300) {
+        try { once(JSON.parse(r.responseText)); } catch (e) { once(null); }
+      } else once(null);
+    };
+    r.ontimeout = function () { once(null); };
+    r.onerror = function () { once(null); };
+    r.send();
+    setTimeout(function () { once(null); }, 13000);
+  } catch (e) {
+    once(null);
+  }
+}
+
 // ── Данные для экрана просмотра (была серверная страница) ────────────────
 export async function loadWatchMedia(type: "movie" | "tv", id: number): Promise<any | null> {
   const d = await tmdb(`/${type}/${id}`);

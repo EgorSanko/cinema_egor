@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { loadRails } from "@/lib/api";
+import { loadRailsCb } from "@/lib/api";
 import "./index.css";
 
 // Ловушка ошибок: на телевизоре нет консоли, и «чёрный экран» неотличим от
@@ -37,9 +37,9 @@ if (!w.__SAPKEFLY_TV_MOUNTED__) {
   var el = document.getElementById("root")!;
   var root = createRoot(el);
   root.render(<App initialRails={null} booting />);
-  loadRails().then(function (rails) {
+  // Колбэк, а не обещание: на телевизоре Егора Promise.all не разрешался
+  // вовсе, и экран замирал на «готовлю подборки» без единой ошибки.
+  loadRailsCb(function (rails) {
     root.render(<App initialRails={rails} />);
-  }, function () {
-    root.render(<App initialRails={[]} />);
   });
 }
