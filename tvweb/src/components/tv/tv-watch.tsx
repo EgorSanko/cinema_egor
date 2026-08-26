@@ -172,6 +172,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   const overlayRef = useRef<Overlay>("none");
   overlayRef.current = overlay;
   const [playing, setPlaying] = useState(true);
+  const speedRef = useRef(1);
   const [pt, setPt] = useState(0);
   const [pd, setPd] = useState(0);
   // Controls row: 0 ⏪ rewind, 1 ⏯ play/pause, 2 ⏩ forward, 3 ⚙ settings, 4 ✕ exit.
@@ -639,7 +640,17 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       hlsRef.current = hls;
       hls.loadSource(url);
       hls.attachMedia(v);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => { attachSeek(); v.play().catch(() => {}); });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        attachSeek();
+        // Скорость задаём ДО запуска. Телевизор Егора значение принимает
+        // («просили 2, стало 2»), но картинку не ускоряет: такие движки
+        // применяют скорость только в момент старта, а поздняя установка
+        // остаётся просто числом. Это последняя законная попытка добиться
+        // настоящего ускорения; если и она не сработает — телевизор так не
+        // умеет, и приложение об этом честно скажет.
+        применитьСкорость(v, speedRef.current);
+        v.play().catch(() => {});
+      });
       hls.on(Hls.Events.ERROR, (_e, d) => {
         if (!d.fatal) return;
         if (d.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
@@ -648,7 +659,11 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       });
     } else {
       v.src = url;
-      v.onloadedmetadata = () => { attachSeek(); v.play().catch(() => {}); };
+      v.onloadedmetadata = () => {
+        attachSeek();
+        применитьСкорость(v, speedRef.current);
+        v.play().catch(() => {});
+      };
     }
 
     return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
@@ -850,26 +865,75 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
   // Playback speed — applied to the <video> element (reapplied after each source
   // switch via the effect below, since a new manifest resets playbackRate to 1).
+  // Применить скорость к плееру ДВУМЯ способами.
+  //
+  // Телевизоры часто игнорируют обычное присвоение скорости для потокового
+  // видео, но принимают «скорость по умолчанию», которую движок применяет при
+  // старте воспроизведения. Ставим оба и не спорим, какой сработает.
+  const применитьСкорость = useCallback((эл: HTMLVideoElement | null, v: number) => {
+    if (!эл) return;
+    try { эл.defaultPlaybackRate = v; } catch {}
+    try { эл.playbackRate = v; } catch {}
+  }, []);
+
   const changeSpeed = useCallback((v: number) => {
     setSpeed(v);
     const эл = videoRef.current;
     if (!эл) return;
-    эл.playbackRate = v;
-    // ПРОВЕРЯЕМ, что телевизор принял. Часть телевизоров смену скорости в
-    // потоковом видео просто игнорирует: значение не меняется, и человек жмёт
-    // впустую, думая, что сломано приложение. Лучше честно сказать.
-    const принято = Math.abs(эл.playbackRate - v) < 0.01;
-    flash(принято ? `Скорость: ${v}×` : "Телевизор не умеет менять скорость");
-    try {
-      const i = new Image();
-      i.src = "/tv-error?m=" + encodeURIComponent(
-        "скорость: просили " + v + ", стало " + эл.playbackRate);
-    } catch {}
-  }, [flash]);
+    применитьСкорость(эл, v);
+    // ПРОВЕРЯЕМ НЕ ЗНАЧЕНИЕ, А ФАКТ.
+    //
+    // Телевизор Егора значение принимает — в сигналах «просили 2, стало 2», — а
+    // картинка идёт с прежней скоростью. То есть свойство запоминается, но
+    // медиа-движок его не применяет. Проверять само свойство бесполезно: оно
+    // соврёт, что всё хорошо.
+    //
+    // Поэтому замеряем: сколько видео проиграло за три секунды настоящего
+    // времени. При двойной скорости должно быть заметно больше. Если нет —
+    // честно говорим, что телевизор так не умеет, вместо молчаливого «2×».
+    const было = эл.currentTime;
+    const начало = new Date().getTime();
+    window.setTimeout(() => {
+      const т = videoRef.current;
+      if (!т) return;
+      const прошло = (new Date().getTime() - начало) / 1000;
+      const проиграно = т.currentTime - было;
+      const ожидали = прошло * v;
+      // Считаем применённым, если попали хотя бы в 70% ожидаемого: на паузе и
+      // при подгрузке кусков видео идёт неровно.
+      const реально = !т.paused && проиграно >= ожидали * 0.7;
+      flash(реально
+        ? `Скорость: ${v}×`
+        : (т.paused ? `Скорость: ${v}×` : "Телевизор не умеет менять скорость"));
+      try {
+        const i = new Image();
+        i.src = "/tv-error?m=" + encodeURIComponent(
+          "скорость: просили " + v + ", свойство " + т.playbackRate +
+          ", за " + прошло.toFixed(1) + "с проиграно " + проиграно.toFixed(1) +
+          "с, ожидали " + ожидали.toFixed(1) + "с");
+      } catch {}
+    }, 3000);
+  }, [flash, применитьСкорость]);
+
+  // Возвращаем скорость после КАЖДОГО запуска: смена качества, озвучки или
+  // серии создаёт новый поток, и движок сбрасывает скорость на обычную.
+  speedRef.current = speed;
 
   useEffect(() => {
-    if (videoRef.current) videoRef.current.playbackRate = speed;
-  }, [speed, data?.stream]);
+    const эл = videoRef.current;
+    if (!эл) return;
+    применитьСкорость(эл, speed);
+    const вернуть = () => применитьСкорость(videoRef.current, speed);
+    эл.addEventListener("playing", вернуть);
+    эл.addEventListener("canplay", вернуть);
+    эл.addEventListener("loadedmetadata", вернуть);
+    return () => {
+      эл.removeEventListener("playing", вернуть);
+      эл.removeEventListener("canplay", вернуть);
+      эл.removeEventListener("loadedmetadata", вернуть);
+    };
+    // zone обязателен: плеер появляется позже потока, см. соседние эффекты.
+  }, [speed, data?.stream, zone, применитьСкорость]);
 
   // Dub switch — re-resolve with translator_id, preserve position.
   const changeTranslator = useCallback(async (tid: number) => {
@@ -995,7 +1059,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       const isEnter = k === "Enter" || c === 13;
       const isSpace = k === " " || k === "Spacebar" || c === 32;
       const isPlayPause = c === 179 || c === 85 || k === "MediaPlayPause";
-      const isBack = k === "Escape" || k === "Backspace" || k === "GoBack" || k === "BrowserBack" || c === 27 || c === 8 || c === 461 || c === 10009;
+      // 1536 и 1537 — коды с пульта LG у Егора (видны в сигналах как
+      // «Unidentified/1536»). Раньше они не разбирались, и «назад» приходилось
+      // ловить окольным путём через историю. Теперь обрабатываем напрямую.
+      const isBack = k === "Escape" || k === "Backspace" || k === "GoBack" || k === "BrowserBack" || c === 27 || c === 8 || c === 461 || c === 10009 || c === 1536 || c === 1537;
 
       if (!isLeft && !isUp && !isRight && !isDown && !isEnter && !isSpace && !isPlayPause && !isBack) return;
       e.preventDefault();
