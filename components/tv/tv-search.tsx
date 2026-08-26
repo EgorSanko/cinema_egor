@@ -251,8 +251,12 @@ export function TvSearch() {
   // ---- Render ------------------------------------------------------------
   return (
     <main
-      className="min-h-screen bg-background text-foreground select-none"
-      style={{ background: "var(--background)" }}
+      className="bg-background text-foreground select-none"
+      // Экран фиксированной высоты, как на главной. Раньше страница просто
+      // росла вниз, а прокручивать её на телевизоре нечем — из шестидесяти
+      // найденных карточек за краями экрана оставались пятьдесят четыре, и
+      // человек их не видел вовсе.
+      style={{ background: "var(--background)", height: "100%", overflow: "hidden" }}
     >
       {/* Query display */}
       <header className="px-12 pt-8 pb-5">
@@ -276,9 +280,30 @@ export function TvSearch() {
         </div>
       </header>
 
-      <div className="flex flex-col gap-8 px-12 pb-24">
+      <div
+        className="px-12 pb-6"
+        // КЛАВИАТУРА СЛЕВА, РЕЗУЛЬТАТЫ СПРАВА.
+        //
+        // Раньше клавиатура стояла сверху и съедала почти весь экран: области
+        // результатов оставалось 188 точек из 720 — один ряд карточек. Человек
+        // искал, находил шестьдесят наименований и видел из них четыре.
+        //
+        // В строку клавиатура занимает свою ширину, а результаты получают всю
+        // высоту экрана. Раскладку задаём стилем, а не классами: на телевизорах
+        // часть служебных классов не применяется.
+        style={{
+          height: "calc(100% - 150px)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "stretch",
+        }}
+      >
         {/* ---------------- On-screen keyboard (top) ---------------- */}
-        <section className="shrink-0" aria-label="Экранная клавиатура">
+        <section
+          aria-label="Экранная клавиатура"
+          style={{ flexShrink: 0, marginRight: 32, overflowY: "auto" }}
+        >
           <div className="flex flex-col gap-2.5">
             {rows.map((row, rIdx) => (
               <div key={rIdx} className="flex gap-2.5">
@@ -322,11 +347,16 @@ export function TvSearch() {
               </div>
             ))}
           </div>
-          <p className="mt-5 text-sm text-muted-foreground">Назад — кнопка «Back» на пульте</p>
+          <p className="mt-5 text-sm text-muted-foreground">Выход — стрелка влево от клавиатуры</p>
         </section>
 
         {/* ---------------- Results ---------------- */}
-        <section className="flex-1 min-w-0" aria-label="Результаты поиска">
+        <section
+          className="min-w-0"
+          aria-label="Результаты поиска"
+          // Прокручивается ТОЛЬКО эта область — не вся страница.
+          style={{ flex: "1 1 0%", minWidth: 0, minHeight: 0, overflowY: "auto" }}
+        >
           {loading ? (
             <div className="flex h-[60vh] items-center justify-center text-2xl font-semibold text-muted-foreground">
               Поиск…
