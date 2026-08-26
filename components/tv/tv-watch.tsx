@@ -591,7 +591,19 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
     return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.stream, isPro, adDone]);
+    // ВАЖНО: сюда добавлен zone.
+    //
+    // Ссылка на видео появляется РАНЬШЕ, чем экран переключается в режим
+    // просмотра, а сам <video> рисуется только в этом режиме. Значит в момент
+    // прихода ссылки подключать её некуда: videoRef ещё пуст. Раньше это
+    // сходило с рук, потому что React склеивал оба изменения в одно
+    // обновление. После перехода на синхронную отрисовку они идут по
+    // отдельности — и подключение молча пропускалось: источник отдавал ссылку,
+    // а сегменты видео не запрашивались вовсе. Ровно это Егор видел как
+    // «плеер ничего не играет».
+    //
+    // С zone в списке эффект повторяется, когда плеер появился, и подключает.
+  }, [data?.stream, isPro, adDone, zone]);
 
   // Video element events → progress/paused state.
   useEffect(() => {

@@ -404,12 +404,18 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                           alt={card.title}
                           draggable={false}
                           className="block w-full object-cover"
-                          style={{ aspectRatio: "2 / 3" }}
+                          // Та же причина: aspect-ratio на телевизорах не
+                          // работает, поэтому высоту задаём числом.
+                          style={{ height: Math.round(CARD_W * 1.5) }}
                         />
                       ) : (
                         <div
                           className="block w-full"
-                          style={{ aspectRatio: "2 / 3", background: "rgba(255,255,255,.06)" }}
+                          // Высота ЯВНО в точках, а не через aspect-ratio:
+                          // это свойство появилось в Chrome 88, телевизоры его
+                          // не знают и схлопывают заглушку в ноль — на экране
+                          // получались тонкие белые полосы вместо карточек.
+                          style={{ height: Math.round(CARD_W * 1.5), background: "rgba(255,255,255,.06)" }}
                         />
                       )}
                     </div>

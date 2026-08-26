@@ -354,6 +354,18 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     const sq = pickDefaultQuality(d.streams || {}, d.quality || "");
     // Alloha-URL уже проксирован — не оборачиваем повторно.
     const url = sq && d.streams?.[sq] ? (d.alloha ? d.streams[sq] : hlsProxyUrl(d.streams[sq])) : d.stream;
+    // СИГНАЛ О ВЫБОРЕ ПОТОКА. На телевизоре Егора ссылка от источника
+    // приходит (в логах kino-api честный ответ 14.9 КБ), а сегменты потом не
+    // запрашиваются вовсе — значит ссылка не доезжает до плеера. Смотрим, что
+    // именно выбралось.
+    try {
+      const качества = Object.keys(d.streams || {});
+      const i = new Image();
+      i.src = "/tv-error?m=" + encodeURIComponent(
+        "поток: качеств " + качества.length + " [" + качества.join(",") + "]" +
+        " выбрано:" + String(sq) + " ссылка:" + (url ? "есть" : "НЕТ") +
+        " alloha:" + String(!!d.alloha));
+    } catch {}
     setData({ ...d, stream: url, quality: sq || d.quality });
     setQuality(sq || d.quality || "");
     if (d.translators?.length) {
@@ -555,6 +567,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   useEffect(() => {
     const url = data?.stream;
     const v = videoRef.current;
+    try {
+      const i = new Image();
+      i.src = "/tv-error?m=" + encodeURIComponent(
+        "подключение: ссылка:" + (url ? "есть" : "НЕТ") +
+        " видеоэлемент:" + (v ? "есть" : "НЕТ") +
+        " pro:" + String(isPro) + " реклама_досмотрена:" + String(adDone));
+    } catch {}
     if (!url || !v) return;
     // FREE: контент не грузится/не играет, пока не досмотрена реклама (пре-ролл
     // сверху). Как только adDone (или юзер Про) — эффект перезапустится и стартует.
@@ -590,7 +609,19 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
     return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.stream, isPro, adDone]);
+    // ВАЖНО: сюда добавлен zone.
+    //
+    // Ссылка на видео появляется РАНЬШЕ, чем экран переключается в режим
+    // просмотра, а сам <video> рисуется только в этом режиме. Значит в момент
+    // прихода ссылки подключать её некуда: videoRef ещё пуст. Раньше это
+    // сходило с рук, потому что React склеивал оба изменения в одно
+    // обновление. После перехода на синхронную отрисовку они идут по
+    // отдельности — и подключение молча пропускалось: источник отдавал ссылку,
+    // а сегменты видео не запрашивались вовсе. Ровно это Егор видел как
+    // «плеер ничего не играет».
+    //
+    // С zone в списке эффект повторяется, когда плеер появился, и подключает.
+  }, [data?.stream, isPro, adDone, zone]);
 
   // Video element events → progress/paused state.
   useEffect(() => {
@@ -811,6 +842,14 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     const handler = (e: KeyboardEvent) => {
       const k = e.key;
       const c = e.keyCode;
+      // СИГНАЛ О НАЖАТИИ. На телевизоре Егора экран выбора серии не отвечает на
+      // пульт, хотя мышью всё работает. Консоли там нет, поэтому шлём себе, что
+      // именно пришло и в каком состоянии находится экран.
+      try {
+        const i = new Image();
+        i.src = "/tv-error?m=" + encodeURIComponent(
+          "кнопка: " + String(k) + "/" + String(c) + " экран:" + zone + " колонка:" + pickerCol);
+      } catch {}
       if (["F5", "F11", "F12"].includes(k)) return;
 
       const isLeft = k === "ArrowLeft" || c === 37;
