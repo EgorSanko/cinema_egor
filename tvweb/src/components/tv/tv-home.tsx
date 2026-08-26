@@ -126,6 +126,28 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
   const headerCells = useMemo<HeaderCell[]>(() => ["search", "logout"], []);
   const [focus, setFocus] = useState({ rail: 0, index: 0 });
 
+  // ПОЛКИ ПОЯВЛЯЮТСЯ ПО ОДНОЙ.
+  //
+  // Samsung 2019 года перестал умирать до главной, когда мы облегчили картинки:
+  // по сигналам видно «главная нарисована». Но человек всё равно видит загрузку —
+  // значит телевизор успевает построить экран и не выдерживает его ОТРИСОВКИ:
+  // пять полок с постерами разом это слишком много работы за один кадр.
+  //
+  // Поэтому сначала показываем одну полку, а остальные добавляем по очереди с
+  // паузой. Телевизор рисует их по частям и успевает выдохнуть между ними.
+  // Человек при этом видит содержимое сразу, а не пустой экран.
+  const [полокПоказано, setПолокПоказано] = useState(1);
+  useEffect(() => {
+    if (полокПоказано >= rails.length) return;
+    const t = setTimeout(() => setПолокПоказано((n) => n + 1), 350);
+    return () => clearTimeout(t);
+  }, [полокПоказано, rails.length]);
+  // Если человек ушёл вниз быстрее, чем полки успели появиться, — показываем
+  // сразу столько, сколько нужно, чтобы фокус не упирался в пустоту.
+  useEffect(() => {
+    if (focus.rail + 2 > полокПоказано) setПолокПоказано(Math.min(rails.length, focus.rail + 2));
+  }, [focus.rail, полокПоказано, rails.length]);
+
   const cardRefs = useRef<(HTMLButtonElement | null)[][]>([]);
   const headerRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -406,7 +428,7 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
         // намеренно: именно на них мы уже дважды обожглись.
         style={{ height: "calc(100% - 92px)", overflowY: "auto" }}
       >
-        {rails.map((rail, rIdx) => (
+        {rails.slice(0, полокПоказано).map((rail, rIdx) => (
           <section key={rail.title}>
             <h2 className="px-12 mb-2 text-xl font-bold text-foreground">
               {rail.title}
