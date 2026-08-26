@@ -289,7 +289,7 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
       <header
         // Закреплена сверху: раньше уезжала совсем, и «Поиск»/«Выйти» становились
         // недоступны, пока не пролистаешь обратно.
-        className="z-30 px-12 pt-8 pb-4 flex items-center gap-4"
+        className="z-30"
         // ЖЁСТКОЕ закрепление, а не «липкое».
         //
         // «Липкое» (sticky) требует, чтобы ни у одного предка не было скрытого
@@ -301,11 +301,29 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
         // Жёсткое закрепление таких требований не имеет и работает на движках
         // с 2008 года. Отступ сверху — та же безопасная граница, что и у
         // содержимого: телевизор срезает край кадра.
+        // Раскладка задана НАПРЯМУЮ, а не служебными классами.
+        //
+        // На телевизоре Егора правая часть шапки (почта, «Поиск», «Выйти»)
+        // уезжала на середину экрана поверх карточек, хотя в браузере при том же
+        // размере кадра всё стояло в одну строку. Значит часть классов там не
+        // применяется, а какие именно — вслепую не выяснить. Поэтому высоту,
+        // выравнивание и распределение задаём стилем: это не зависит ни от
+        // одного класса и работает на любом движке.
+        //
+        // Заодно убрана пустая распорка на flex-1 — вместо неё обычное
+        // «прижать края».
         style={{
           position: "fixed",
           top: "5vh",
           left: "2.5vw",
           right: "2.5vw",
+          height: 92,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingLeft: 48,
+          paddingRight: 48,
+          boxSizing: "border-box",
           background: "var(--background)",
         }}
       >
@@ -317,9 +335,11 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
           className="h-10 w-auto"
           style={{ filter: "drop-shadow(0 0 18px rgba(163,230,53,0.45))" }}
         />
-        <div className="flex-1" />
+        {/* Правая часть — одной группой: почта и кнопки. Раскладка группы тоже
+            задана стилем, чтобы не зависеть от служебных классов. */}
+        <div style={{ display: "flex", alignItems: "center" }}>
         {user && (
-          <div className="mr-2 flex items-center gap-2.5">
+          <div className="flex items-center" style={{ marginRight: 16 }}>
             <span
               className="grid h-9 w-9 place-items-center rounded-full text-sm font-bold uppercase"
               style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
@@ -362,6 +382,7 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
             </button>
           );
         })}
+        </div>
       </header>
       {/* Распорка под жёстко закреплённой шапкой: без неё первая полка ушла бы
           под неё. Высота примерно равна высоте шапки. */}
