@@ -604,7 +604,72 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
     const attachSeek = () => { if (seekTarget > 0) { try { v.currentTime = seekTarget; } catch {} } };
 
-    if (url.includes(".m3u8") && Hls.isSupported()) {
+    // ── ЧЕМ ПРОИГРЫВАТЬ: родным плеером телевизора или своим ──────────────
+    //
+    // На Android TV браузер обычный, и наш программный плеер там управляется
+    // полностью, включая скорость. У LG движок свой: такое видео он проигрывает
+    // программным путём, где управления скоростью нет — значение принимается, а
+    // картинка идёт как шла. Ровно это Егор и наблюдал.
+    //
+    // Но у телевизоров есть второй путь: отдать поток им напрямую, и тогда его
+    // играет встроенный плеер, у которого скорость обычно работает. Если
+    // телевизор говорит, что умеет такой формат, — идём этим путём.
+    //
+    // Подстраховка обязательна: если родной плеер за восемь секунд ничего не
+    // начал, возвращаемся к своему. Остаться без картинки нельзя.
+    const родной = (() => {
+      try { return !!v.canPlayType("application/vnd.apple.mpegurl"); } catch { return false; }
+    })();
+    let откат: ReturnType<typeof setTimeout> | null = null;
+
+    const запуститьСвоим = () => {
+      if (!Hls.isSupported()) return;
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+      const h = new Hls({
+        enableWorker: true, lowLatencyMode: false,
+        maxBufferLength: 30, maxMaxBufferLength: 60, backBufferLength: 30,
+        startFragPrefetch: true,
+      });
+      hlsRef.current = h;
+      h.loadSource(url);
+      h.attachMedia(v);
+      h.on(Hls.Events.MANIFEST_PARSED, () => {
+        attachSeek();
+        применитьСкорость(v, speedRef.current);
+        v.play().catch(() => {});
+      });
+      h.on(Hls.Events.ERROR, (_e, d) => {
+        if (!d.fatal) return;
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) h.startLoad();
+        else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) h.recoverMediaError();
+        else setError("Ошибка воспроизведения");
+      });
+    };
+
+    if (url.includes(".m3u8") && родной) {
+      try {
+        const i = new Image();
+        i.src = "/tv-error?m=" + encodeURIComponent("плеер: родной плеер телевизора");
+      } catch {}
+      v.src = url;
+      v.onloadedmetadata = () => {
+        if (откат) { clearTimeout(откат); откат = null; }
+        attachSeek();
+        применитьСкорость(v, speedRef.current);
+        v.play().catch(() => {});
+      };
+      // Не пошло — возвращаемся к своему плееру, чтобы не остаться без картинки.
+      откат = setTimeout(() => {
+        if (v.readyState >= 2) return;
+        try {
+          const i = new Image();
+          i.src = "/tv-error?m=" + encodeURIComponent("плеер: родной не пошёл, беру свой");
+        } catch {}
+        v.removeAttribute("src");
+        v.load();
+        запуститьСвоим();
+      }, 8000);
+    } else if (url.includes(".m3u8") && Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
@@ -648,7 +713,12 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       };
     }
 
-    return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
+    return () => {
+      // Убираем и таймер отката: иначе он мог бы сработать уже после ухода с
+      // экрана и запустить плеер заново на пустом месте.
+      if (откат) { clearTimeout(откат); откат = null; }
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // ВАЖНО: сюда добавлен zone.
     //
@@ -1136,7 +1206,12 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // ════════ overlay === "settings" ════════
       // Panel with tabs Качество / Озвучка / Серии and a scrollable list.
       if (overlay === "settings") {
-        const tabs: Array<0 | 1 | 2 | 3> = isSeries ? [0, 1, 2, 3] : [0, 1, 3];
+        // Вкладки БЕЗ «Скорости».
+        //
+        // Телевизоры принимают значение скорости, но картинку не ускоряют:
+        // в сигналах «просили 2, стало 2», а видео шло как шло. Кнопка, которая
+        // ничего не делает, хуже её отсутствия — Егор попросил убрать.
+        const tabs: Array<0 | 1 | 2 | 3> = isSeries ? [0, 1, 2] : [0, 1];
         const list =
           settingsTab === 0 ? (data?.streams ? Object.keys(data.streams) : [])
           : settingsTab === 1 ? playerDubs.map((t) => t.name)
@@ -1570,7 +1645,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
               <div className="w-[760px] max-w-[90vw] rounded-2xl border border-white/10 bg-zinc-900/95 p-7">
                 {/* Tabs */}
                 <div className="mb-5 flex gap-3">
-                  {([0, 1, ...(isSeries ? [2 as const] : []), 3 as const] as Array<0 | 1 | 2 | 3>).map((t) => {
+                  {([0, 1, ...(isSeries ? [2 as const] : [])] as Array<0 | 1 | 2 | 3>).map((t) => {
                     const f = settingsTab === t;
                     const label = t === 0 ? "Качество" : t === 1 ? "Озвучка" : t === 2 ? "Серии" : "Скорость";
                     return (
