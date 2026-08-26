@@ -18,6 +18,43 @@
 -->
 <div id="boot" style="display:none"></div>
 <script>
+/*
+  ПОДПОРКИ ДЛЯ СТАРЫХ ДВИЖКОВ. Выполняются ПЕРВЫМИ, до приложения.
+
+  Разбор кода по правилам ES5 ловит только синтаксис. А есть возможности,
+  которые появились позже и синтаксически выглядят обычно: на Tizen 5
+  (Chromium 63) их просто нет, и код падает на ровном месте.
+
+  Обе нужны в боевых путях: AbortController — в получении ссылки на видео,
+  то есть прямо в запуске плеера; Object.fromEntries — в истории просмотра.
+*/
+(function () {
+  if (!Object.fromEntries) {
+    Object.fromEntries = function (list) {
+      var out = {}, arr = list;
+      if (list && typeof list.forEach === "function" && !(list instanceof Array)) {
+        arr = []; list.forEach(function (p) { arr.push(p); });
+      }
+      for (var i = 0; i < arr.length; i++) { out[arr[i][0]] = arr[i][1]; }
+      return out;
+    };
+  }
+  if (typeof window.AbortController === "undefined") {
+    // Прерывать запрос на таком движке всё равно нечем — важно, чтобы код,
+    // который его создаёт, не падал. Сроки ожидания у нас заданы отдельно.
+    var Signal = function () { this.aborted = false; this.onabort = null; };
+    Signal.prototype.addEventListener = function (t, f) { if (t === "abort") this.onabort = f; };
+    Signal.prototype.removeEventListener = function () { this.onabort = null; };
+    var Ctrl = function () { this.signal = new Signal(); };
+    Ctrl.prototype.abort = function () {
+      this.signal.aborted = true;
+      if (this.signal.onabort) { try { this.signal.onabort(); } catch (e) {} }
+    };
+    window.AbortController = Ctrl;
+  }
+})();
+</script>
+<script>
 (function () {
   var box = document.getElementById("boot");
   var lines = [];
