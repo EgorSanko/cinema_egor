@@ -395,6 +395,32 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Озвучки для экрана выбора: подтягиваем ЗАРАНЕЕ ──────────────────
+  //
+  // Список озвучек приходит вместе с ответом источника, то есть только после
+  // запуска серии. До запуска колонке «Озвучка» взяться неоткуда — и она
+  // просто отсутствовала, хотя человек ждал её именно здесь.
+  //
+  // Спрашиваем источник один раз для первой серии сезона: нам нужен только
+  // перечень озвучек, само видео при этом не грузится.
+  useEffect(() => {
+    if (!isSeries || translators.length) return;
+    let жив = true;
+    // episodes, а НЕ pickerEpisodes: этот список объявлен ниже по файлу, и
+    // обращение к нему отсюда роняло весь экран просмотра.
+    const первая = episodes[0]?.episode_number ?? 1;
+    resolveAllohaHls(media.id, media.type, season, первая)
+      .then((a) => {
+        if (!жив || !a || !a.translations?.length) return;
+        setTranslators(
+          a.translations.map((t: any, i: number) => ({ id: i, name: t.name })),
+        );
+      })
+      .catch(() => {});
+    return () => { жив = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSeries, media.id, media.type, season, episodes.length]);
+
   // ── Load episode list whenever a season is focused/selected (series). ──
   useEffect(() => {
     if (!isSeries) return;
@@ -871,6 +897,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   useEffect(() => {
     try { history.pushState({ tvBack: true }, ""); } catch { return; }
     const onPop = () => {
+      try {
+        const i = new Image();
+        i.src = "/tv-error?m=" + encodeURIComponent("назад: перехвачено, оверлей=" + overlayRef.current);
+      } catch {}
       const o = overlayRef.current;
       if (o === "settings") {
         setOverlay("controls");
@@ -936,6 +966,11 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
           if (isUp) setDubIdx((i) => Math.max(0, i - 1));
           else if (isDown) setDubIdx((i) => Math.min(translators.length - 1, i + 1));
           else if (isRight) setPickerCol(1);
+          // Влево из самой левой колонки — ВЫХОД НА ГЛАВНУЮ. Это единственный
+          // надёжный путь назад: кнопка «назад» на телевизорах Егора до
+          // страницы не доходит вовсе, и без этого человек оставался заперт в
+          // выборе серии.
+          else if (isLeft) router.push("/tv-home");
           else if (isEnter || isSpace) {
             const t = translators[dubIdx];
             if (t) pickDub(t.id);
@@ -944,7 +979,14 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         } else if (pickerCol === 1) {
           if (isUp) setSeasonIdx((i) => Math.max(0, i - 1));
           else if (isDown) setSeasonIdx((i) => Math.min(gatedSeasons.length - 1, i + 1));
-          else if (isLeft) { if (hasDubCol) setPickerCol(0); }
+          else if (isLeft) {
+            // Влево из сезонов: если колонки озвучки нет — ВЫХОДИМ НА ГЛАВНУЮ.
+            // Раньше нажатие просто ничего не делало, и человек оставался
+            // заперт в выборе серии: кнопка «назад» на его телевизоре до
+            // страницы не доходит вовсе, а других путей отсюда не было.
+            if (hasDubCol) setPickerCol(0);
+            else router.push("/tv-home");
+          }
           else if (isRight) { setPickerCol(2); setEpisodeIdx(0); }
           else if (isEnter || isSpace) {
             const sn = gatedSeasons[seasonIdx]?.season_number;
