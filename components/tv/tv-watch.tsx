@@ -699,16 +699,23 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, episode, isSeries, media]);
 
-  // ── Controls auto-hide ──
-  // Show the controls bar and (re)arm the ~5s auto-hide timer. Never auto-hides
-  // while the settings panel is open.
+  // ── Панель управления: автоскрытие ──
+  //
+  // Было 5 секунд. На пульте этого мало: чтобы дойти до шестерёнки, нужно вниз,
+  // вниз, дважды вправо и «ОК» — панель успевала спрятаться на полпути. По
+  // сигналам с телевизора Егора видно ровно это: десятки нажатий «вниз» и
+  // «вправо» и НИ ОДНОГО вызова перемотки или смены скорости — до них дело
+  // просто не доходило. Отсюда и «шкала не работает», и «скорость меняю, а
+  // толку ноль»: обе команды не вызывались вообще.
+  //
+  // Пятнадцать секунд хватает спокойно дойти куда нужно.
   const revealControls = useCallback((zone: CtrlZone = "bar") => {
     setOverlay("controls");
     setCtrlZone(zone);
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       setOverlay((o) => (o === "controls" ? "none" : o));
-    }, 5000);
+    }, 15000);
   }, []);
 
   // Reset the auto-hide timer on every handled key press (no-op while settings
@@ -717,7 +724,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       setOverlay((o) => (o === "controls" ? "none" : o));
-    }, 5000);
+    }, 15000);
   }, []);
 
   // Briefly flash the controls bar on a blind seek, then let it auto-hide.
@@ -727,7 +734,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       setOverlay((o) => (o === "controls" ? "none" : o));
-    }, 1800);
+    }, 3000);
   }, []);
 
   // Clear any pending auto-hide (used when entering settings).
