@@ -167,7 +167,7 @@
   step("1. страница загружена");
   try {
     var r = new XMLHttpRequest();
-    r.open("GET", "/tmdb-api/movie/popular?api_key=275c9d09780aadb4b13ff57a731eda00&language=ru-RU&_=" + new Date().getTime(), true);
+    r.open("GET", "/tmdb-api/movie/popular?language=ru-RU&_=" + new Date().getTime(), true);
     r.timeout = 10000;
     r.onreadystatechange = function () {
       if (r.readyState !== 4) return;
@@ -234,8 +234,7 @@
   }, 14000);
 })();
 </script>
-
   <script crossorigin id="vite-legacy-polyfill" src="/tvweb/assets/polyfills-legacy-Dah9VB6j.js"></script>
-  <script crossorigin id="vite-legacy-entry" data-src="/tvweb/assets/index-legacy-DG2gInTu.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+  <script crossorigin id="vite-legacy-entry" data-src="/tvweb/assets/index-legacy-Bl5oKM1i.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
 </body>
 </html>

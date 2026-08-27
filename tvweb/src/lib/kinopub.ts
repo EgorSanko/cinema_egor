@@ -302,8 +302,8 @@ export interface KinopubStream {
 // матчинга на стороне воркера (у kino.pub есть поле imdb).
 async function fetchImdb(tmdbId: number, type: "movie" | "tv"): Promise<string> {
   try {
-    const key = process.env.NEXT_PUBLIC_TMDB_API_KEY || "275c9d09780aadb4b13ff57a731eda00";
-    const j = await fetch(`/tmdb-api/${type}/${tmdbId}/external_ids?api_key=${key}`).then((r) => r.json());
+    // Ключ подставляет сервер в правиле для /tmdb-api/ — здесь он не нужен.
+    const j = await fetch(`/tmdb-api/${type}/${tmdbId}/external_ids?`).then((r) => r.json());
     return j.imdb_id || "";
   } catch {
     return "";

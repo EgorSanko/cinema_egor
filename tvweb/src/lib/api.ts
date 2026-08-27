@@ -10,7 +10,11 @@
 import { getImageUrl } from "./img";
 
 const TMDB = "/tmdb-api";
-const KEY = "275c9d09780aadb4b13ff57a731eda00";
+// Ключа здесь БОЛЬШЕ НЕТ.
+//
+// Он лежал прямо в собранном скрипте, то есть был виден любому зрителю в
+// исходнике страницы. Теперь его подставляет наш сервер в правиле для
+// /tmdb-api/, а приложение ходит без него. См. tvweb/SERVER.md.
 
 /**
  * Запрос к TMDB через наш прокси.
@@ -30,7 +34,7 @@ const KEY = "275c9d09780aadb4b13ff57a731eda00";
 export const netState = { начато: 0, ответили: 0, ошибок: 0, последний: "" };
 
 function tmdb(path: string, params: Record<string, string> = {}): Promise<any> {
-  const q = new URLSearchParams({ api_key: KEY, language: "ru-RU", ...params });
+  const q = new URLSearchParams({ language: "ru-RU", ...params });
   q.set("_", String(new Date().getTime()));
   const url = `${TMDB}${path}?${q}`;
   netState.начато++;
@@ -200,7 +204,7 @@ export function loadRailsCb(done: (rails: Rail[]) => void): void {
 
 /** Один запрос к TMDB через наш прокси. Колбэк вызывается ровно один раз. */
 function xhrJson(path: string, cb: (data: any) => void): void {
-  var url = TMDB + path + "?api_key=" + KEY + "&language=ru-RU&_=" + new Date().getTime();
+  var url = TMDB + path + "?language=ru-RU&_=" + new Date().getTime();
   var called = false;
   function once(v: any) {
     if (called) return;
