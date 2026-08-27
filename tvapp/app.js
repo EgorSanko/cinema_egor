@@ -728,10 +728,24 @@
     // готовые куски. Буфер ограничиваем — у этого поколения телевизоров память
     // кончается быстро, и это уже роняло у нас главную.
     if (window.__hls) { try { window.__hls.destroy(); } catch (e) {} window.__hls = null; }
-    var умеетСам = false;
-    try { умеетСам = !!v.canPlayType("application/vnd.apple.mpegurl"); } catch (e) {}
 
-    if (адрес.indexOf(".m3u8") >= 0 && !умеетСам && window.Hls && window.Hls.isSupported()) {
+    // НЕ ВЕРИМ телевизору на слово.
+    //
+    // Samsung на вопрос «умеешь HLS сам?» отвечает «да», а на деле поток не
+    // открывает: на экране появлялось наше «Телевизор не смог открыть этот
+    // поток» — сообщение как раз из ветки встроенного проигрывания. В логах при
+    // этом видно, что плейлист он забрал, а за кусками видео так и не пошёл.
+    //
+    // Поэтому если умеем разбирать поток сами — разбираем сами. Встроенное
+    // проигрывание остаётся запасным путём: для телевизоров, где нашего
+    // разбора нет.
+    try {
+      var i = new Image();
+      i.src = "/tv-error?m=" + encodeURIComponent(
+        "плеер: " + ((window.Hls && window.Hls.isSupported()) ? "свой разбор" : "встроенный"));
+    } catch (e) {}
+
+    if (адрес.indexOf(".m3u8") >= 0 && window.Hls && window.Hls.isSupported()) {
       var h = new window.Hls({
         enableWorker: false,      // на слабых телевизорах отдельный поток только мешает
         maxBufferLength: 20,
@@ -1130,6 +1144,36 @@
   document.addEventListener("keydown", onKey, false);
   S.history = lsGet("kino_history", []);
   S.favorites = lsGet("kino_favorites", []);
+  // ── ПОДГОНКА ХОЛСТА ПОД ЭКРАН ──────────────────────────────────────
+  //
+  // Клиент нарисован жёстким холстом 1280x720 в расчёте на то, что телевизор
+  // растянет его сам. Samsung не растягивает: картинка занимала верхний левый
+  // угол, остальное чёрное — «не на весь экран» на фото Егора.
+  //
+  // Поэтому растягиваем сами. Заодно оставляем запас на срезаемые края
+  // (overscan): холст ужимаем до 94% и сдвигаем на 3% — это тот самый отступ,
+  // который в стилях задать нельзя, там его стирает общее правило.
+  function подогнатьХолст() {
+    try {
+      var окноШ = window.innerWidth || 1280;
+      var окноВ = window.innerHeight || 720;
+      var запас = 0.94;
+      var kx = (окноШ / 1280) * запас;
+      var ky = (окноВ / 720) * запас;
+      var сдвигX = окноШ * 0.03;
+      var сдвигY = окноВ * 0.03;
+      var app = el("app");
+      if (!app) return;
+      var правило = "translate(" + сдвигX + "px," + сдвигY + "px) scale(" + kx + "," + ky + ")";
+      app.style.transformOrigin = "0 0";
+      app.style.webkitTransformOrigin = "0 0";
+      app.style.transform = правило;
+      app.style.webkitTransform = правило;
+    } catch (e) {}
+  }
+  подогнатьХолст();
+  if (window.addEventListener) window.addEventListener("resize", подогнатьХолст);
+
   S.user = lsGet("user", null);
   if (S.user && S.user.email) {
     show("home");
