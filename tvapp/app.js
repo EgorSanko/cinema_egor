@@ -719,7 +719,46 @@
       resumeAt = v.currentTime || 0;   // смена озвучки и качества не теряет место
     }
     msg("Загружаю…");
-    v.src = firstMirror(pick.url);
+    var адрес = firstMirror(pick.url);
+
+    // Играем САМИ, если телевизор не умеет HLS встроенно.
+    //
+    // Samsung забирал плейлист и на этом останавливался: ни одного запроса за
+    // кусками видео. Поэтому там разбираем поток сами и скармливаем телевизору
+    // готовые куски. Буфер ограничиваем — у этого поколения телевизоров память
+    // кончается быстро, и это уже роняло у нас главную.
+    if (window.__hls) { try { window.__hls.destroy(); } catch (e) {} window.__hls = null; }
+    var умеетСам = false;
+    try { умеетСам = !!v.canPlayType("application/vnd.apple.mpegurl"); } catch (e) {}
+
+    if (адрес.indexOf(".m3u8") >= 0 && !умеетСам && window.Hls && window.Hls.isSupported()) {
+      var h = new window.Hls({
+        enableWorker: false,      // на слабых телевизорах отдельный поток только мешает
+        maxBufferLength: 20,
+        maxMaxBufferLength: 40,
+        backBufferLength: 20
+      });
+      window.__hls = h;
+      h.loadSource(адрес);
+      h.attachMedia(v);
+      h.on(window.Hls.Events.MANIFEST_PARSED, function () {
+        if (resumeAt > 0) { try { v.currentTime = resumeAt; } catch (e) {} }
+        msg("");
+        try { v.play(); } catch (e) {}
+        flashOverlay();
+      });
+      h.on(window.Hls.Events.ERROR, function (_e, d) {
+        if (!d || !d.fatal) return;
+        if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR) h.startLoad();
+        else if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) h.recoverMediaError();
+        else msg("Не удалось проиграть. Нажмите OK и выберите другую озвучку.");
+      });
+      v.ontimeupdate = onTimeUpdate;
+      v.onended = onEnded;
+      return;
+    }
+
+    v.src = адрес;
     v.onloadedmetadata = function () {
       if (resumeAt > 0 && resumeAt < (v.duration || 1e9)) { try { v.currentTime = resumeAt; } catch (e) {} }
       msg("");
