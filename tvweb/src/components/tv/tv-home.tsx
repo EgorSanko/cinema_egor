@@ -179,10 +179,27 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
     return () => { clearTimeout(пуск); if (шаг) clearInterval(шаг); };
   }, [слабый]);
 
+  // ЧАСЫ ЖИЗНИ. Samsung умирает после «главная нарисована», не загрузив ни
+  // одной картинки, — значит гибнет на самой отрисовке. Сигналы через равные
+  // промежутки покажут, сколько экран прожил: по последнему дошедшему видно,
+  // на какой секунде он погас.
+  useEffect(() => {
+    const метки = [1, 2, 4, 8, 15].map((с) =>
+      setTimeout(() => {
+        try {
+          const i = new Image();
+          i.src = "/tv-error?m=" + encodeURIComponent("жив: " + с + "с после отрисовки");
+        } catch {}
+      }, с * 1000),
+    );
+    return () => { for (const t of метки) clearTimeout(t); };
+  }, []);
+
   const [полокПоказано, setПолокПоказано] = useState(1);
   useEffect(() => {
     if (полокПоказано >= rails.length) return;
-    const t = setTimeout(() => setПолокПоказано((n) => n + 1), 350);
+    // Полки добавляем реже: телевизору нужно время на каждую отрисовку.
+    const t = setTimeout(() => setПолокПоказано((n) => n + 1), 900);
     return () => clearTimeout(t);
   }, [полокПоказано, rails.length]);
   // Если человек ушёл вниз быстрее, чем полки успели появиться, — показываем
@@ -510,18 +527,25 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
                       open(card);
                     }}
                     onFocus={() => { setInHeader(false); setFocus({ rail: rIdx, index: cIdx }); }}
-                    className="group shrink-0 rounded-xl text-left outline-none transition-transform duration-150 ease-out"
+                    className="group shrink-0 rounded-xl text-left outline-none"
+                    // На слабых телевизорах — БЕЗ плавных переходов и без
+                    // увеличения в фокусе. Каждый такой эффект заставляет
+                    // движок пересобирать слои, а их тут семьдесят: именно на
+                    // отрисовке Samsung и гаснет, не дойдя до картинок.
                     style={{
                       width: CARD_W,
-                      transform: focused ? "scale(1.08)" : "scale(1)",
+                      transform: слабый ? undefined : (focused ? "scale(1.08)" : "scale(1)"),
+                      transition: слабый ? undefined : "transform .15s ease-out",
                     }}
                   >
                     <div
                       className="relative overflow-hidden rounded-xl bg-card"
                       style={{
+                        // Тень только у выбранной карточки: рисовать её у
+                        // всех семидесяти — лишняя работа для телевизора.
                         boxShadow: focused
-                          ? "0 0 0 4px var(--primary), 0 16px 40px rgba(0,0,0,0.6)"
-                          : "0 4px 16px rgba(0,0,0,0.4)",
+                          ? (слабый ? "0 0 0 4px var(--primary)" : "0 0 0 4px var(--primary), 0 16px 40px rgba(0,0,0,0.6)")
+                          : (слабый ? "none" : "0 4px 16px rgba(0,0,0,0.4)"),
                       }}
                     >
                       {/* ОКОННАЯ ОТРИСОВКА.
