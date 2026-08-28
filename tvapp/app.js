@@ -282,6 +282,30 @@
     S.screen = name;
   }
 
+  // Рисуем QR обычным SVG из чёрных квадратов.
+  //
+  // Не холстом и без новых возможностей браузера: на телевизорах Егора уже
+  // была история, когда красивая библиотека загружалась, а на экране
+  // оставалась пустота. Квадраты в SVG рисует любой движок.
+  function qrSvg(текст, размер) {
+    try {
+      var qr = qrcode(0, "M");      // 0 — размер подберётся сам, M — средняя стойкость
+      qr.addData(текст);
+      qr.make();
+      var n = qr.getModuleCount(), путь = "";
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          if (qr.isDark(r, c)) путь += "M" + c + " " + r + "h1v1h-1z";
+        }
+      }
+      return '<svg width="' + размер + '" height="' + размер + '" viewBox="0 0 ' + n + " " + n +
+        '" shape-rendering="crispEdges" style="background:#ffffff;border-radius:10px">' +
+        '<path d="' + путь + '" fill="#0a0a0b"/></svg>';
+    } catch (e) {
+      return "";   // не смогли нарисовать — ниже всё равно есть код и адрес
+    }
+  }
+
   // ── Вход по коду ────────────────────────────────────────────────────────
   var pollTimer = null;
   function startLogin() {
@@ -302,10 +326,14 @@
       var url = ORIGIN + "/link/" + d.code;
       el("login-box").innerHTML =
         '<div class="login-title">Вход</div>' +
-        '<div class="login-code">' + esc(d.code) + "</div>" +
-        '<div class="login-hint">Откройте на телефоне<br><b>' + esc(url) + "</b><br>" +
-        "и подтвердите вход. Код живёт несколько минут.<br><br>" +
-        "<b>Не хотите входить? Нажмите OK — откроется каталог.</b></div>";
+        '<div class="login-qr">' + qrSvg(url, 300) + "</div>" +
+        '<div class="login-side">' +
+          '<div class="login-lead">Наведите камеру телефона</div>' +
+          '<div class="login-code">' + esc(d.code) + "</div>" +
+          '<div class="login-hint">или откройте на телефоне<br><b>' + esc(url) + "</b><br>" +
+          "и подтвердите вход. Код живёт несколько минут.<br><br>" +
+          "<b>OK — обновить код</b></div>" +
+        "</div>";
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(function () {
         post("/api/tv-link", { action: "status", code: d.code }, function (st) {
@@ -449,7 +477,11 @@
       var row = S.rows[r];
       // Полке с поиском высота под постеры не нужна — иначе она резервирует
       // 250 точек пустоты и выталкивает следующие полки за нижний край.
-      var поиск = row.items.length === 1 && row.items[0].__search;
+      // Проверяем ПЕРВЫЙ элемент, а не количество: когда рядом с поиском
+      // появилась кнопка «Выйти», элементов стало два, метка перестала
+      // ставиться, и полка вернула себе высоту под постеры — отсюда разрыв в
+      // треть экрана перед «Сейчас в тренде».
+      var поиск = row.items.length > 0 && (row.items[0].__search || row.items[0].__logout);
       h += '<div class="row' + (поиск ? " row-search" : "") + '">' +
            '<div class="row-title">' + esc(row.title) + "</div>";
       h += '<div class="row-strip">';
@@ -964,7 +996,7 @@
   // Пауза дольше секунды сбрасывает обратно на 10 — короткая подводка не
   // превращается в прыжок через полфильма.
   var ШАГИ = [10, 30, 60, 120, 300];
-  var шагИндекс = 0, шагКогда = 0, шагКуда = 0;
+  var шагИндекс = 0, шагКогда = 0, шагКуда = 0, окноШага = null;
   function seek(delta) {
     var v = el("video");
     if (!v.duration) return;
@@ -979,7 +1011,11 @@
     шагКуда = знак;
     var шаг = ШАГИ[шагИндекс] * знак;
     try { v.currentTime = Math.max(0, Math.min(v.duration, (v.currentTime || 0) + шаг)); } catch (e) {}
+    // Показываем шаг и ГАСИМ через секунду. Раньше надпись оставалась на
+    // экране навсегда: я её выводил и не убирал.
     msg(шагИндекс > 0 ? (знак < 0 ? "◀◀ " : "▶▶ ") + ШАГИ[шагИндекс] + " с" : "");
+    if (окноШага) clearTimeout(окноШага);
+    окноШага = setTimeout(function () { msg(""); }, 1000);
     updateProgress();
   }
   function togglePlay() {
@@ -1031,7 +1067,15 @@
   // и уйти с этого экрана можно было только кнопкой «назад» — на телевизоре
   // это неочевидно, человек упирался в экран входа и считал, что всё сломано.
   function loginKey(c) {
-    if (c === K.OK) { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } enterHome(); }
+    // ГОСТЕВОГО ВХОДА БОЛЬШЕ НЕТ.
+    //
+    // Раньше «ОК» на экране входа открывал каталог без учётной записи: человек
+    // смотрел без рекламы и без подписки, а история никуда не сохранялась. В
+    // большой обёртке такого нет, и здесь быть не должно.
+    //
+    // «ОК» теперь просто запрашивает новый код — на случай, если прежний
+    // просрочился, пока искали телефон.
+    if (c === K.OK) startLogin();
   }
 
   function homeKey(c) {
@@ -1232,7 +1276,9 @@
     }
     if (S.screen === "detail") { var p = S.stack.pop(); show(p === "search" ? "search" : "home"); if (p !== "search") renderHome(); return; }
     if (S.screen === "search") { show("home"); renderHome(); return; }
-    if (S.screen === "login") { S.user = null; enterHome(); return; }
+    // На экране входа «назад» никуда не ведёт: выходить в каталог без учётной
+    // записи нельзя, см. loginKey.
+    if (S.screen === "login") return;
     try { if (window.tizen && window.tizen.application) window.tizen.application.getCurrentApplication().exit(); } catch (e) {}
     try { window.close(); } catch (e) {}
   }
@@ -1254,14 +1300,16 @@
     try {
       var окноШ = window.innerWidth || 1280;
       var окноВ = window.innerHeight || 720;
-      // Запас на срезаемые края. Было 6% — Егор говорит, что экран всё равно
-      // закрыт не полностью, значит его телевизор режет меньше. Оставляем 3%:
-      // если где-то начнёт срезать край, это правится одним числом здесь.
-      var запас = 0.97;
+      // Холст растягиваем РОВНО по экрану, без запаса по краям.
+      //
+      // Запас в 6%, потом в 3% Егор видел как чёрные поля снизу и по бокам.
+      // Безопасный отступ и так есть внутри: у каждого экрана свои поля
+      // (.screen в стилях), они и уводят содержимое от края.
+      var запас = 1;
       var kx = (окноШ / 1280) * запас;
       var ky = (окноВ / 720) * запас;
-      var сдвигX = окноШ * 0.015;
-      var сдвигY = окноВ * 0.015;
+      var сдвигX = 0;
+      var сдвигY = 0;
       var app = el("app");
       if (!app) return;
       var правило = "translate(" + сдвигX + "px," + сдвигY + "px) scale(" + kx + "," + ky + ")";

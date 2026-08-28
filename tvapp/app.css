@@ -265,3 +265,20 @@ body {
 .ep .epimg.noimg { background: #202024; }
 .ep { line-height: 56px; padding: 4px 12px; margin-bottom: 6px; }
 .ep .epn, .ep .epname { vertical-align: middle; }
+
+/* Строка «Поиск / Выйти» стояла в обычной полке и тянула за собой её отступы —
+   между ней и «Сейчас в тренде» получался разрыв в пол-экрана. */
+.row-search { margin-bottom: 6px; }
+.row-search .row-strip { height: 70px; }
+.searchbar { height: 56px; line-height: 56px; margin-bottom: 0; }
+
+/* Поля экрана уменьшены: Егор видит их как чёрную рамку слева, справа, сверху
+   и снизу. Немного оставляем — совсем впритык к краю телевизоры срезают. */
+.screen { padding: 12px 22px; }
+
+/* Экран входа: код-картинка слева, пояснения справа. */
+.login-qr { display: inline-block; vertical-align: middle; padding: 12px; background: #ffffff; border-radius: 14px; }
+.login-side { display: inline-block; vertical-align: middle; margin-left: 34px; max-width: 640px; text-align: left; }
+.login-lead { font-size: 22px; color: #ffffff; margin-bottom: 10px; }
+.login-side .login-code { font-size: 40px; letter-spacing: 6px; margin: 6px 0 12px; }
+.login-side .login-hint { font-size: 17px; }
