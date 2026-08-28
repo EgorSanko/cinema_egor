@@ -119,7 +119,10 @@ body {
 .season.current { background: #a3e635; color: #0a0a0b; font-weight: bold; }
 .season.focused { border-color: #a3e635; }
 
-.eps { margin-top: 16px; height: 168px; overflow: hidden; }
+/* Список серий занимает остаток экрана, а не 168 точек: с кадрами в такую
+   коробку не влезали даже две строки — вторая резалась пополам, остальное
+   уходило в пустоту. */
+.eps { margin-top: 14px; height: 300px; overflow: hidden; }
 .ep {
   padding: 9px 12px; font-size: 17px; border: 2px solid transparent;
   border-radius: 6px; background: #18181b; margin-bottom: 5px;
@@ -252,10 +255,13 @@ body {
 .searchbar { display: inline-block; width: 760px; vertical-align: top; }
 
 /* Кадр серии в списке. Раньше строка была из одного номера и названия. */
+/* Кадр серии — компактный: строка целиком должна укладываться в 74 точки
+   вместе с отступом, иначе разъезжается прокрутка (шаг задан в app.js). */
 .ep .epimg {
   display: inline-block; vertical-align: middle;
-  width: 132px; height: 74px; margin-right: 16px;
-  border-radius: 8px; background: #18181b; object-fit: cover;
+  width: 100px; height: 56px; margin-right: 14px;
+  border-radius: 6px; background: #18181b; object-fit: cover;
 }
 .ep .epimg.noimg { background: #202024; }
-.ep { line-height: 1.2; padding: 8px 14px; }
+.ep { line-height: 56px; padding: 4px 12px; margin-bottom: 6px; }
+.ep .epn, .ep .epname { vertical-align: middle; }
