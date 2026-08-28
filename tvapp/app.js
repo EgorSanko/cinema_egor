@@ -759,6 +759,7 @@
   function startPlayback(item, season, episode) {
     S.play.item = item; S.play.season = season || 0; S.play.episode = episode || 0;
     S.play.translations = []; S.play.tr = 0; S.play.overlay = "none";
+    S.play.попыток = 0;
     S.play.zone = "buttons"; S.play.ctrl = 1; S.play.skipTime = null;
     S.play.epList = (typeOf(item) === "tv") ? S.episodes.slice(0) : [];
     show("player");
@@ -904,38 +905,45 @@
         try {
           var im = new Image();
           im.src = "/tv-error?m=" + encodeURIComponent(
-            "плеер ошибка: " + подробность + " фатально:" + !!(d2 && d2.fatal));
+            "плеер ошибка: " + подробность + " фатально:" + !!(d2 && d2.fatal) +
+            " качество:" + S.play.quality);
         } catch (e3) {}
         if (!d2 || !d2.fatal) return;
-        // Телевизор не понял поток — спускаемся на качество ниже и пробуем
-        // снова. Без этого экран навсегда оставался на «Загружаю».
-        if (подробность === "manifestIncompatibleCodecsError" || подробность === "manifestParsingError") {
-          var список = qualityList();
-          var текущее = S.play.quality;
-          var поз = -1;
-          for (var z = 0; z < список.length; z++) {
-            if (список[z] === текущее) { поз = z; break; }
-          }
-          if (поз >= 0 && поз + 1 < список.length) {
-            S.play.quality = список[поз + 1];
-            msg("Пробую качество " + S.play.quality + "…");
-            playTranslation(S.play.tr, false);
-            return;
-          }
-          msg("Телевизор не смог открыть этот поток. Нажмите OK и выберите другую озвучку.");
+
+        // Обработчик ОДИН. Раньше их было два: мой ловил ошибки разбора, а
+        // старый на любую беду звал восстановление — и на bufferAppendError
+        // это уходило в бесконечный круг по три секунды, без картинки.
+
+        // Сеть — просто просим продолжить, это лечится само.
+        if (d2.type === window.Hls.ErrorTypes.NETWORK_ERROR) { h.startLoad(); return; }
+
+        // Всё остальное фатальное означает: ЭТОТ поток телевизор не тянет.
+        // Спускаемся на качество ниже и пробуем снова. Ограничиваем число
+        // попыток, чтобы не крутиться вечно.
+        S.play.попыток = (S.play.попыток || 0) + 1;
+        if (S.play.попыток > 4) {
+          msg("Телевизор не смог открыть этот фильм. Нажмите OK и выберите другую озвучку.");
+          return;
         }
+        var список = qualityList();
+        var поз = -1;
+        for (var z = 0; z < список.length; z++) {
+          if (список[z] === S.play.quality) { поз = z; break; }
+        }
+        if (поз >= 0 && поз + 1 < список.length) {
+          S.play.quality = список[поз + 1];
+          msg("Пробую качество " + S.play.quality + "…");
+          playTranslation(S.play.tr, false);
+          return;
+        }
+        msg("Телевизор не смог открыть этот фильм. Нажмите OK и выберите другую озвучку.");
       });
+
       h.on(window.Hls.Events.MANIFEST_PARSED, function () {
         if (resumeAt > 0) { try { v.currentTime = resumeAt; } catch (e) {} }
         msg("");
         try { v.play(); } catch (e) {}
         flashOverlay();
-      });
-      h.on(window.Hls.Events.ERROR, function (_e, d) {
-        if (!d || !d.fatal) return;
-        if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR) h.startLoad();
-        else if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) h.recoverMediaError();
-        else msg("Не удалось проиграть. Нажмите OK и выберите другую озвучку.");
       });
       v.ontimeupdate = onTimeUpdate;
       v.onended = onEnded;
