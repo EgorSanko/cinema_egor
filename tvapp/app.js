@@ -328,10 +328,20 @@
   // ── Главная ─────────────────────────────────────────────────────────────
   function continueRow() {
     var items = [];
+    // Один тайтл — одна карточка.
+    //
+    // История хранит запись НА КАЖДУЮ СЕРИЮ, поэтому «Холод» показывался
+    // четырьмя одинаковыми карточками подряд. Берём только самую свежую по
+    // каждому тайтлу: история отсортирована от новых к старым, значит первая
+    // встреченная и есть нужная.
+    var виден = {};
     for (var i = 0; i < S.history.length && items.length < 16; i++) {
       var h = S.history[i];
       var pos = getPosition(h.id, h.type, h.season, h.episode);
       if (!pos || !pos.time) continue;
+      var ключ = h.id + ":" + h.type;
+      if (виден[ключ]) continue;
+      виден[ключ] = true;
       // title И name сразу оба — карточка не знает, что именно рисовать. Тип
       // при этом фиксируем явно, иначе «есть title» позже читается как фильм.
       items.push({
@@ -341,6 +351,25 @@
       });
     }
     return items;
+  }
+
+  function выйтиИзАккаунта() {
+    // Убираем и учётку, и местные копии данных: иначе следующий человек увидел
+    // бы чужую историю и «Продолжить просмотр». На сервере всё сохранено и
+    // вернётся при следующем входе.
+    try {
+      lsSet("user", null);
+      var убрать = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && (k === "user" || k.indexOf("kino_") === 0)) убрать.push(k);
+      }
+      for (var j = 0; j < убрать.length; j++) localStorage.removeItem(убрать[j]);
+    } catch (e) {}
+    S.user = null;
+    S.history = [];
+    S.favorites = [];
+    location.reload();
   }
 
   function enterHome() {
@@ -361,7 +390,10 @@
       }
       rows.push({ title: "Избранное", items: favs });
     }
-    rows.push({ title: "", items: [{ __search: true, title: "Поиск" }] });
+    rows.push({ title: "", items: [
+      { __search: true, title: "Поиск" },
+      { __logout: true, title: "Выйти" }
+    ] });
     rows.push({ title: "Сейчас в тренде", items: [] });
     rows.push({ title: "Популярные сериалы", items: [] });
     rows.push({ title: "Новинки", items: [] });
@@ -387,6 +419,13 @@
   }
 
   function cardHtml(item, focused) {
+    if (item.__logout) {
+      // Выход из аккаунта. Раньше его в клиенте не было вовсе: сменить
+      // пользователя на телевизоре было нечем.
+      return '<div class="searchbar logoutbar' + (focused ? " focused" : "") + '">' +
+        '<span class="searchglyph">ВЫЙТИ</span>' +
+        '<span class="searchhint">сменить аккаунт</span></div>';
+    }
     if (item.__search) {
       // Узкая строка вместо плитки в размер постера: ряд экрана она больше не
       // занимает, а нажимается так же.
@@ -964,6 +1003,7 @@
       if (!it) return;
       S.stack.push("home");
       if (it.__search) { openSearch(); return; }
+      if (it.__logout) { выйтиИзАккаунта(); return; }
       openDetail(it);
     }
   }

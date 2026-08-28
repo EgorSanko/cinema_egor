@@ -245,3 +245,8 @@ body {
    он был нулевой высоты — и всё, что привязано к нижнему краю (служебная
    строка состояния), прыгало наверх экрана. */
 #app { position: relative; width: 1280px; height: 720px; }
+
+/* Строка выхода: рядом с поиском, но приглушённая — это не частое действие. */
+.logoutbar { display: inline-block; width: auto; min-width: 320px; margin-left: 14px; }
+.logoutbar .searchglyph { color: #a1a1aa; }
+.searchbar { display: inline-block; width: 760px; vertical-align: top; }
