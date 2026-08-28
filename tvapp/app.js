@@ -361,7 +361,7 @@
       }
       rows.push({ title: "Избранное", items: favs });
     }
-    rows.push({ title: "Найти фильм или сериал", items: [{ __search: true, title: "Поиск" }] });
+    rows.push({ title: "", items: [{ __search: true, title: "Поиск" }] });
     rows.push({ title: "Сейчас в тренде", items: [] });
     rows.push({ title: "Популярные сериалы", items: [] });
     rows.push({ title: "Новинки", items: [] });
@@ -388,8 +388,11 @@
 
   function cardHtml(item, focused) {
     if (item.__search) {
-      return '<div class="card searchcard' + (focused ? " focused" : "") + '">' +
-        '<div class="searchglyph">ПОИСК</div><div class="cap">Название фильма или сериала</div></div>';
+      // Узкая строка вместо плитки в размер постера: ряд экрана она больше не
+      // занимает, а нажимается так же.
+      return '<div class="searchbar' + (focused ? " focused" : "") + '">' +
+        '<span class="searchglyph">ПОИСК</span>' +
+        '<span class="searchhint">название фильма или сериала</span></div>';
     }
     var img = poster(item.poster_path);
     var badge = typeOf(item) === "tv" ? "сериал" : "фильм";
@@ -405,7 +408,11 @@
     var h = "";
     for (var r = 0; r < S.rows.length; r++) {
       var row = S.rows[r];
-      h += '<div class="row"><div class="row-title">' + esc(row.title) + "</div>";
+      // Полке с поиском высота под постеры не нужна — иначе она резервирует
+      // 250 точек пустоты и выталкивает следующие полки за нижний край.
+      var поиск = row.items.length === 1 && row.items[0].__search;
+      h += '<div class="row' + (поиск ? " row-search" : "") + '">' +
+           '<div class="row-title">' + esc(row.title) + "</div>";
       h += '<div class="row-strip">';
       if (!row.items.length) h += '<div class="row-empty">загружаю…</div>';
       for (var c = 0; c < row.items.length; c++) {

@@ -193,13 +193,10 @@ body {
   padding: 10px 18px; font-size: 18px; border-radius: 8px;
 }
 
-/* Карточка «Поиск» первым рядом. Прогон в браузере показал, что жест «влево
-   с первой карточки» не находится: на телевизоре нужен видимый пункт. */
-.searchcard { background: #18181b; }
-.searchglyph {
-  height: 198px; line-height: 198px; text-align: center;
-  font-size: 22px; font-weight: bold; letter-spacing: 3px; color: #a3e635;
-}
+/* Правила старой плитки «Поиск» убраны: она была размером с постер и занимала
+   целый ряд экрана. Её .searchglyph задавал высоту 198 точек — и, оставшись,
+   выталкивал надпись за пределы новой узкой строки, из-за чего та выглядела
+   пустой. Новые правила ниже, в блоке .searchbar. */
 
 /* Строка состояния для диагностики на телевизоре. Мелкая и в углу, но всегда
    на виду: именно она отличает «пусто, потому что сломалось» от «пусто,
@@ -209,3 +206,42 @@ body {
   font-size: 13px; color: #71717a; max-width: 1200px;
   white-space: nowrap; overflow: hidden;
 }
+
+
+/* ── Строка поиска на главной ────────────────────────────────────────────
+   Раньше поиск был плиткой размером с постер и занимал целый ряд экрана:
+   правая половина пустовала, а «Сейчас в тренде» уезжало за нижний край.
+   Теперь это узкая строка во всю ширину. */
+.searchbar {
+  display: block;
+  height: 62px;
+  line-height: 62px;
+  padding: 0 22px;
+  margin-bottom: 6px;
+  background: #18181b;
+  border: 3px solid transparent;
+  border-radius: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.searchbar.focused { border-color: #a3e635; background: #22252a; }
+.searchbar .searchglyph {
+  color: #a3e635;
+  font-weight: bold;
+  letter-spacing: 3px;
+  font-size: 20px;
+  margin-right: 18px;
+}
+.searchbar .searchhint { color: #a1a1aa; font-size: 18px; }
+
+/* Полка без заголовка не должна оставлять пустой отступ сверху. */
+.row-title:empty { display: none; }
+
+/* Полка с поиском: без высоты под постеры. */
+.row-search { margin-bottom: 14px; }
+.row-search .row-strip { height: auto; white-space: normal; }
+
+/* Холсту задаём размер явно. Его содержимое лежит слоями поверх, поэтому сам
+   он был нулевой высоты — и всё, что привязано к нижнему краю (служебная
+   строка состояния), прыгало наверх экрана. */
+#app { position: relative; width: 1280px; height: 720px; }
