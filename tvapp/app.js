@@ -54,6 +54,19 @@
   var K = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 8, ESC: 27, TIZEN_BACK: 10009, WEBOS_BACK: 461,
             PLAY: 415, PAUSE: 19, PLAYPAUSE: 10252, STOP: 413, FWD: 417, REW: 412 };
 
+  // Все коды, которые означают «назад».
+  //
+  // Логика выхода была правильной с самого начала: «назад» сначала прячет
+  // настройки, потом панель управления и только потом закрывает просмотр. Но
+  // Егору казалось, что панель не убрать — потому что до страницы не доходила
+  // САМА КНОПКА. На его пульте приходят коды 1536 и 1537, которых в списке не
+  // было: мы это уже ловили в большой обёртке.
+  var КОДЫ_НАЗАД = [8, 27, 461, 10009, 1536, 1537];
+  function этоНазад(c) {
+    for (var i = 0; i < КОДЫ_НАЗАД.length; i++) if (c === КОДЫ_НАЗАД[i]) return true;
+    return false;
+  }
+
   var S = {
     screen: "login",
     user: null,
@@ -1055,7 +1068,17 @@
   // ── Управление ──────────────────────────────────────────────────────────
   function onKey(e) {
     var c = e.keyCode;
-    if (c === K.TIZEN_BACK || c === K.WEBOS_BACK || c === K.BACK || c === K.ESC) { e.preventDefault(); goBack(); return; }
+    if (этоНазад(c)) { e.preventDefault(); goBack(); return; }
+    // Неопознанные кнопки шлём себе: на телевизоре нет консоли, а пульты у всех
+    // разные. По этим сигналам мы и нашли 1536 и 1537.
+    if (c !== K.LEFT && c !== K.UP && c !== K.RIGHT && c !== K.DOWN && c !== K.OK) {
+      try {
+        var i = new Image();
+        i.src = "/tv-error?m=" + encodeURIComponent(
+          "кнопка без разбора: " + c + " экран:" + S.screen +
+          (S.screen === "player" ? " панель:" + S.play.overlay : ""));
+      } catch (e2) {}
+    }
     if (S.screen === "login") return loginKey(c);
     if (S.screen === "home") return homeKey(c);
     if (S.screen === "search") return searchKey(c);
