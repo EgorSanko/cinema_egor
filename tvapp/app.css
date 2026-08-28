@@ -250,3 +250,12 @@ body {
 .logoutbar { display: inline-block; width: auto; min-width: 320px; margin-left: 14px; }
 .logoutbar .searchglyph { color: #a1a1aa; }
 .searchbar { display: inline-block; width: 760px; vertical-align: top; }
+
+/* Кадр серии в списке. Раньше строка была из одного номера и названия. */
+.ep .epimg {
+  display: inline-block; vertical-align: middle;
+  width: 132px; height: 74px; margin-right: 16px;
+  border-radius: 8px; background: #18181b; object-fit: cover;
+}
+.ep .epimg.noimg { background: #202024; }
+.ep { line-height: 1.2; padding: 8px 14px; }

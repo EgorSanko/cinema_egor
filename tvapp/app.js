@@ -573,7 +573,18 @@
     S.episodes = [];
     renderDetail();
     get("/api/tv-episodes?id=" + S.detail.id + "&season=" + season, function (d) {
-      S.episodes = (d && d.length) ? d : [];
+      var все = (d && d.length) ? d : [];
+      // Только ВЫШЕДШИЕ серии. У «Холода» источник отдаёт десять, а вышло
+      // шесть: остальные с датой в будущем. В логах видно, что Егор заходил в
+      // девятую — там пусто по определению. Серию без даты не прячем: это чаще
+      // пробел в данных, чем будущий эфир.
+      var сегодня = new Date().toISOString().slice(0, 10);
+      var вышли = [];
+      for (var i = 0; i < все.length; i++) {
+        var a = все[i].air_date;
+        if (!a || a <= сегодня) вышли.push(все[i]);
+      }
+      S.episodes = вышли.length ? вышли : все;
       renderDetail();
     });
   }
@@ -597,10 +608,18 @@
     var playLabel = pos && pos.time ? "Продолжить с " + mmss(pos.time) : "Смотреть";
     var favLabel = isFav(item.id, type) ? "В избранном" : "В избранное";
 
-    var btns = '<div class="btns">' +
-      '<span class="btn' + (S.detailZone === "buttons" && S.detailFocus === 0 ? " focused" : "") + '">' + esc(playLabel) + "</span>" +
-      '<span class="btn secondary' + (S.detailZone === "buttons" && S.detailFocus === 1 ? " focused" : "") + '">' + esc(favLabel) + "</span>" +
-      "</div>";
+    // Набор кнопок считаем заранее: «Сначала» появляется, только если есть с
+    // чего продолжать. Иначе она дублировала бы «Смотреть».
+    S.detailBtns = pos && pos.time ? ["play", "restart", "fav"] : ["play", "fav"];
+    var подписи = { play: playLabel, restart: "Сначала", fav: favLabel };
+    var btns = '<div class="btns">';
+    for (var bi = 0; bi < S.detailBtns.length; bi++) {
+      var код = S.detailBtns[bi];
+      btns += '<span class="btn' + (код === "play" ? "" : " secondary") +
+        (S.detailZone === "buttons" && S.detailFocus === bi ? " focused" : "") + '">' +
+        esc(подписи[код]) + "</span>";
+    }
+    btns += "</div>";
 
     var seasonsHtml = "";
     if (type === "tv" && S.seasons.length) {
@@ -621,7 +640,11 @@
         var ep = S.episodes[e];
         var ef = (S.detailZone === "episodes" && S.epFocus === e) ? " focused" : "";
         var epos = getPosition(item.id, "tv", S.season, ep.episode_number);
-        epsHtml += '<div class="ep' + ef + '">' +
+        // Кадр из серии, как в большой обёртке: список из одних номеров
+        // читается плохо.
+        var кадр = ep.still_path ? '<img class="epimg" src="/tmdb-img/w300' + esc(ep.still_path) + '" alt="">'
+                                 : '<span class="epimg noimg"></span>';
+        epsHtml += '<div class="ep' + ef + '">' + кадр +
           '<span class="epn">' + ep.episode_number + "</span>" +
           '<span class="epname">' + esc(ep.name || ("Серия " + ep.episode_number)) + "</span>" +
           (epos && epos.time ? '<span class="epres">с ' + esc(mmss(epos.time)) + "</span>" : "") +
@@ -759,7 +782,8 @@
     var v = el("video");
     var resumeAt = 0;
     if (useResume) {
-      var p = getPosition(S.play.item.id, typeOf(S.play.item), S.play.season, S.play.episode);
+      var p = S.playFromStart ? null : getPosition(S.play.item.id, typeOf(S.play.item), S.play.season, S.play.episode);
+      S.playFromStart = false;
       if (p && p.time > 5) resumeAt = p.time;
     } else {
       resumeAt = v.currentTime || 0;   // смена озвучки и качества не теряет место
@@ -930,10 +954,29 @@
     return S.play.tab === 0 ? S.play.translations.length : qualityList().length;
   }
 
+  // Шаг перемотки РАСТЁТ при удержании.
+  //
+  // Было ровно 10 секунд за нажатие: отмотать час назад — это триста нажатий.
+  // Теперь если жать подряд, шаг увеличивается: 10, 30, 60, 120, 300 секунд.
+  // Пауза дольше секунды сбрасывает обратно на 10 — короткая подводка не
+  // превращается в прыжок через полфильма.
+  var ШАГИ = [10, 30, 60, 120, 300];
+  var шагИндекс = 0, шагКогда = 0, шагКуда = 0;
   function seek(delta) {
     var v = el("video");
     if (!v.duration) return;
-    try { v.currentTime = Math.max(0, Math.min(v.duration, (v.currentTime || 0) + delta)); } catch (e) {}
+    var сейчас = new Date().getTime();
+    var знак = delta < 0 ? -1 : 1;
+    if (сейчас - шагКогда < 1000 && знак === шагКуда) {
+      шагИндекс = Math.min(шагИндекс + 1, ШАГИ.length - 1);
+    } else {
+      шагИндекс = 0;
+    }
+    шагКогда = сейчас;
+    шагКуда = знак;
+    var шаг = ШАГИ[шагИндекс] * знак;
+    try { v.currentTime = Math.max(0, Math.min(v.duration, (v.currentTime || 0) + шаг)); } catch (e) {}
+    msg(шагИндекс > 0 ? (знак < 0 ? "◀◀ " : "▶▶ ") + ШАГИ[шагИндекс] + " с" : "");
     updateProgress();
   }
   function togglePlay() {
@@ -1047,15 +1090,19 @@
   function detailKey(c) {
     var type = typeOf(S.detail);
     if (S.detailZone === "buttons") {
-      if (c === K.RIGHT) { S.detailFocus = Math.min(S.detailFocus + 1, 1); renderDetail(); }
+      var кнопок = (S.detailBtns || ["play", "fav"]).length;
+      if (c === K.RIGHT) { S.detailFocus = Math.min(S.detailFocus + 1, кнопок - 1); renderDetail(); }
       else if (c === K.LEFT) { S.detailFocus = Math.max(S.detailFocus - 1, 0); renderDetail(); }
       else if (c === K.DOWN) {
         if (type === "tv" && S.seasons.length) { S.detailZone = "seasons"; S.detailFocus = indexOfSeason(); }
         else return;
         renderDetail();
       } else if (c === K.OK) {
-        if (S.detailFocus === 0) {
+        var что = (S.detailBtns || ["play", "fav"])[S.detailFocus];
+        if (что === "play" || что === "restart") {
           S.stack.push("detail");
+          // «Сначала» — тот же запуск, но без подхвата сохранённого места.
+          S.playFromStart = (что === "restart");
           if (type === "tv") startPlayback(S.detail, S.season, episodeNumber());
           else startPlayback(S.detail, 0, 0);
           startSaving();
