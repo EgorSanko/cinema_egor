@@ -282,3 +282,11 @@ body {
 .login-lead { font-size: 22px; color: #ffffff; margin-bottom: 10px; }
 .login-side .login-code { font-size: 40px; letter-spacing: 6px; margin: 6px 0 12px; }
 .login-side .login-hint { font-size: 17px; }
+
+/* Строка «Поиск / Выйти»: жёсткая высота с обрезкой.
+   Без неё кнопка «Выйти» заезжала на полку с фильмами — замер показывал, что её
+   низ оказывается ниже верха первой карточки. Теперь выйти за свои границы она
+   не может физически. */
+.row-search { height: 76px; overflow: hidden; margin-bottom: 12px; }
+.row-search .row-strip { height: 60px; overflow: hidden; }
+.searchbar, .logoutbar { height: 56px; line-height: 56px; vertical-align: top; margin-bottom: 0; }
