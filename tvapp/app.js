@@ -729,9 +729,22 @@
   function firstMirror(u) { return String(u || "").split(" or ")[0]; }
 
   var QORDER = ["2160", "1440", "1080", "1080p", "720", "720p", "480", "480p", "360", "360p"];
+  // Качества, которые НЕ выбираем сами.
+  //
+  // На Samsung 2019 года выбор ушёл в 2160, и плеер упал с
+  // manifestIncompatibleCodecsError — телевизор такой поток не раскодирует, а
+  // экран остаётся на «Загружаю». Сам по себе он их не осилит, поэтому по
+  // умолчанию берём не выше 1080. Вручную в настройках выбрать по-прежнему
+  // можно: вдруг телевизор мощнее.
+  var СЛИШКОМ_ВЫСОКИЕ = { "1440": 1, "2160": 1, "4K": 1 };
+
   function pickQuality(q, want) {
     if (want && q[want]) return { url: q[want], q: want };
-    for (var i = 0; i < QORDER.length; i++) if (q[QORDER[i]]) return { url: q[QORDER[i]], q: QORDER[i] };
+    for (var i = 0; i < QORDER.length; i++) {
+      if (q[QORDER[i]] && !СЛИШКОМ_ВЫСОКИЕ[QORDER[i]]) return { url: q[QORDER[i]], q: QORDER[i] };
+    }
+    // Ничего подходящего — берём что есть, лучше попробовать, чем не играть.
+    for (var j = 0; j < QORDER.length; j++) if (q[QORDER[j]]) return { url: q[QORDER[j]], q: QORDER[j] };
     for (var k in q) if (q.hasOwnProperty(k)) return { url: q[k], q: k };
     return null;
   }
@@ -823,6 +836,19 @@
     var t = S.play.translations[idx];
     if (!t) { msg("Эта озвучка не открылась."); return; }
     var pick = pickQuality(t.quality || {}, S.play.quality);
+    // Сигнал о выборе потока. У Егора на одном фильме экран вставал на
+    // «Загружаю»: ссылку сервер отдал (200, 172 КБ), а до плейлиста дело не
+    // дошло. Смотрим, что именно выбралось.
+    try {
+      var кач = [];
+      for (var k in (t.quality || {})) if (t.quality.hasOwnProperty(k)) кач.push(k);
+      var i = new Image();
+      i.src = "/tv-error?m=" + encodeURIComponent(
+        "выбор потока: озвучек " + S.play.translations.length +
+        " качеств [" + кач.join(",") + "]" +
+        " выбрано:" + (pick ? pick.q : "НЕТ") +
+        " ссылка:" + (pick && pick.url ? "есть" : "НЕТ"));
+    } catch (e) {}
     if (!pick) { msg("Источник не отдал ссылку на поток."); return; }
     S.play.tr = idx;
     S.play.quality = pick.q;
@@ -873,6 +899,32 @@
       window.__hls = h;
       h.loadSource(адрес);
       h.attachMedia(v);
+      h.on(window.Hls.Events.ERROR, function (_e2, d2) {
+        var подробность = d2 && d2.details ? d2.details : "?";
+        try {
+          var im = new Image();
+          im.src = "/tv-error?m=" + encodeURIComponent(
+            "плеер ошибка: " + подробность + " фатально:" + !!(d2 && d2.fatal));
+        } catch (e3) {}
+        if (!d2 || !d2.fatal) return;
+        // Телевизор не понял поток — спускаемся на качество ниже и пробуем
+        // снова. Без этого экран навсегда оставался на «Загружаю».
+        if (подробность === "manifestIncompatibleCodecsError" || подробность === "manifestParsingError") {
+          var список = qualityList();
+          var текущее = S.play.quality;
+          var поз = -1;
+          for (var z = 0; z < список.length; z++) {
+            if (список[z] === текущее) { поз = z; break; }
+          }
+          if (поз >= 0 && поз + 1 < список.length) {
+            S.play.quality = список[поз + 1];
+            msg("Пробую качество " + S.play.quality + "…");
+            playTranslation(S.play.tr, false);
+            return;
+          }
+          msg("Телевизор не смог открыть этот поток. Нажмите OK и выберите другую озвучку.");
+        }
+      });
       h.on(window.Hls.Events.MANIFEST_PARSED, function () {
         if (resumeAt > 0) { try { v.currentTime = resumeAt; } catch (e) {} }
         msg("");
