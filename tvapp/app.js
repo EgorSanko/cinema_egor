@@ -413,10 +413,68 @@
     location.reload();
   }
 
+  // ── Подписка и реклама ──────────────────────────────────────────────
+  //
+  // В лёгком клиенте этого не было вовсе: человек без подписки смотрел без
+  // рекламы, то есть бесплатно и без нашего дохода. Переносим из большой
+  // обёртки: тот же адрес подписки и та же пара роликов.
+  var РЕКЛАМА = [
+    { src: "/media/intro2.mp4", пропуск: true },
+    { src: "/media/oldspice.mp4", пропуск: false }
+  ];
+
+  function узнатьПодписку(готово) {
+    var email = S.user && S.user.email;
+    if (!email) { S.pro = false; if (готово) готово(); return; }
+    get("/api/subscription?email=" + encodeURIComponent(email), function (d) {
+      S.pro = !!(d && d.active);
+      try {
+        var i = new Image();
+        i.src = "/tv-error?m=" + encodeURIComponent("подписка: " + (S.pro ? "есть" : "нет"));
+      } catch (e) {}
+      if (готово) готово();
+    });
+  }
+
+  // Проигрываем ролики по очереди в том же плеере. Фильм при этом ещё не
+  // загружается — байты пойдут только после рекламы.
+  function проигратьРекламу(готово) {
+    var v = el("video");
+    var n = 0;
+    S.play.adActive = true;
+    function следующий() {
+      if (n >= РЕКЛАМА.length) {
+        S.play.adActive = false;
+        S.play.adCanSkip = false;
+        msg("");
+        if (готово) готово();
+        return;
+      }
+      var ролик = РЕКЛАМА[n++];
+      S.play.adCanSkip = false;
+      if (window.__hls) { try { window.__hls.destroy(); } catch (e) {} window.__hls = null; }
+      v.src = ролик.src;
+      v.onloadedmetadata = null;
+      v.onerror = function () { следующий(); };   // ролик не открылся — не держим человека
+      v.onended = function () { следующий(); };
+      var подпись = function () {
+        msg("Реклама " + n + " из " + РЕКЛАМА.length +
+            (ролик.пропуск ? (S.play.adCanSkip ? " · OK — пропустить" : " · пропуск через несколько секунд") : ""));
+      };
+      подпись();
+      if (ролик.пропуск) {
+        setTimeout(function () { S.play.adCanSkip = true; подпись(); }, 5000);
+      }
+      try { v.play(); } catch (e) { следующий(); }
+    }
+    следующий();
+  }
+
   function enterHome() {
     diag("главная: загружаю подборки…");
     show("home");
     el("who").innerHTML = S.user ? esc(S.user.name || S.user.email) : "Гость";
+    узнатьПодписку(null);
     loadHome();
   }
 
@@ -736,6 +794,22 @@
   // экран остаётся на «Загружаю». Сам по себе он их не осилит, поэтому по
   // умолчанию берём не выше 1080. Вручную в настройках выбрать по-прежнему
   // можно: вдруг телевизор мощнее.
+  // Качества, которые НЕ выбираем сами.
+  //
+  // Кусок в 1080 весит около 3.4 МБ — это примерно 4-5 Мбит/с. На неровном
+  // канале такой поток проседает, а телевизор 2019 года его ещё и с трудом
+  // раскодирует (мы видели bufferAppendError). Поэтому по умолчанию берём 720:
+  // картинка на телевизоре почти та же, а требований вдвое меньше.
+  //
+  // Вручную в настройках доступно всё, включая 4K.
+  // Что НЕ берём по умолчанию.
+  //
+  // Было заперто и 1080 — потому что телевизор на нём иногда падал с
+  // bufferAppendError, и запуск оканчивался ничем. Теперь есть запасной путь
+  // (отдаём ссылку встроенному плееру, как Деплекс), так что падение 1080
+  // больше не тупик: клиент сам переключится. Поэтому 1080 разрешаем сразу —
+  // человек справедливо не понимал, почему на большом телевизоре стартует 720.
+  // 1440 и 4K по-прежнему не берём молча: их выбирают руками.
   var СЛИШКОМ_ВЫСОКИЕ = { "1440": 1, "2160": 1, "4K": 1 };
 
   function pickQuality(q, want) {
@@ -760,6 +834,8 @@
     S.play.item = item; S.play.season = season || 0; S.play.episode = episode || 0;
     S.play.translations = []; S.play.tr = 0; S.play.overlay = "none";
     S.play.попыток = 0;
+    S.play.adDone = false; S.play.adActive = false; S.play.adCanSkip = false;
+    S.play.встроенным = false;
     S.play.zone = "buttons"; S.play.ctrl = 1; S.play.skipTime = null;
     S.play.epList = (typeOf(item) === "tv") ? S.episodes.slice(0) : [];
     show("player");
@@ -834,6 +910,15 @@
   }
 
   function playTranslation(idx, useResume) {
+    // ГЕЙТ РЕКЛАМЫ. Без подписки фильм не начинает грузиться, пока не
+    // отыграли ролики. Ровно как в большой обёртке.
+    if (!S.pro && !S.play.adDone && !S.play.adActive) {
+      проигратьРекламу(function () {
+        S.play.adDone = true;
+        playTranslation(idx, useResume);
+      });
+      return;
+    }
     var t = S.play.translations[idx];
     if (!t) { msg("Эта озвучка не открылась."); return; }
     var pick = pickQuality(t.quality || {}, S.play.quality);
@@ -893,9 +978,13 @@
     if (адрес.indexOf(".m3u8") >= 0 && window.Hls && window.Hls.isSupported()) {
       var h = new window.Hls({
         enableWorker: false,      // на слабых телевизорах отдельный поток только мешает
-        maxBufferLength: 20,
-        maxMaxBufferLength: 40,
-        backBufferLength: 20
+        // Запас вперёд увеличен с 20 до 45 секунд: на неровном канале провал
+        // в скорости съедается буфером, а не картинкой. Позади держим меньше
+        // (15 с) — назад отматывают редко, а память на этом телевизоре беречь
+        // приходится: именно она его однажды и валила.
+        maxBufferLength: 45,
+        maxMaxBufferLength: 90,
+        backBufferLength: 15
       });
       window.__hls = h;
       h.loadSource(адрес);
@@ -920,23 +1009,42 @@
         // Всё остальное фатальное означает: ЭТОТ поток телевизор не тянет.
         // Спускаемся на качество ниже и пробуем снова. Ограничиваем число
         // попыток, чтобы не крутиться вечно.
-        S.play.попыток = (S.play.попыток || 0) + 1;
-        if (S.play.попыток > 4) {
+        function шагВнизПоКачеству() {
+          S.play.попыток = (S.play.попыток || 0) + 1;
+          if (S.play.попыток > 4) {
+            msg("Телевизор не смог открыть этот фильм. Нажмите OK и выберите другую озвучку.");
+            return;
+          }
+          var список = qualityList();
+          var поз = -1;
+          for (var z = 0; z < список.length; z++) {
+            if (список[z] === S.play.quality) { поз = z; break; }
+          }
+          if (поз >= 0 && поз + 1 < список.length) {
+            S.play.quality = список[поз + 1];
+            msg("Качество " + список[поз] + " телевизор не открыл, пробую " + S.play.quality + "…");
+            playTranslation(S.play.tr, false);
+            return;
+          }
           msg("Телевизор не смог открыть этот фильм. Нажмите OK и выберите другую озвучку.");
+        }
+
+        // СНАЧАЛА — ВСТРОЕННЫЙ ПЛЕЕР, как у Деплекса.
+        //
+        // Фатальная ошибка не из-за сети означает, что через MSE этот поток не
+        // идёт: не тот кодек. Но железный декодер телевизора его, скорее
+        // всего, возьмёт — у Деплекса на этом же телевизоре играет и 4K именно
+        // потому, что ссылка уходит встроенному плееру. Пробуем один раз за
+        // фильм; не вышло — только тогда спускаем качество.
+        if (!S.play.встроенным) {
+          S.play.встроенным = true;
+          try { h.destroy(); } catch (e4) {}
+          window.__hls = null;
+          msg("Пробую проиграть встроенным плеером…");
+          играемВстроенным(адрес, resumeAt, шагВнизПоКачеству);
           return;
         }
-        var список = qualityList();
-        var поз = -1;
-        for (var z = 0; z < список.length; z++) {
-          if (список[z] === S.play.quality) { поз = z; break; }
-        }
-        if (поз >= 0 && поз + 1 < список.length) {
-          S.play.quality = список[поз + 1];
-          msg("Пробую качество " + S.play.quality + "…");
-          playTranslation(S.play.tr, false);
-          return;
-        }
-        msg("Телевизор не смог открыть этот фильм. Нажмите OK и выберите другую озвучку.");
+        шагВнизПоКачеству();
       });
 
       h.on(window.Hls.Events.MANIFEST_PARSED, function () {
@@ -950,6 +1058,30 @@
       return;
     }
 
+    играемВстроенным(адрес, resumeAt, function () {
+      msg("Телевизор не смог открыть этот поток. Нажмите OK и выберите другую озвучку.");
+    });
+  }
+
+  // Отдать ссылку ВСТРОЕННОМУ плееру телевизора.
+  //
+  // Так делает Деплекс, и поэтому у него идёт даже 4K: встроенный плеер
+  // Tizen декодирует железом и берёт HEVC и 10-битный H.264. Наш разбор через
+  // hls.js работает поверх MSE, а MSE на этом телевизоре отдаёт заметно более
+  // короткий список кодеков — отсюда bufferAppendError там, где Деплекс играет.
+  //
+  // Сторожок обязателен: телевизор умеет взять ссылку, отчитаться об успехе и
+  // не пойти за кусками видео (ровно это мы уже ловили). Если за 9 секунд
+  // время не сдвинулось — считаем, что не получилось.
+  function играемВстроенным(адрес, resumeAt, приОшибке) {
+    var v = el("video");
+    var сдался = false;
+    function неполучилось() {
+      if (сдался) return;
+      сдался = true;
+      v.onerror = null;
+      if (приОшибке) приОшибке();
+    }
     v.src = адрес;
     v.onloadedmetadata = function () {
       if (resumeAt > 0 && resumeAt < (v.duration || 1e9)) { try { v.currentTime = resumeAt; } catch (e) {} }
@@ -957,11 +1089,15 @@
       try { v.play(); } catch (e) {}
       flashOverlay();
     };
-    v.onerror = function () {
-      msg("Телевизор не смог открыть этот поток. Нажмите OK и выберите другую озвучку.");
-    };
+    v.onerror = неполучилось;
     v.ontimeupdate = onTimeUpdate;
     v.onended = onEnded;
+    var было = v.currentTime || 0;
+    setTimeout(function () {
+      if (сдался) return;
+      if ((v.currentTime || 0) <= было + 0.2) неполучилось();   // ссылку взял, а видео не идёт
+      else сдался = true;                                        // пошло — сторожок больше не нужен
+    }, 9000);
   }
 
   function msg(t) { el("player-msg").innerHTML = t ? esc(t) : ""; }
@@ -1274,6 +1410,14 @@
 
   function playerKey(c) {
     var v = el("video");
+
+    // Во время рекламы пульт почти не действует: можно только пропустить
+    // ролик, и только когда это разрешено. Иначе человек нечаянно перемотает
+    // или выйдет.
+    if (S.play.adActive) {
+      if (c === K.OK && S.play.adCanSkip) { try { v.onended(); } catch (e) {} }
+      return;
+    }
 
     // Настройки: вкладки сверху, список под ними.
     if (S.play.overlay === "settings") {
