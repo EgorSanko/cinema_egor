@@ -819,6 +819,23 @@
   // ── Плеер ───────────────────────────────────────────────────────────────
   // Устройство ровно как в веб-обёртке: оверлей «нет → управление → настройки»,
   // панель сама прячется через 5 секунд, таймлайн — отдельная зона фокуса.
+  // Обойти КЭШ ТЕЛЕВИЗОРА.
+  //
+  // Из-за него мы полдня чинили не то. Телевизор держал у себя ответ о потоках
+  // многомесячной давности: в нём было 8 озвучек и 4K, которых у источника
+  // давно нет. Клиент честно пробовал их играть, получал «несовместимый
+  // манифест» и падения на всех качествах подряд — а в логах сервера при этом
+  // не было НИ ОДНОГО запроса, потому что телевизор никуда и не ходил.
+  //
+  // Метка меняется раз в час: этого хватает, чтобы телевизор перезапросил
+  // свежее, и при этом общий кэш на сервере продолжает работать — иначе
+  // каждый запуск ждал бы разбора страницы источника заново.
+  function безСтарогоКэша(u) {
+    if (!u) return u;
+    var час = Math.floor(new Date().getTime() / 3600000);
+    return u + (u.indexOf("?") >= 0 ? "&" : "?") + "_=" + час;
+  }
+
   function firstMirror(u) { return String(u || "").split(" or ")[0]; }
 
   var QORDER = ["2160", "1440", "1080", "1080p", "720", "720p", "480", "480p", "360", "360p"];
@@ -893,15 +910,15 @@
               "&year=" + encodeURIComponent(year) + "&type=movie";
       var ot = item.original_title || item.original_name;
       if (ot && ot !== titleOf(item)) p += "&otitle=" + encodeURIComponent(ot);
-      return RESOLVE + "/vkmovie?" + p;
+      return безСтарогоКэша(RESOLVE + "/vkmovie?" + p);
     }
 
     tmdb("/" + type + "/" + item.id + "/external_ids", {}, function (ids) {
       var imdb = ids && ids.imdb_id;
       if (imdb) {
-        steps.push({ url: RESOLVE + "/alloha-hls?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail,
+        steps.push({ url: безСтарогоКэша(RESOLVE + "/alloha-hls?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail),
                      note: "" });
-        steps.push({ url: RESOLVE + "/cdnhub?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail,
+        steps.push({ url: безСтарогоКэша(RESOLVE + "/cdnhub?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail),
                      note: "Основной источник молчит, пробую запасной…" });
       }
       var nameUrl = byName();
@@ -984,7 +1001,7 @@
       resumeAt = v.currentTime || 0;   // смена озвучки и качества не теряет место
     }
     msg("Загружаю…");
-    var адрес = firstMirror(pick.url);
+    var адрес = безСтарогоКэша(firstMirror(pick.url));
 
     // Играем САМИ, если телевизор не умеет HLS встроенно.
     //
@@ -1019,9 +1036,17 @@
         var подробность = d2 && d2.details ? d2.details : "?";
         try {
           var im = new Image();
+          // Пишем НАСТОЯЩУЮ причину отказа, а не только название события.
+          // bufferAppendError бывает и от нехватки памяти (QuotaExceededError),
+          // и от негодного содержимого — по одному названию их не различить, а
+          // лечатся они по-разному. Заодно отмечаем, какая дорожка упала.
+          var э = (d2 && (d2.err || d2.error)) || null;
           im.src = "/tv-error?m=" + encodeURIComponent(
             "плеер ошибка: " + подробность + " фатально:" + !!(d2 && d2.fatal) +
-            " качество:" + S.play.quality);
+            " качество:" + S.play.quality +
+            " причина:" + (э && (э.name || э.message) ? (э.name || "") + " " + (э.message || "").slice(0, 60) : "нет") +
+            " дорожка:" + ((d2 && d2.parent) || "?") +
+            " буфер:" + (S.play.буферУрезан ? "урезан" : "обычный"));
         } catch (e3) {}
         if (!d2 || !d2.fatal) return;
 
@@ -1320,6 +1345,19 @@
       pushSync();
     }
     if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
+
+    // Снести РАЗБОР ПОТОКА, а не только видео.
+    //
+    // Здесь был баг: закрываешь фильм, уходишь на главную, а звук продолжает
+    // идти. Причина — hls живёт сам по себе: он держит поток и подаёт куски в
+    // элемент, которому мы всего лишь убрали адрес. Пока не снесёшь разбор,
+    // звук не замолчит.
+    if (window.__hls) { try { window.__hls.destroy(); } catch (e) {} window.__hls = null; }
+
+    // Оборвать и рекламу: без этого её цепочка доигрывает ролики в фоне.
+    S.play.adActive = false; S.play.adCanSkip = false;
+    v.onended = null; v.onerror = null; v.onloadedmetadata = null; v.ontimeupdate = null;
+
     try { v.pause(); } catch (e) {}
     v.removeAttribute("src");
     try { v.load(); } catch (e) {}
@@ -1481,7 +1519,12 @@
     // ролик, и только когда это разрешено. Иначе человек нечаянно перемотает
     // или выйдет.
     if (S.play.adActive) {
-      if (c === K.OK && S.play.adCanSkip) { try { v.onended(); } catch (e) {} }
+      // Выйти можно ВСЕГДА. Раньше пульт был заблокирован целиком, и из
+      // рекламы нельзя было уйти вообще — только выключать телевизор.
+      if (c === K.BACK || c === 8 || c === 10009 || c === 1536 || c === 1537) {
+        stopPlayback(); show("detail"); renderDetail(); return;
+      }
+      if (c === K.OK && S.play.adCanSkip && v.onended) { try { v.onended(); } catch (e) {} }
       return;
     }
 
