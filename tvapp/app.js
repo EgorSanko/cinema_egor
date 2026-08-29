@@ -168,6 +168,18 @@
     r.send(body ? JSON.stringify(body) : null);
   }
   function get(url, cb) { xhr("GET", url, null, cb); }
+  function получитьТекст(url, cb) {
+    var r = new XMLHttpRequest();
+    r.open("GET", url, true);
+    r.timeout = 15000;
+    r.onreadystatechange = function () {
+      if (r.readyState !== 4) return;
+      cb(r.status >= 200 && r.status < 300 ? r.responseText : null);
+    };
+    r.ontimeout = function () { cb(null); };
+    r.onerror = function () { cb(null); };
+    r.send(null);
+  }
   function post(url, body, cb) { xhr("POST", url, body, cb); }
 
   function tmdb(path, params, cb) {
@@ -435,6 +447,8 @@
     ["H.264 10 бит",   'video/mp4; codecs="avc1.6E0033"'],
     ["HEVC",           'video/mp4; codecs="hvc1.1.6.L93.B0"'],
     ["HEVC (hev1)",    'video/mp4; codecs="hev1.1.6.L93.B0"'],
+    ["H.264 уровень 5.0", 'video/mp4; codecs="avc1.4d4032"'],
+    ["AV1",            'video/mp4; codecs="av01.0.12M.08"'],
     ["AAC",            'audio/mp4; codecs="mp4a.40.2"'],
     ["EC-3",           'audio/mp4; codecs="ec-3"'],
     ["куски MPEG-TS",  'video/mp2t; codecs="avc1.42E01E,mp4a.40.2"']
@@ -888,6 +902,7 @@
     S.play.попыток = 0;
     S.play.adDone = false; S.play.adActive = false; S.play.adCanSkip = false;
     S.play.встроенным = false; S.play.буферУрезан = false;
+    S.play.проверенАдрес = "";
     S.play.zone = "buttons"; S.play.ctrl = 1; S.play.skipTime = null;
     S.play.epList = (typeOf(item) === "tv") ? S.episodes.slice(0) : [];
     show("player");
@@ -1027,6 +1042,32 @@
         "плеер: " + ((window.Hls && window.Hls.isSupported()) ? "свой разбор" : "встроенный"));
     } catch (e) {}
 
+    // Сначала СПРОСИМ У ПЛЕЙЛИСТА, потянет ли телевизор этот вариант, и
+    // только потом запускаем. Иначе получается вечная загрузка: плеер честно
+    // качает, декодер молча отказывается, человек смотрит в чёрный экран.
+    if (адрес.indexOf(".m3u8") >= 0 && S.play.проверенАдрес !== адрес) {
+      получитьТекст(адрес, function (текст) {
+        S.play.проверенАдрес = адрес;
+        var в = потянетЛи(текст);
+        if (в.ок) { playTranslation(idx, useResume); return; }
+
+        маяк("не потянет " + S.play.quality + ": " + в.почему);
+        var список = qualityList(), поз = -1;
+        for (var z = 0; z < список.length; z++) {
+          if (список[z] === S.play.quality) { поз = z; break; }
+        }
+        if (поз >= 0 && поз + 1 < список.length) {
+          var было = S.play.quality;
+          S.play.quality = список[поз + 1];
+          msg("Телевизор не тянет " + было + " у этого фильма, включаю " + S.play.quality + "…");
+          playTranslation(idx, useResume);
+          return;
+        }
+        msg("Телевизор не тянет ни один вариант этого фильма. Попробуйте другую озвучку.");
+      });
+      return;
+    }
+
     if (адрес.indexOf(".m3u8") >= 0 && window.Hls && window.Hls.isSupported()) {
       var h = new window.Hls(настройкиБуфера(!!S.play.буферУрезан));
       window.__hls = h;
@@ -1158,6 +1199,42 @@
       maxMaxBufferLength: урезанный ? 12 : 30,
       backBufferLength: 0
     };
+  }
+
+  // ПОТЯНЕТ ЛИ ТЕЛЕВИЗОР ЭТОТ ВАРИАНТ.
+  //
+  // «Всё остальное играет в 1080, а этот фильм нет» — потому что раздачи
+  // бывают разные. У «Начала», например: 2160 и 1440 отданы в AV1, которого
+  // телевизоры до 2020 не умеют вовсе, а 1080 — это кадр 2592x1080 в H.264
+  // уровня 5.0. Железо тех лет берёт до уровня 4.2 и ширины 1920, поэтому
+  // приходил bufferAppendError, и человек видел вечную загрузку.
+  //
+  // На isTypeSupported полагаться нельзя: браузер на телевизоре отвечает «да»
+  // почти на любой уровень, а декодер потом отказывается. Поэтому смотрим
+  // ЧИСЛА из самого плейлиста — ширину кадра и уровень кодека.
+  var ПРЕДЕЛ_ШИРИНЫ = 1920;
+  var ПРЕДЕЛ_УРОВНЯ = 0x2A;   // 4.2
+
+  function потянетЛи(плейлист) {
+    if (!плейлист) return { ок: true };            // не смогли прочитать — не мешаем
+    var к = /CODECS="([^"]*)"/.exec(плейлист);
+    var р = /RESOLUTION=([0-9]+)x([0-9]+)/.exec(плейлист);
+    var кодеки = к ? к[1] : "";
+    var ширина = р ? parseInt(р[1], 10) : 0;
+
+    if (/av01|vp09|vp9/i.test(кодеки)) {
+      var умеет = false;
+      try { умеет = !!(window.MediaSource && window.MediaSource.isTypeSupported('video/mp4; codecs="' + кодеки.split(",")[0] + '"')); } catch (e) {}
+      if (!умеет) return { ок: false, почему: "кодек " + кодеки.split(",")[0] + " телевизору незнаком" };
+    }
+    var ур = /avc1\.[0-9a-f]{4}([0-9a-f]{2})/i.exec(кодеки);
+    if (ур && parseInt(ур[1], 16) > ПРЕДЕЛ_УРОВНЯ) {
+      return { ок: false, почему: "H.264 уровня " + (parseInt(ур[1], 16) / 10).toFixed(1) + " выше предела телевизора" };
+    }
+    if (ширина > ПРЕДЕЛ_ШИРИНЫ) {
+      return { ок: false, почему: "кадр шириной " + ширина + " шире, чем берёт телевизор" };
+    }
+    return { ок: true, ширина: ширина, кодеки: кодеки };
   }
 
   function играемВстроенным(адрес, resumeAt, приОшибке) {
