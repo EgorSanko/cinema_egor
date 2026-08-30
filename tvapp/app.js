@@ -387,21 +387,86 @@
     // четырьмя одинаковыми карточками подряд. Берём только самую свежую по
     // каждому тайтлу: история отсортирована от новых к старым, значит первая
     // встреченная и есть нужная.
+    //
+    // ВАЖНО про сериалы. Раньше карточка строилась только от точки резюме, а
+    // досмотренная серия такой точки не оставляет — она помечается пройденной.
+    // Из-за этого сериал ИСЧЕЗАЛ с телевизора, стоило досмотреть серию:
+    // «Офис» смотрелся на компьютере, а на телевизоре его в ленте не было
+    // вовсе, и это выглядело как несинхронизированный аккаунт. Теперь, как на
+    // сайте: досмотрел серию — предлагаем следующую.
+    var досм = {}, серийВСезоне = {}, сезоновУШоу = {};
+    for (var d = 0; d < S.history.length; d++) {
+      var x = S.history[d];
+      if (x.type !== "tv") continue;
+      if (x.episodeCount && x.season) серийВСезоне[x.id + "|" + x.season] = x.episodeCount;
+      if (x.seasonCount) сезоновУШоу[x.id] = x.seasonCount;
+      if (!x.season || !x.episode || !(x.duration > 0)) continue;
+      if ((x.progress || 0) / x.duration >= 0.95) досм[x.id + "|" + x.season + "|" + x.episode] = true;
+    }
+
+    // Следующая серия с учётом границ сезона, если они нам известны.
+    function следующая(id, с, э) {
+      var всего = серийВСезоне[id + "|" + с];
+      if (всего) {
+        if (э < всего) return { s: с, e: э + 1 };
+        var сез = сезоновУШоу[id];
+        if (сез && с < сез) return { s: с + 1, e: 1 };
+        return null;                       // финал сериала
+      }
+      return { s: с, e: э + 1 };           // счётчиков нет — ведём по порядку
+    }
+
     var виден = {};
     for (var i = 0; i < S.history.length && items.length < 16; i++) {
       var h = S.history[i];
-      var pos = getPosition(h.id, h.type, h.season, h.episode);
-      if (!pos || !pos.time) continue;
       var ключ = h.id + ":" + h.type;
       if (виден[ключ]) continue;
-      виден[ключ] = true;
+
+      var pos = getPosition(h.id, h.type, h.season, h.episode);
+      var дл = h.duration || 0;
+      var досмотрено = дл > 0 && (h.progress || 0) / дл >= 0.95;
+
       // title И name сразу оба — карточка не знает, что именно рисовать. Тип
       // при этом фиксируем явно, иначе «есть title» позже читается как фильм.
-      items.push({
+      var карточка = {
         id: h.id, title: h.title, name: h.title, poster_path: h.poster_path,
-        type: h.type, __kind: h.type === "tv" ? "tv" : "movie",
-        __resume: pos.time, __season: h.season, __episode: h.episode
-      });
+        type: h.type, __kind: h.type === "tv" ? "tv" : "movie"
+      };
+
+      if (h.type !== "tv") {
+        виден[ключ] = true;
+        if (!pos || !pos.time) continue;   // фильм досмотрен — карточку не показываем
+        карточка.__resume = pos.time;
+        items.push(карточка);
+        continue;
+      }
+
+      виден[ключ] = true;
+
+      if (досмотрено && h.season && h.episode) {
+        var цель = следующая(h.id, h.season, h.episode);
+        if (!цель) continue;               // это был финал — сериал уходит из ленты
+        // Перешагиваем то, что уже досмотрено: человек мог вернуться назад за
+        // пропущенной серией, и тогда «следующая за последней открытой» увела
+        // бы его на несколько серий назад.
+        var шагов = 0;
+        while (цель && досм[h.id + "|" + цель.s + "|" + цель.e] && шагов++ < 400) {
+          цель = следующая(h.id, цель.s, цель.e);
+        }
+        if (!цель) continue;               // всё досмотрено до самого финала
+        карточка.__season = цель.s;
+        карточка.__episode = цель.e;
+        карточка.__next = true;
+        items.push(карточка);
+        continue;
+      }
+
+      // Серия не досмотрена — возвращаем на неё же.
+      карточка.__season = h.season;
+      карточка.__episode = h.episode;
+      if (pos && pos.time) карточка.__resume = pos.time;
+      else if (!h.season) continue;        // фильма без точки тут быть не должно
+      items.push(карточка);
     }
     return items;
   }
@@ -584,7 +649,8 @@
     var img = poster(item.poster_path);
     var badge = typeOf(item) === "tv" ? "сериал" : "фильм";
     var resume = "";
-    if (item.__resume) resume = '<div class="resume">с ' + esc(mmss(item.__resume)) + "</div>";
+    if (item.__next) resume = '<div class="resume">S' + item.__season + "E" + item.__episode + "</div>";
+    else if (item.__resume) resume = '<div class="resume">с ' + esc(mmss(item.__resume)) + "</div>";
     return '<div class="card' + (focused ? " focused" : "") + '">' +
       (img ? '<img src="' + esc(img) + '" alt="">' : '<div class="noposter">' + esc(titleOf(item)) + "</div>") +
       '<div class="badge">' + badge + "</div>" + resume +
@@ -691,6 +757,7 @@
     S.detailZone = "buttons";
     S.seasons = []; S.episodes = []; S.epFocus = 0;
     S.season = item.__season || 1;
+    S.нужнаСерия = item.__next ? (item.__episode || 0) : 0;
     show("detail");
     renderDetail();
     var type = typeOf(item);
@@ -737,6 +804,20 @@
         if (!a || a <= сегодня) вышли.push(все[i]);
       }
       S.episodes = вышли.length ? вышли : все;
+
+      // Встать на ту серию, ради которой пришли из «Продолжить просмотр».
+      // Иначе карточка «S5E12» открывала сезон, а курсор стоял на первой серии
+      // — человеку пришлось бы искать своё место руками.
+      if (S.нужнаСерия) {
+        for (var ni = 0; ni < S.episodes.length; ni++) {
+          if (S.episodes[ni].episode_number === S.нужнаСерия) {
+            S.epFocus = ni;
+            S.detailZone = "episodes";
+            break;
+          }
+        }
+        S.нужнаСерия = 0;
+      }
       renderDetail();
     });
   }
