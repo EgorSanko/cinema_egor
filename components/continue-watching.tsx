@@ -54,6 +54,14 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
     if (h.episodeCount != null && h.season != null) epCountByShowSeason.set(`${h.id}|${h.season}`, h.episodeCount);
     if (h.seasonCount != null) seasonCountByShow.set(h.id, h.seasonCount);
   }
+  // Какие серии уже досмотрены — чтобы «Продолжить» не отправляло туда, где
+  // человек уже был.
+  const досмотренные = new Set<string>();
+  for (const h of history) {
+    if (h.type !== "tv" || !h.season || !h.episode || !(h.duration > 0)) continue;
+    if (h.progress / h.duration >= 0.95) досмотренные.add(`${h.id}|${h.season}|${h.episode}`);
+  }
+
   const epCountOf = (h: HistoryItem) => h.episodeCount ?? (h.season != null ? epCountByShowSeason.get(`${h.id}|${h.season}`) : undefined);
   const seasonCountOf = (h: HistoryItem) => h.seasonCount ?? seasonCountByShow.get(h.id);
 
@@ -85,12 +93,39 @@ function buildContinueItems(history: HistoryItem[]): ContinueItem[] {
       if (isFinished && h.season && h.episode) {
         const next = nextFromCounts(h.season, h.episode, epCount, seasonCountOf(h));
         if (next === null) continue; // это был финал сериала — карточку не показываем
+
+        // ПЕРЕШАГИВАЕМ то, что уже досмотрено.
+        //
+        // Самая свежая запись по времени — не то же самое, что место в
+        // сериале. Бывает, что человек уходит назад добрать пропущенную серию:
+        // в «Офисе» была досмотрена 11-я, а последней открытой оказалась 7-я —
+        // и лента предлагала 8-ю, то есть отправляла на четыре серии назад.
+        // Поэтому от кандидата шагаем вперёд, пока серии уже досмотрены.
+        let цель = next;
+        let шагов = 0;
+        while (
+          цель &&
+          досмотренные.has(`${h.id}|${цель.launchSeason}|${цель.launchEpisode}`) &&
+          шагов++ < 400
+        ) {
+          цель = nextFromCounts(
+            цель.launchSeason,
+            цель.launchEpisode,
+            epCountByShowSeason.get(`${h.id}|${цель.launchSeason}`),
+            seasonCountOf(h),
+          );
+        }
+
+        // Дошли до конца и всё досмотрено — значит это пересмотр, а не
+        // продолжение: ведём по порядку от только что законченной серии.
+        const итог = цель ?? next;
+
         items.push({
           ...h,
-          launchSeason: next.launchSeason,
-          launchEpisode: next.launchEpisode,
+          launchSeason: итог.launchSeason,
+          launchEpisode: итог.launchEpisode,
           isNextEpisode: true,
-          _unverified: epCount == null,
+          _unverified: (epCountByShowSeason.get(`${h.id}|${итог.launchSeason}`) ?? epCount) == null,
         });
       } else {
         // Серия НЕ досмотрена (в т.ч. только начата, даже ≤30 c) — продолжаем с
