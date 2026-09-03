@@ -50,6 +50,14 @@ type HeaderCell = "search" | "logout";
  * (started-but-unfinished, deduped, most-recent-first) and PREPENDED to the
  * server rails so it reflects the logged-in user's synced history.
  */
+// Сколько пикселей телевизор может срезать по краю кадра.
+//
+// Overscan: телевизор показывает не весь кадр, а обрезанный на несколько
+// процентов с каждой стороны. Поэтому всё, что прижато к краю, на реальном
+// экране частично исчезает — у Сани так разрезало шапку с почтой, «Поиском»
+// и «Выйти».
+const БЕЗОПАСНЫЙ_КРАЙ = 44;
+
 export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
   const router = useRouter();
 
@@ -345,7 +353,18 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
           // служебных классов правая часть уезжала на середину экрана.
           // Видимость при запуске обеспечивает отступ от края у содержимого:
           // телевизор срезает край кадра.
-          height: 92,
+          // БЕЗОПАСНАЯ ГРАНИЦА СВЕРХУ.
+          //
+          // Шапка стояла вплотную к краю кадра, и на телевизоре Сани её
+          // разрезало пополам: телевизоры срезают несколько процентов картинки
+          // по краям (overscan), и первым под нож попадает как раз верх.
+          // В обёртке у нас для этого был отступ 3vh, а на страницах сайта его
+          // не было вовсе.
+          //
+          // 44 пикселя при кадре 1080 — это примерно 4%, с запасом покрывает
+          // типичный срез и при этом не съедает экран.
+          height: 92 + БЕЗОПАСНЫЙ_КРАЙ,
+          paddingTop: БЕЗОПАСНЫЙ_КРАЙ,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -419,7 +438,7 @@ export function TvHome({ rails: serverRails }: { rails: TvRail[] }) {
         // Высота — всё, что осталось под шапкой. calc и обычная прокрутка
         // понятны любому движку; ни flex-1, ни новых свойств здесь нет
         // намеренно: именно на них мы уже дважды обожглись.
-        style={{ height: "calc(100% - 92px)", overflowY: "auto" }}
+        style={{ height: `calc(100% - ${92 + БЕЗОПАСНЫЙ_КРАЙ}px)`, overflowY: "auto", paddingBottom: БЕЗОПАСНЫЙ_КРАЙ }}
       >
         {rails.slice(0, полокПоказано).map((rail, rIdx) => (
           <section key={rail.title}>

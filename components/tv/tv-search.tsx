@@ -266,7 +266,7 @@ export function TvSearch() {
       style={{ background: "var(--background)", height: "100%", overflow: "hidden" }}
     >
       {/* Query display */}
-      <header className="px-12 pt-8 pb-5">
+      <header className="px-12 pt-[44px] pb-5">
         <div className="mb-2 text-sm font-semibold uppercase tracking-widest text-muted-foreground">
           Поиск
         </div>
