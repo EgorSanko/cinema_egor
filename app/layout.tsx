@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Righteous, Oswald } from "next/font/google";
 import Script from "next/script";
 import type React from "react";
 import "./globals.css";
+import { SiteFooter } from "@/components/site-footer";
 import { AuthProvider } from "@/components/auth-context";
 import { AuthGate } from "@/components/auth-gate";
 import { MobileNav } from "@/components/mobile-nav";
@@ -115,6 +116,7 @@ export default function RootLayout({
         `}</Script>
         <AuthProvider>
           {children}
+          <SiteFooter />
           <AuthGate />
           <SubscriptionEnforcer />
         </AuthProvider>
