@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, type KinoSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { ProblemReport } from "./problem-report";
@@ -83,6 +83,40 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     [allohaHls],
   );
   // Нативный резолв Alloha ИЛИ VkMovie (форма ответа одинаковая, плеер общий).
+  // ЧЕСТНО ГОВОРИМ, ЧТО У ЭТОГО ПЛЕЕРА ФИЛЬМА НЕТ.
+  //
+  // Раньше при пустом ответе мы молча уходили на следующий источник, и человек
+  // видел одно и то же, сколько ни переключай. Реальный случай: «Мэйдэй» —
+  // у Alloha и Rutube его нет вовсе, а cdnhub и vkmovie отдают один и тот же
+  // рип с okcdn. Со стороны это выглядело как сломанный переключатель.
+  //
+  // Теперь при промахе опрашиваем остальные источники и пишем, у каких фильм
+  // есть. Опрос идёт ТОЛЬКО когда промах случился — на обычном просмотре
+  // лишних запросов нет. Показываем только Про: переключатель плееров всё
+  // равно есть только у них.
+  const [нехватка, setНехватка] = useState<{
+    выбран: KinoSource; сыграл: KinoSource | null; есть: KinoSource[];
+  } | null>(null);
+
+  const проверитьДоступность = useCallback(async (выбран: KinoSource, сыграл: KinoSource | null) => {
+    if (!isProRef.current) return;
+    const год = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
+    const назв = movie.title || "";
+    const ориг = (movie as any).original_title;
+    const проверки: [KinoSource, Promise<unknown>][] = [
+      ["alloha", resolveAllohaHls(movie.id, "movie")],
+      ["kinopub", resolveKinopub({ tmdbId: movie.id, type: "movie", title: назв, year: год, otitle: ориг })],
+      ["vkmovie", resolveVkMovie(назв, год, ориг)],
+      ["cdnhub", resolveCdnHub(movie.id, "movie")],
+      ["rutube", resolveRutube(назв, год, ориг)],
+    ];
+    const итог = await Promise.all(
+      проверки.map(async ([и, зпр]) => { try { return (await зпр) ? и : null; } catch { return null; } }),
+    );
+    setНехватка({ выбран, сыграл, есть: итог.filter(Boolean) as KinoSource[] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movie.id]);
+
   const resolveAllohaNative = useCallback(async (): Promise<boolean> => {
     // ПУТЬ B (монетизация): FREE (подписка загружена, не Pro) с источником alloha
     // → плеер Alloha с белой рекламой (доход на наш токен). Рендерим как iframe
@@ -93,6 +127,10 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     }
     let a: AllohaHls | null;
     let defQ = "1080";
+    const выбран = getSource();
+    // Кто на самом деле отдал поток. Может отличаться от выбранного: ветка
+    // Alloha ниже сама уходит на cdnhub и vkmovie, если у Alloha пусто.
+    let сыграл: KinoSource | null = выбран;
     if (getSource() === "vkmovie") {
       const yr = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
       a = await resolveVkMovie(movie.title || "", yr, (movie as any).original_title);
@@ -111,22 +149,26 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
       a = ALLOHA_UP ? await resolveAllohaHls(movie.id, "movie") : null;
       if (!a) {
         a = await resolveCdnHub(movie.id, "movie");
-        if (a) defQ = "1080p";
+        if (a) { defQ = "1080p"; сыграл = "cdnhub"; }
       }
       if (!a) {
         const yr = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
         a = await resolveVkMovie(movie.title || "", yr, (movie as any).original_title);
-        if (a) defQ = "1080p";
+        if (a) { defQ = "1080p"; сыграл = "vkmovie"; }
       }
     }
-    if (!a) return false;
+    if (!a) { проверитьДоступность(выбран, null); return false; }
     const pick = pickAllohaStream(a, 0, defQ);
     if (!pick) return false;
     setAllohaHls(a); setAllohaTr(0); setAllohaQ(pick.quality);
     setStreamData({ stream: pick.url, alloha: true });
+    // Подменили источник — надо об этом сказать, а не делать вид, что всё по
+    // выбору человека.
+    if (сыграл !== выбран) проверитьДоступность(выбран, сыграл);
+    else setНехватка(null);
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [movie.id]);
+  }, [movie.id, проверитьДоступность]);
   // ПУТЬ B: как только тариф известен и это FREE на alloha — переключаем на плеер
   // Alloha с рекламой (до старта). Без этого прогрев мог зарезолвить нативный
   // (пока подписка грузилась) → free смотрел бы без рекламы = минус доход.
@@ -846,6 +888,41 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
 
         {/* Переключатель плеера (Про) — под плеером, не поверх видео. */}
         {!cssFullscreen && <div className="order-3"><PlayerSwitcher /></div>}
+
+        {/* У этого плеера фильма нет — и у каких есть. */}
+        {!cssFullscreen && isPro && нехватка && (
+          <div className="order-3 text-[13px] leading-relaxed text-muted-foreground">
+            {нехватка.есть.length === 0 ? (
+              <span>Этого фильма нет ни у одного плеера.</span>
+            ) : (
+              <>
+                <span>
+                  У {playerLabel(нехватка.выбран).replace("Плеер", "Плеера")} нет этого фильма
+                  {нехватка.сыграл ? <> — включил {playerLabel(нехватка.сыграл)}</> : null}.
+                </span>{" "}
+                {нехватка.есть.filter((и) => и !== нехватка.сыграл).length > 0 && (
+                  <>
+                    <span>Есть у: </span>
+                    {нехватка.есть
+                      .filter((и) => и !== нехватка.сыграл)
+                      .map((и, n, сп) => (
+                        <span key={и}>
+                          <button
+                            type="button"
+                            onClick={() => { setSource(и); window.location.reload(); }}
+                            className="text-foreground underline underline-offset-2 hover:text-primary"
+                          >
+                            {playerLabel(и)}
+                          </button>
+                          {n < сп.length - 1 ? ", " : ""}
+                        </span>
+                      ))}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {/* «Сообщить о проблеме» — под плеером, для всех (не только Про). */}
         {!cssFullscreen && (
