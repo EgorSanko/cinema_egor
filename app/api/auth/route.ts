@@ -19,7 +19,7 @@ function authSuccess(email: string, user: { email: string; name: string }) {
 
 const USERS_FILE = path.join(process.cwd(), "users.json");
 
-type StoredUser = { email: string; password: string; name: string; verified?: boolean; subscription?: unknown };
+type StoredUser = { email: string; password: string; name: string; verified?: boolean; subscription?: unknown; createdAt?: number };
 
 function getUsers(): Record<string, StoredUser> {
   try {
@@ -114,7 +114,10 @@ export async function POST(req: NextRequest) {
     }
     // Сохраняем существующие поля (напр. subscription из shadow-записи, если
     // человек оплатил Про ДО регистрации) — иначе подписка потеряется.
-    users[email] = { ...(users[email] || {}), email, password: p.passwordHash!, name: p.name || users[email]?.name || email.split("@")[0], verified: true };
+    // createdAt — момент завершения регистрации. От него отсчитываются
+    // подарочные дни PRO новичку. Ставим только если его ещё нет: повторная
+    // верификация не должна обнулять отсчёт и выдавать триал заново.
+    users[email] = { ...(users[email] || {}), email, password: p.passwordHash!, name: p.name || users[email]?.name || email.split("@")[0], verified: true, createdAt: users[email]?.createdAt || Date.now() };
     saveUsers(users);
     pending.delete(email);
     return authSuccess(email, { email, name: users[email].name });

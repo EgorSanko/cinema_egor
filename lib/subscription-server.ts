@@ -1,6 +1,7 @@
 import "server-only";
 import fs from "fs";
 import path from "path";
+import { акцияДо, триалДо } from "./promo";
 
 // Серверная работа с подпиской. Храним прямо в users.json (как и аккаунты) —
 // поле `subscription: {until}`. active вычисляем от until > now, чтобы истёкшая
@@ -15,6 +16,10 @@ type StoredUser = {
   email: string; password: string; name: string; verified?: boolean;
   subscription?: StoredSub;
   telegramId?: number; // привязка Telegram (для Tribute-моста)
+  // Когда человек завершил регистрацию. Нужно для подарочных дней новичку.
+  // У аккаунтов, заведённых до появления поля, его нет — им триал не положен,
+  // они и так застали общую акцию.
+  createdAt?: number;
 };
 
 function readUsers(): Record<string, StoredUser> {
@@ -46,10 +51,27 @@ export function hasVerifiedAccount(email: string): boolean {
 
 export function getSubscription(email: string): SubStatus {
   const u = readUsers()[norm(email)];
-  const until = u?.subscription?.until ?? 0;
-  const active = until > Date.now();
-  return { active, until: active ? until : null, plan: active ? u?.subscription?.plan ?? null : null };
+  const сейчас = Date.now();
+  const своя = u?.subscription?.until ?? 0;
+
+  // ПОДАРОК НЕ ПЕРЕЗАПИСЫВАЕТ КУПЛЕННОЕ.
+  //
+  // Берём максимум из своей подписки и подарочной: у кого оплачено дальше
+  // конца акции — тот и остаётся на своей дате со своим тарифом. Иначе акция
+  // молча укоротила бы платную подписку до недели, и это была бы катастрофа.
+  const подарок = Math.max(акцияДо(сейчас), триалДо(u?.createdAt, сейчас));
+
+  if (своя >= подарок) {
+    const active = своя > сейчас;
+    return { active, until: active ? своя : null, plan: active ? u?.subscription?.plan ?? null : null };
+  }
+  return {
+    active: true,
+    until: подарок,
+    plan: акцияДо(сейчас) >= подарок ? "promo" : "trial",
+  };
 }
+
 
 /** Выдать/продлить подписку. Если аккаунта с такой почтой ещё нет — создаём
  *  «shadow»-запись (без пароля, verified:false): подписка ждёт, и когда человек

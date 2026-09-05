@@ -4,6 +4,7 @@ import Script from "next/script";
 import type React from "react";
 import "./globals.css";
 import { SiteFooter } from "@/components/site-footer";
+import { PromoBanner } from "@/components/promo-banner";
 import { AuthProvider } from "@/components/auth-context";
 import { AuthGate } from "@/components/auth-gate";
 import { MobileNav } from "@/components/mobile-nav";
@@ -115,6 +116,7 @@ export default function RootLayout({
           } catch (e) {}
         `}</Script>
         <AuthProvider>
+          <PromoBanner />
           {children}
           <SiteFooter />
           <AuthGate />
