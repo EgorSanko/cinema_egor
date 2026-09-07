@@ -132,31 +132,50 @@ export default function ProPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("paid") !== "1") return;
-    let pid = "";
-    try { pid = localStorage.getItem("kino_pending_payment") || ""; } catch {}
-    if (!pid) return;
+    if (!user?.email) return;
+
+    // ЖДЁМ ВЕБХУК, А НЕ НАДЕЕМСЯ НА УДАЧУ.
+    //
+    // Платёжный сервис возвращает человека на сайт сразу, а подтверждение
+    // оплаты приходит нам отдельным запросом — иногда на пару секунд позже.
+    // Если просто перезагрузить страницу, человек увидит «подписки нет» и
+    // решит, что деньги пропали. Поэтому спрашиваем статус несколько раз,
+    // пока не увидим включённую подписку, и только тогда показываем успех.
+    let отменено = false;
+    let попыток = 0;
     setConfirming(true);
-    fetch("/api/pay/confirm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paymentId: pid }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.ok && d.active) {
+
+    const спросить = async () => {
+      попыток++;
+      try {
+        const r = await fetch(`/api/subscription?email=${encodeURIComponent(user.email)}`, { cache: "no-store" });
+        const d = await r.json();
+        if (отменено) return;
+        if (d.active) {
           try { localStorage.removeItem("kino_pending_payment"); } catch {}
           invalidateSubscription();
           setPaidOk(true);
-          // Обновим статус подписки во всём приложении.
+          setConfirming(false);
+          // Разослать обновление по всему приложению, чтобы навбар и плеер
+          // сразу увидели Про — без ручной перезагрузки.
           window.dispatchEvent(new Event("kino-source-changed"));
-          setTimeout(() => { window.location.href = "/"; }, 2500);
-        } else {
-          setNotice(d.pending ? "Платёж ещё обрабатывается — обнови страницу через минуту." : "Оплата не подтверждена. Если деньги списаны — напиши в поддержку.");
+          window.dispatchEvent(new Event("subscription-loaded"));
+          setTimeout(() => { window.location.href = "/"; }, 2200);
+          return;
         }
-      })
-      .catch(() => setNotice("Не удалось проверить оплату. Обнови страницу."))
-      .finally(() => setConfirming(false));
-  }, []);
+      } catch {}
+      if (отменено) return;
+      // Примерно 30 секунд ожидания: этого хватает с большим запасом.
+      if (попыток < 15) {
+        setTimeout(спросить, 2000);
+      } else {
+        setConfirming(false);
+        setNotice("Платёж ещё обрабатывается. Подписка включится в течение пары минут — обнови страницу. Если деньги списаны, а Про не появился, напиши в поддержку.");
+      }
+    };
+    спросить();
+    return () => { отменено = true; };
+  }, [user?.email]);
 
   return (
     <>
@@ -277,6 +296,14 @@ export default function ProPage() {
               <div className="text-foreground/55 text-[12.5px] mt-0.5">
                 Подписка на 1 месяц · без автосписаний
               </div>
+              {/* Способ называем ЗАРАНЕЕ. Карты для нашей категории платёжный
+                  сервис не подключил — на форме только СБП и криптовалюта.
+                  Человек должен понимать это до нажатия, а не после. */}
+              {картойГотово && (
+                <div className="text-foreground/45 text-[12px] mt-1">
+                  Оплата по СБП — из приложения любого банка. Или криптовалютой.
+                </div>
+              )}
               {/* Пока оплата картой не настроена, кнопка ведёт прежним путём —
                   через Telegram. Когда настроена, Telegram остаётся запасным:
                   кому-то он привычнее, и это наш откат, если у платёжного
