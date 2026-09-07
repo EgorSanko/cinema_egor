@@ -60,6 +60,39 @@ export const HDREZKA_UP = false;
  */
 export const ALLOHA_UP = true;
 
+/**
+ * Рубильник kino.pub. Выключен: подписка на аккаунт закончилась.
+ *
+ * Без подписки источник отдаёт только ошибку. Хуже того, воркер с 27.08.2026
+ * отвечает refresh_failed:invalid_refresh_token — у kino.pub refresh-токен
+ * ОДНОРАЗОВЫЙ, и после сбоя ротации аккаунт требует повторной авторизации
+ * устройства. Пока подписки нет, чинить нечего.
+ *
+ * Что даёт выключение: Плеер kino.pub исчезает из переключателя (нечего тыкать
+ * в мёртвое), а у тех, у кого он УЖЕ выбран в настройках, getSource уводит на
+ * Alloha — иначе каждый запуск у них уходил в источник, который всегда падает,
+ * и человек видел пустой плеер. Именно так и залип телевизор Сани.
+ *
+ * Вернуть = продлить подписку, заново авторизовать устройство и поставить true.
+ */
+export const KINOPUB_UP = false;
+
+/**
+ * Порядок плееров — ОДИН на всё приложение.
+ *
+ * Раньше он был записан дважды: в переключателе и в playerLabel. Достаточно
+ * поправить в одном месте и забыть про другое, чтобы кнопка «Плеер 3» и
+ * надпись «у Плеера 3 нет фильма» стали показывать на разные источники.
+ */
+export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = ([
+  HDREZKA_UP ? "hdrezka" : null,
+  "alloha",
+  KINOPUB_UP ? "kinopub" : null,
+  "vkmovie",
+  "cdnhub",
+  "rutube",
+].filter(Boolean) as KinoSource[]);
+
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
@@ -75,7 +108,20 @@ export function getSource(): KinoSource {
   // просмотром через hls.js — 0 ошибок сети, ни одного зависания.
   try {
     const v = localStorage.getItem(SOURCE_KEY);
-    return v === "kinopub" || v === "hdrezka" || v === "alloha" || v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "alloha";
+    const валидный =
+      v === "kinopub" || v === "hdrezka" || v === "alloha" ||
+      v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "alloha";
+    // Выключенный источник — не приговор для человека: молча ведём на Alloha,
+    // иначе он навсегда заперт в плеере, который всегда падает.
+    //
+    // И сразу переписываем настройку, а не только подменяем ответ: иначе в
+    // хранилище остаётся мёртвый источник, и любой другой код, читающий его
+    // напрямую, снова уведёт человека в тупик.
+    if ((валидный === "kinopub" && !KINOPUB_UP) || (валидный === "hdrezka" && !HDREZKA_UP)) {
+      try { localStorage.setItem(SOURCE_KEY, "alloha"); } catch {}
+      return "alloha";
+    }
+    return валидный;
   } catch {
     return "alloha";
   }
@@ -93,10 +139,7 @@ export function isIframeSource(s?: KinoSource): boolean {
 // player-switcher (зависит от HDREZKA_UP). Для сообщений «недоступно на Плеере N».
 export function playerLabel(s?: KinoSource): string {
   const src = s || getSource();
-  const order: KinoSource[] = HDREZKA_UP
-    ? ["hdrezka", "alloha", "kinopub", "vkmovie", "cdnhub", "rutube"]
-    : ["alloha", "kinopub", "vkmovie", "cdnhub", "rutube"];
-  const i = order.indexOf(src);
+  const i = ПОРЯДОК_ПЛЕЕРОВ.indexOf(src);
   return i >= 0 ? `Плеер ${i + 1}` : "этом плеере";
 }
 

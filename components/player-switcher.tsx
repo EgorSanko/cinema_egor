@@ -7,27 +7,18 @@
 // источнике. Free-юзерам не показывается (у них только бесплатный zenithjs).
 
 import { useEffect, useState } from "react";
-import { getSource, setSource, HDREZKA_UP, type KinoSource } from "@/lib/kinopub";
+import { getSource, setSource, ПОРЯДОК_ПЛЕЕРОВ, type KinoSource } from "@/lib/kinopub";
 import { useSubscription } from "@/hooks/use-subscription";
 
-// HDRezka лежит → прячем Плеер 1 (hdrezka) и перенумеровываем: Alloha=Плеер 1,
-// kino.pub=Плеер 2. Вернётся HDRezka (HDREZKA_UP=true) — снова 1/2/3.
-const PLAYERS: { src: KinoSource; label: string }[] = HDREZKA_UP
-  ? [
-      { src: "hdrezka", label: "Плеер 1" },
-      { src: "alloha", label: "Плеер 2" },
-      { src: "kinopub", label: "Плеер 3" },
-      { src: "vkmovie", label: "Плеер 4" },
-      { src: "cdnhub", label: "Плеер 5" },
-      { src: "rutube", label: "Плеер 6" },
-    ]
-  : [
-      { src: "alloha", label: "Плеер 1" },
-      { src: "kinopub", label: "Плеер 2" },
-      { src: "vkmovie", label: "Плеер 3" },
-      { src: "cdnhub", label: "Плеер 4" },
-      { src: "rutube", label: "Плеер 5" },
-    ];
+// Список строится из ОБЩЕГО порядка (lib/kinopub.ts): выключенные источники в
+// него не попадают, нумерация сдвигается сама. Раньше порядок был записан и
+// здесь, и в playerLabel — достаточно было поправить одно место и забыть про
+// второе, чтобы кнопка «Плеер 3» и надпись «у Плеера 3 нет фильма» показывали
+// на разные источники.
+const PLAYERS: { src: KinoSource; label: string }[] = ПОРЯДОК_ПЛЕЕРОВ.map((src, i) => ({
+  src,
+  label: `Плеер ${i + 1}`,
+}));
 
 export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | "tv" }) {
   const { isPro, loading } = useSubscription();

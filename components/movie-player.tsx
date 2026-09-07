@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, setSource, type KinoSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, KINOPUB_UP, type KinoSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { ProblemReport } from "./problem-report";
@@ -103,9 +103,14 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     const год = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
     const назв = movie.title || "";
     const ориг = (movie as any).original_title;
+    // Опрашиваем только те источники, что реально включены: спрашивать
+    // выключенный kino.pub бессмысленно — он всегда отвечает ошибкой и лишь
+    // задерживает подсказку.
     const проверки: [KinoSource, Promise<unknown>][] = [
       ["alloha", resolveAllohaHls(movie.id, "movie")],
-      ["kinopub", resolveKinopub({ tmdbId: movie.id, type: "movie", title: назв, year: год, otitle: ориг })],
+      ...(KINOPUB_UP
+        ? ([["kinopub", resolveKinopub({ tmdbId: movie.id, type: "movie", title: назв, year: год, otitle: ориг })]] as [KinoSource, Promise<unknown>][])
+        : []),
       ["vkmovie", resolveVkMovie(назв, год, ориг)],
       ["cdnhub", resolveCdnHub(movie.id, "movie")],
       ["rutube", resolveRutube(назв, год, ориг)],
