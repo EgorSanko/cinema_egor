@@ -57,6 +57,41 @@ export default function ProPage() {
   const [selected, setSelected] = useState("1m");
   const [notice, setNotice] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  // Готова ли оплата картой/СБП. Пока ключи не прописаны на сервере — кнопки
+  // нет вовсе, и человек идёт прежним путём через Telegram.
+  const [картойГотово, setКартойГотово] = useState(false);
+  useEffect(() => {
+    fetch("/api/pay/rollypay/create", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setКартойГотово(!!d.ready))
+      .catch(() => setКартойГотово(false));
+  }, []);
+
+  // Оплата картой или по СБП. В отличие от пути через Telegram, подписка
+  // включается по подписанному вебхуку — вступать никуда не нужно.
+  const оплатитьКартой = async () => {
+    if (!user?.email) { setNotice("Сначала войдите в аккаунт"); return; }
+    setPaying(true);
+    setNotice(null);
+    try {
+      const r = await fetch("/api/pay/rollypay/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, planId: plan.id }),
+      });
+      const d = await r.json();
+      if (d.ok && d.payUrl) {
+        // Прямая навигация: после await всплывающее окно уже заблокируют.
+        window.location.href = d.payUrl;
+        return;
+      }
+      setNotice(d.error || "Не удалось создать платёж. Попробуйте позже.");
+    } catch {
+      setNotice("Ошибка сети. Попробуйте ещё раз.");
+    } finally {
+      setPaying(false);
+    }
+  };
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const plan = PLANS.find((p) => p.id === selected)!;
   const perMonth = Math.round(plan.price / plan.months);
@@ -242,9 +277,23 @@ export default function ProPage() {
               <div className="text-foreground/55 text-[12.5px] mt-0.5">
                 Подписка на 1 месяц · без автосписаний
               </div>
+              {/* Пока оплата картой не настроена, кнопка ведёт прежним путём —
+                  через Telegram. Когда настроена, Telegram остаётся запасным:
+                  кому-то он привычнее, и это наш откат, если у платёжного
+                  сервиса случится авария. */}
+              {картойГотово && (
+                <button
+                  type="button"
+                  onClick={checkout}
+                  disabled={paying}
+                  className="mt-1.5 text-foreground/45 hover:text-foreground/80 text-[12px] underline underline-offset-2 transition-colors"
+                >
+                  или оплатить через Telegram
+                </button>
+              )}
             </div>
             <button
-              onClick={checkout}
+              onClick={картойГотово ? оплатитьКартой : checkout}
               disabled={paying}
               className="pro-cta relative overflow-hidden inline-flex items-center gap-2 h-12 px-7 rounded-full bg-primary text-primary-foreground font-bold text-[15px] hover:bg-primary/90 transition-colors flex-shrink-0 disabled:opacity-70"
               style={{ boxShadow: "0 8px 28px -6px rgba(163,230,53,0.5)" }}
