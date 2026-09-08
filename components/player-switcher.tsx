@@ -25,11 +25,25 @@ export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | 
   const [cur, setCur] = useState<KinoSource | null>(null);
   // VkMovie = только фильмы → на страницах сериалов прячем этот плеер.
   const players = mediaType === "tv" ? PLAYERS.filter((p) => p.src !== "vkmovie" && p.src !== "rutube") : PLAYERS;
+  // Какой источник РЕАЛЬНО играет. Может отличаться от выбранного: если
+  // выбранный не ответил, плеер молча уходит на следующий. Подсвечивать надо
+  // именно играющий — иначе горит «Плеер 1», а под ним написано, что у него
+  // фильма нет, и человек справедливо считает это поломкой.
+  const [играет, setИграет] = useState<KinoSource | null>(null);
+
   useEffect(() => {
-    const read = () => setCur(getSource());
+    const read = () => { setCur(getSource()); setИграет(null); };
     read();
+    const сыграл = (e: Event) => {
+      const и = (e as CustomEvent).detail as KinoSource | null;
+      if (и) setИграет(и);
+    };
     window.addEventListener("kino-source-changed", read);
-    return () => window.removeEventListener("kino-source-changed", read);
+    window.addEventListener("kino-source-played", сыграл as EventListener);
+    return () => {
+      window.removeEventListener("kino-source-changed", read);
+      window.removeEventListener("kino-source-played", сыграл as EventListener);
+    };
   }, []);
 
   if (loading || !isPro) return null;
@@ -48,7 +62,7 @@ export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | 
           обычный перенос по строкам. Скроллбар скрыт. */}
       <div className="flex w-full sm:w-auto gap-2 overflow-x-auto sm:overflow-visible sm:flex-wrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {players.map((p) => {
-          const active = cur === p.src;
+          const active = (играет || cur) === p.src;
           return (
             <button
               key={p.src}
@@ -66,7 +80,11 @@ export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | 
           );
         })}
       </div>
-      <span className="w-full sm:w-auto text-[11.5px] text-muted-foreground/60 sm:ml-1">не идёт — попробуйте другой</span>
+      {играет && играет !== cur && (
+        <span className="w-full sm:w-auto text-[11.5px] text-muted-foreground/60 sm:ml-1">
+          выбранный не ответил — включён рабочий
+        </span>
+      )}
     </div>
   );
 }

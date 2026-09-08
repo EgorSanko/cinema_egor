@@ -98,7 +98,19 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     выбран: KinoSource; сыграл: KinoSource | null; есть: KinoSource[];
   } | null>(null);
 
-  const проверитьДоступность = useCallback(async (выбран: KinoSource, сыграл: KinoSource | null) => {
+  // НОМЕР ЗАПУСКА — защита от гонки.
+  //
+  // Резолв запускается не один раз: при открытии, при смене источника, когда
+  // подгрузилась подписка. Запросы к источникам идут параллельно и приходят
+  // вразнобой. Без номера ранний запуск, завершившийся ПОЗЖЕ удачного, затирал
+  // его результат — и на экране появлялась надпись «Плеер 1 не отдал фильм»,
+  // хотя фильм в этот момент играл именно с Плеера 1. Егор поймал ровно это.
+  //
+  // Теперь у каждого запуска свой номер, и всё, что пришло не от последнего,
+  // молча отбрасывается.
+  const запускРеф = useRef(0);
+
+  const проверитьДоступность = useCallback(async (выбран: KinoSource, сыграл: KinoSource | null, номер: number) => {
     if (!isProRef.current) return;
     const год = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
     const назв = movie.title || "";
@@ -118,6 +130,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     const итог = await Promise.all(
       проверки.map(async ([и, зпр]) => { try { return (await зпр) ? и : null; } catch { return null; } }),
     );
+    if (номер !== запускРеф.current) return;   // пока опрашивали, запустился новый резолв
     setНехватка({ выбран, сыграл, есть: итог.filter(Boolean) as KinoSource[] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [movie.id]);
@@ -130,6 +143,10 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
       setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(movie.id, "movie") });
       return true;
     }
+    const мой = ++запускРеф.current;
+    // Новый запуск — старая жалоба неактуальна, убираем сразу.
+    setНехватка(null);
+
     let a: AllohaHls | null;
     let defQ = "1080";
     const выбран = getSource();
@@ -162,14 +179,22 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
         if (a) { defQ = "1080p"; сыграл = "vkmovie"; }
       }
     }
-    if (!a) { проверитьДоступность(выбран, null); return false; }
+    if (мой !== запускРеф.current) return false;   // нас обогнал более свежий запуск
+    if (!a) { проверитьДоступность(выбран, null, мой); return false; }
     const pick = pickAllohaStream(a, 0, defQ);
     if (!pick) return false;
     setAllohaHls(a); setAllohaTr(0); setAllohaQ(pick.quality);
     setStreamData({ stream: pick.url, alloha: true });
+    // Кто реально играет — переключателю, чтобы он подсветил именно его.
+    // Иначе выходит противоречие: горит «Плеер 1», а под ним написано, что у
+    // Плеера 1 фильма нет. Ровно на этом Егор и споткнулся.
+    try {
+      window.dispatchEvent(new CustomEvent("kino-source-played", { detail: сыграл }));
+    } catch {}
+
     // Подменили источник — надо об этом сказать, а не делать вид, что всё по
     // выбору человека.
-    if (сыграл !== выбран) проверитьДоступность(выбран, сыграл);
+    if (сыграл !== выбран) проверитьДоступность(выбран, сыграл, мой);
     else setНехватка(null);
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -898,16 +923,16 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
         {!cssFullscreen && isPro && нехватка && (
           <div className="order-3 text-[13px] leading-relaxed text-muted-foreground">
             {нехватка.есть.length === 0 ? (
-              <span>Этого фильма нет ни у одного плеера.</span>
+              <span>Сейчас ни один плеер не отдаёт этот фильм. Попробуйте позже.</span>
             ) : (
               <>
                 <span>
-                  У {playerLabel(нехватка.выбран).replace("Плеер", "Плеера")} нет этого фильма
-                  {нехватка.сыграл ? <> — включил {playerLabel(нехватка.сыграл)}</> : null}.
+                  {playerLabel(нехватка.выбран)} сейчас не отдал этот фильм
+                  {нехватка.сыграл ? <> — играет {playerLabel(нехватка.сыграл)}</> : null}.
                 </span>{" "}
                 {нехватка.есть.filter((и) => и !== нехватка.сыграл).length > 0 && (
                   <>
-                    <span>Есть у: </span>
+                    <span>Есть ещё у: </span>
                     {нехватка.есть
                       .filter((и) => и !== нехватка.сыграл)
                       .map((и, n, сп) => (
