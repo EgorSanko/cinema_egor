@@ -1,8 +1,9 @@
 import { Navbar } from "@/components/navbar";
+import { SearchBox } from "@/components/search-box";
 import { MovieCard } from "@/components/movie-card";
 import { TVCard } from "@/components/tv-card";
 import { HdCard } from "@/components/hd-card";
-import { searchMovies, searchTV, searchPeople, profileUrl } from "@/lib/tmdb";
+import { searchMovies, searchTV, searchPeople, profileUrl, getTrendingMovies } from "@/lib/tmdb";
 import { isBlockedHd } from "@/lib/blocked-content";
 import Image from "next/image";
 import Link from "next/link";
@@ -97,6 +98,10 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const params = await searchParams;
   const query = params.q || "";
 
+  // Пустой запрос — не оставляем человека перед пустым экраном: показываем,
+  // что смотрят сейчас. Заодно это подсказка, что искать.
+  const тренды = query ? [] : ((await getTrendingMovies("week")) || []).slice(0, 12);
+
   const [movieResults, tvResults, peopleResults, hdHits] = query
     ? await Promise.all([
         searchMoviesPaged(query, 5),
@@ -183,16 +188,31 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       <Navbar />
       <main className="bg-background min-h-screen">
         <div className="max-w-7xl mx-auto px-4 py-12">
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-foreground mb-2">
+          <div className="mb-6">
+            <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
               {query ? `Результаты поиска "${query}"` : "Поиск"}
             </h1>
             <p className="text-muted-foreground">
               {query
                 ? `Найдено ${totalResults} результат(ов)`
-                : "Введите запрос для поиска фильмов, сериалов и актёров"}
+                : "Фильмы, сериалы и актёры"}
             </p>
           </div>
+
+          {/* Поле прямо на странице: с телефона сюда приходят по кнопке в
+              нижней панели, и без поля человек упёрся бы в пустой экран. */}
+          <SearchBox начальный={query} />
+
+          {!query && тренды.length > 0 && (
+            <section>
+              <h2 className="text-xl font-bold text-foreground mb-4">Сейчас смотрят</h2>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 sm:gap-4">
+                {тренды.map((м: any) => (
+                  <MovieCard key={м.id} movie={м} />
+                ))}
+              </div>
+            </section>
+          )}
 
           {filteredPeople.length > 0 && (
             <section className="mb-12">
