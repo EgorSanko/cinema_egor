@@ -787,13 +787,40 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     };
   }, [data?.stream, zone]);
 
+  // ПОД КАКИМ КЛЮЧОМ РЕАЛЬНО ИГРАЕТ ВИДЕО.
+  //
+  // Сохранять позицию по номеру серии из состояния страницы нельзя. При
+  // переключении серии номер меняется мгновенно, а видеоэлемент ещё доигрывает
+  // предыдущее: таймер успевает записать время СТАРОГО видео под ключ НОВОЙ
+  // серии. У Егора так появились одинаковые «43:06 из 45:27» у 7-й и 8-й серий
+  // и точка «20:29» у девятой, которую он вообще не открывал — её тогда ещё не
+  // существовало.
+  //
+  // Поэтому ключ фиксируется в момент, когда видео загрузило метаданные нового
+  // источника, и до этого момента не сохраняем ничего.
+  const игралКлюч = useRef<{ s?: number; e?: number } | null>(null);
+  useEffect(() => { игралКлюч.current = null; }, [data?.stream]);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const принять = () => { игралКлюч.current = { s: season, e: episode }; };
+    v.addEventListener("loadedmetadata", принять);
+    v.addEventListener("durationchange", принять);
+    return () => {
+      v.removeEventListener("loadedmetadata", принять);
+      v.removeEventListener("durationchange", принять);
+    };
+  }, [data?.stream, season, episode]);
+
   // Periodic position save (drives resume + the site's continue-watching sync).
   useEffect(() => {
     if (!data?.stream) return;
     saveInt.current = setInterval(() => {
       const v = videoRef.current;
       if (!v || v.paused || !v.duration) return;
-      savePosition(media.id, media.type, v.currentTime, v.duration, isSeries ? season : undefined, isSeries ? episode : undefined);
+      const ключ = игралКлюч.current;
+      if (!ключ) return;   // новое видео ещё не загрузилось — писать нечего
+      savePosition(media.id, media.type, v.currentTime, v.duration, isSeries ? ключ.s : undefined, isSeries ? ключ.e : undefined);
       addToHistory({
         id: media.id,
         type: media.type,
@@ -804,8 +831,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         progress: v.currentTime,
         duration: v.duration,
         quality,
-        season: isSeries ? season : undefined,
-        episode: isSeries ? episode : undefined,
+        season: isSeries ? ключ.s : undefined,
+        episode: isSeries ? ключ.e : undefined,
       });
     }, 5000);
     return () => { if (saveInt.current) clearInterval(saveInt.current); };
@@ -814,8 +841,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
   const saveNow = useCallback(() => {
     const v = videoRef.current;
-    if (v && v.duration) {
-      savePosition(media.id, media.type, v.currentTime, v.duration, isSeries ? season : undefined, isSeries ? episode : undefined);
+    const ключ = игралКлюч.current;
+    if (v && v.duration && ключ) {
+      savePosition(media.id, media.type, v.currentTime, v.duration, isSeries ? ключ.s : undefined, isSeries ? ключ.e : undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, episode, isSeries, media]);
