@@ -37,6 +37,8 @@ export const BLOCKED_MOVIE_IDS = new Set<number>([
   1212763,
   // 2026-08-26 — takedown notice #12538151: movie/1288445
   1288445,
+  // 2026-09-11 — takedown notice #12642075: movie/1386315
+  1386315,
 ]);
 
 export const BLOCKED_TV_IDS = new Set<number>([]);
