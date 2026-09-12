@@ -10,6 +10,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
+import { потокЖивой } from "@/lib/stream-alive";
 import { FavoriteButton } from "./favorite-button";
 import { StatusButtons } from "./status-buttons";
 import { ExpandableText } from "./expandable-text";
@@ -169,6 +170,13 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
       // Тогда не ждём его таймаут, а сразу идём в живые: cdnhub держит и фильмы,
       // и сериалы, vkmovie — только фильмы, но берёт то, чего нет у cdnhub.
       a = ALLOHA_UP ? await resolveAllohaHls(movie.id, "movie") : null;
+      // Ссылки есть — но поток может не открыться: VK умеет закрыть раздачу
+      // целиком (session_blocked). Тогда экран оставался пустым, хотя соседний
+      // источник этот же фильм отдавал. Проверяем и уходим дальше.
+      if (a) {
+        const проба = pickAllohaStream(a, 0, "1080");
+        if (!проба || !(await потокЖивой(проба.url))) a = null;
+      }
       if (!a) {
         a = await resolveCdnHub(movie.id, "movie");
         if (a) { defQ = "1080p"; сыграл = "cdnhub"; }

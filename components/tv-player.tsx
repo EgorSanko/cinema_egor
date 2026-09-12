@@ -11,6 +11,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
+import { потокЖивой } from "@/lib/stream-alive";
 import { FavoriteButton } from "./favorite-button";
 import { StatusButtons } from "./status-buttons";
 import { ExpandableText } from "./expandable-text";
@@ -149,6 +150,17 @@ export function TVPlayer({ show }: TVPlayerProps) {
       // Alloha умеет лечь целиком (см. ALLOHA_UP) — тогда сразу в cdnhub, не
       // тратя 25 секунд на её таймаут. У cdnhub есть и сериалы посерийно.
       a = ALLOHA_UP ? await resolveAllohaHls(show.id, "tv", season, episode) : null;
+      // Ссылки получены — это ещё не значит, что серия пойдёт.
+      //
+      // VK умеет закрыть раздачу целиком (session_blocked): Alloha исправно
+      // отдаёт ссылки, а плейлист по ним не открывается. Плеер тогда стоял с
+      // пустым экраном, хотя у соседнего источника та же серия играла — так
+      // 12.09 «не отдавался» Офис. Проверяем поток и, если он мёртв, спокойно
+      // уходим на следующий источник.
+      if (a) {
+        const проба = pickAllohaStream(a, 0, "1080");
+        if (!проба || !(await потокЖивой(проба.url))) a = null;
+      }
       if (!a) {
         a = await resolveCdnHub(show.id, "tv", season, episode);
         if (a) defQ = "1080p";
