@@ -373,11 +373,31 @@ export function ArtPlayerView(props: ArtPlayerProps) {
             // Auto-recover from transient network errors
             let netRetries = 0;
             let mediaRetries = 0;
+            let netReloads = 0;
+            let netWaiting = false;
+            hls.on(Hls.Events.FRAG_BUFFERED, () => { netRetries = 0; });
             hls.on(Hls.Events.ERROR, (_evt, data) => {
               if (!data.fatal) return;
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netRetries < 4) {
-                netRetries++;
-                hls.startLoad();
+              // Повторяем С ПАУЗОЙ. Подпись ссылки у источника живёт минуты, и
+              // повторы без пауз он считает нападением: 12.09 телевизор так
+              // выбил блокировку сессии на весь сериал. Когда мягкие попытки
+              // кончились — перезапрашиваем плейлист целиком, прокси подставит
+              // свежую подпись.
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !netWaiting) {
+                netWaiting = true;
+                if (netRetries < 4) {
+                  netRetries++;
+                  setTimeout(() => { netWaiting = false; try { hls.startLoad(); } catch {} }, netRetries * 1500);
+                } else if (netReloads < 2) {
+                  netReloads++;
+                  netRetries = 0;
+                  setTimeout(() => {
+                    netWaiting = false;
+                    try { hls.loadSource(url); hls.startLoad(); } catch {}
+                  }, 2000);
+                } else {
+                  netWaiting = false;
+                }
               } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 2) {
                 mediaRetries++;
                 hls.recoverMediaError();

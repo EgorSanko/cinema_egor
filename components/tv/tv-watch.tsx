@@ -622,6 +622,41 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     })();
     let откат: ReturnType<typeof setTimeout> | null = null;
 
+    // Сеть отвалилась — самое опасное место.
+    //
+    // Здесь стоял голый startLoad(): он повторял мёртвый запрос без пауз и без
+    // счёта. 12.09 подпись ссылки протухла на шестой минуте серии, телевизор за
+    // три минуты выпустил в источник больше двух тысяч запросов, и источник
+    // закрыл сессию целиком — сериал перестал играть у всех. Теперь пауза
+    // растёт, а после трёх неудач поток перезапрашивается целиком: прокси
+    // подставит свежую подпись.
+    let сетьПопыток = 0;
+    let сетьСбросов = 0;
+    let сетьЖдём = false;
+    const сетьОтвалилась = (h: Hls, адрес: string) => {
+      if (сетьЖдём) return;
+      сетьПопыток += 1;
+      if (сетьПопыток <= 3) {
+        сетьЖдём = true;
+        setTimeout(() => {
+          сетьЖдём = false;
+          try { h.startLoad(); } catch {}
+        }, сетьПопыток * 2000);
+        return;
+      }
+      if (сетьСбросов < 2) {
+        сетьСбросов += 1;
+        сетьПопыток = 0;
+        сетьЖдём = true;
+        setTimeout(() => {
+          сетьЖдём = false;
+          try { h.loadSource(адрес); h.startLoad(); } catch {}
+        }, 2000);
+        return;
+      }
+      setError("Источник перестал отдавать это видео. Выберите другую озвучку.");
+    };
+
     const запуститьСвоим = () => {
       if (!Hls.isSupported()) return;
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
@@ -638,9 +673,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         применитьСкорость(v, speedRef.current);
         v.play().catch(() => {});
       });
+      h.on(Hls.Events.FRAG_BUFFERED, () => { сетьПопыток = 0; });
       h.on(Hls.Events.ERROR, (_e, d) => {
         if (!d.fatal) return;
-        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) h.startLoad();
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) сетьОтвалилась(h, url);
         else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) h.recoverMediaError();
         else setError("Ошибка воспроизведения");
       });
@@ -698,9 +734,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         применитьСкорость(v, speedRef.current);
         v.play().catch(() => {});
       });
+      hls.on(Hls.Events.FRAG_BUFFERED, () => { сетьПопыток = 0; });
       hls.on(Hls.Events.ERROR, (_e, d) => {
         if (!d.fatal) return;
-        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) сетьОтвалилась(hls, url);
         else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
         else setError("Ошибка воспроизведения");
       });
