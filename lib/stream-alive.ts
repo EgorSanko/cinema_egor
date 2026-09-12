@@ -10,7 +10,7 @@
  * Поэтому перед запуском дёргаем мастер-плейлист: он маленький (пара килобайт),
  * проверка занимает доли секунды и сразу говорит, живой источник или нет.
  */
-export async function потокЖивой(url: string, таймаутМс = 4500): Promise<boolean> {
+export async function потокЖивой(url: string, таймаутМс = 2500): Promise<boolean> {
   if (!url) return false;
   try {
     const сторож = new AbortController();
