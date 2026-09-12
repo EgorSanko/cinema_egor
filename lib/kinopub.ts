@@ -58,7 +58,16 @@ export const HDREZKA_UP = false;
  * TCP и TLS проходили (сертификат валидный), а HTTP-ответа не было вовсе.
  * Сайт при этом не проигрывал НИЧЕГО, потому что запасного пути не было.
  */
-export const ALLOHA_UP = true;
+// ⛔ 12.09.2026 ВЫКЛЮЧЕНА по решению Егора: VK забанил наши серверы на части
+// своих узлов раздачи (X-VD: client_blocked / session_blocked). Проверено, что
+// дело не в коде и не в Alloha: те же подписанные ссылки с домашнего ПК
+// отдавались (200), а с обоих наших серверов — 403. Играло 6 тайтлов из 12,
+// причём список закрытых узлов менялся в течение часа.
+//
+// Пока выключено: резолв к Alloha не ходит вовсе, кнопка «Плеер 1» исчезает,
+// основным становится vkmovie, за ним cdnhub. Вернуть = поставить true, когда
+// баны сойдут (следим: /var/log/vk-ban.log на API-сервере).
+export const ALLOHA_UP = false;
 
 /**
  * Рубильник kino.pub. Выключен: подписка на аккаунт закончилась.
@@ -86,7 +95,7 @@ export const KINOPUB_UP = false;
  */
 export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = ([
   HDREZKA_UP ? "hdrezka" : null,
-  "alloha",
+  ALLOHA_UP ? "alloha" : null,
   KINOPUB_UP ? "kinopub" : null,
   "vkmovie",
   "cdnhub",
@@ -117,9 +126,16 @@ export function getSource(): KinoSource {
     // И сразу переписываем настройку, а не только подменяем ответ: иначе в
     // хранилище остаётся мёртвый источник, и любой другой код, читающий его
     // напрямую, снова уведёт человека в тупик.
+    // Alloha выключена — у кого она была выбрана, ведём на рабочий источник,
+    // иначе человек заперт в плеере, к которому мы даже не ходим.
+    if (валидный === "alloha" && !ALLOHA_UP) {
+      try { localStorage.setItem(SOURCE_KEY, "vkmovie"); } catch {}
+      return "vkmovie";
+    }
     if ((валидный === "kinopub" && !KINOPUB_UP) || (валидный === "hdrezka" && !HDREZKA_UP)) {
-      try { localStorage.setItem(SOURCE_KEY, "alloha"); } catch {}
-      return "alloha";
+      const запасной: KinoSource = ALLOHA_UP ? "alloha" : "vkmovie";
+      try { localStorage.setItem(SOURCE_KEY, запасной); } catch {}
+      return запасной;
     }
     return валидный;
   } catch {

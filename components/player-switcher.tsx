@@ -15,16 +15,21 @@ import { useSubscription } from "@/hooks/use-subscription";
 // здесь, и в playerLabel — достаточно было поправить одно место и забыть про
 // второе, чтобы кнопка «Плеер 3» и надпись «у Плеера 3 нет фильма» показывали
 // на разные источники.
-const PLAYERS: { src: KinoSource; label: string }[] = ПОРЯДОК_ПЛЕЕРОВ.map((src, i) => ({
-  src,
-  label: `Плеер ${i + 1}`,
-}));
+const PLAYERS: KinoSource[] = ПОРЯДОК_ПЛЕЕРОВ;
 
 export function PlayerSwitcher({ mediaType = "movie" }: { mediaType?: "movie" | "tv" }) {
   const { isPro, loading } = useSubscription();
   const [cur, setCur] = useState<KinoSource | null>(null);
   // VkMovie = только фильмы → на страницах сериалов прячем этот плеер.
-  const players = mediaType === "tv" ? PLAYERS.filter((p) => p.src !== "vkmovie" && p.src !== "rutube") : PLAYERS;
+  //
+  // Нумеруем кнопки ПОСЛЕ фильтра, по порядку на экране. Иначе номер берётся из
+  // общего списка источников, и когда часть из них выключена, человек видит
+  // единственную кнопку с подписью «Плеер 2» и справедливо считает, что первый
+  // куда-то пропал (ровно это вышло 12.09, когда временно убрали Alloha).
+  const players = (mediaType === "tv"
+    ? PLAYERS.filter((src) => src !== "vkmovie" && src !== "rutube")
+    : PLAYERS
+  ).map((src, i) => ({ src, label: `Плеер ${i + 1}` }));
   // Какой источник РЕАЛЬНО играет. Может отличаться от выбранного: если
   // выбранный не ответил, плеер молча уходит на следующий. Подсвечивать надо
   // именно играющий — иначе горит «Плеер 1», а под ним написано, что у него
