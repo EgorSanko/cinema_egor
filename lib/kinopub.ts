@@ -58,16 +58,16 @@ export const HDREZKA_UP = false;
  * TCP и TLS проходили (сертификат валидный), а HTTP-ответа не было вовсе.
  * Сайт при этом не проигрывал НИЧЕГО, потому что запасного пути не было.
  */
-// ⛔ 12.09.2026 ВЫКЛЮЧЕНА по решению Егора: VK забанил наши серверы на части
-// своих узлов раздачи (X-VD: client_blocked / session_blocked). Проверено, что
-// дело не в коде и не в Alloha: те же подписанные ссылки с домашнего ПК
-// отдавались (200), а с обоих наших серверов — 403. Играло 6 тайтлов из 12,
-// причём список закрытых узлов менялся в течение часа.
+// 12.09.2026 была выключена на вечер: VK забанил наши серверы на трёх своих
+// узлах раздачи (X-VD: client_blocked / session_blocked) после шторма повторов
+// из ТВ-плеера и моих же диагностических прогонов. Играло 6 тайтлов из 12.
+// Дело было не в коде: те же ссылки с домашнего ПК отдавались (200), и на
+// откаченной версии картина не менялась.
 //
-// Пока выключено: резолв к Alloha не ходит вовсе, кнопка «Плеер 1» исчезает,
-// основным становится vkmovie, за ним cdnhub. Вернуть = поставить true, когда
-// баны сойдут (следим: /var/log/vk-ban.log на API-сервере).
-export const ALLOHA_UP = false;
+// 13.09 в 10:00 включена обратно: все узлы свободны, 12 тайтлов из 12,
+// журнал /var/log/vk-ban.log показал «СВОБОДЕН» с 19:30 и всю ночь. Баны сошли
+// сами за несколько часов, как только мы перестали долбить источник.
+export const ALLOHA_UP = true;
 
 /**
  * Рубильник kino.pub. Выключен: подписка на аккаунт закончилась.
@@ -102,7 +102,12 @@ export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = ([
   "rutube",
 ].filter(Boolean) as KinoSource[]);
 
-const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
+const SOURCE_KEY = "kino_source";
+// Отметка, что источник выбран ЧЕЛОВЕКОМ, а не подставлен нами на время аварии.
+// Без неё временный увод становится вечным: 12.09 мы перевели всех с
+// выключенной Alloha на vkmovie, и наутро, когда Alloha ожила, люди остались бы
+// на запасном плеере навсегда — они же не знают, что надо переключиться назад.
+const РУЧНОЙ_КЛЮЧ = "kino_source_manual"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
 
@@ -127,10 +132,21 @@ export function getSource(): KinoSource {
     // хранилище остаётся мёртвый источник, и любой другой код, читающий его
     // напрямую, снова уведёт человека в тупик.
     // Alloha выключена — у кого она была выбрана, ведём на рабочий источник,
-    // иначе человек заперт в плеере, к которому мы даже не ходим.
+    // иначе человек заперт в плеере, к которому мы даже не ходим. Пометку
+    // «выбрано руками» при этом НЕ ставим: это наша подстановка, а не выбор.
     if (валидный === "alloha" && !ALLOHA_UP) {
       try { localStorage.setItem(SOURCE_KEY, "vkmovie"); } catch {}
       return "vkmovie";
+    }
+    // Alloha ожила — возвращаем тех, кого увели мы сами. Тех, кто выбрал плеер
+    // руками, не трогаем: их выбор важнее нашего дефолта.
+    if (ALLOHA_UP && валидный !== "alloha") {
+      let руками = false;
+      try { руками = localStorage.getItem(РУЧНОЙ_КЛЮЧ) === "1"; } catch {}
+      if (!руками) {
+        try { localStorage.setItem(SOURCE_KEY, "alloha"); } catch {}
+        return "alloha";
+      }
     }
     if ((валидный === "kinopub" && !KINOPUB_UP) || (валидный === "hdrezka" && !HDREZKA_UP)) {
       const запасной: KinoSource = ALLOHA_UP ? "alloha" : "vkmovie";
@@ -341,6 +357,7 @@ export async function resolveZenithEmbed(
 export function setSource(s: KinoSource) {
   try {
     localStorage.setItem(SOURCE_KEY, s);
+    localStorage.setItem(РУЧНОЙ_КЛЮЧ, "1");   // выбор человека, не наша подстановка
     window.dispatchEvent(new Event("kino-source-changed"));
   } catch {}
 }
