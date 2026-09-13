@@ -163,7 +163,21 @@ export function TVPlayer({ show }: TVPlayerProps) {
       }
       if (!a) {
         a = await resolveCdnHub(show.id, "tv", season, episode);
-        if (a) defQ = "1080p";
+        if (a) {
+          defQ = "1080p";
+          // Сказать переключателю, КТО на самом деле играет.
+          //
+          // Без этого горит «Плеер 1», а видео идёт с другого источника —
+          // человек видит явное враньё и справедливо считает это поломкой.
+          // Егор поймал ровно это на «Офисе» 13.09.
+          try {
+            window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "cdnhub" }));
+          } catch {}
+        }
+      } else {
+        try {
+          window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "alloha" }));
+        } catch {}
       }
     }
     if (!a) return false;
