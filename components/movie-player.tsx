@@ -4,7 +4,7 @@ import type { MovieDetails } from "@/lib/tmdb";
 import { MovieDownloadButton } from './movie-download-button';
 import {
   Play, Film, ChevronDown, Mic, Clock, CalendarDays, Users,
-  Tv as TvIcon, Subtitles, Maximize, Star, Download, Bookmark,
+  Tv as TvIcon, Subtitles, Maximize, Minimize, Star, Download, Bookmark,
 } from "lucide-react";
 import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
@@ -124,7 +124,11 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
         type: "movie",
         title: movie.title,
         poster_path: movie.poster_path,
+        vote_average: movie.vote_average,
+        release_date: movie.release_date,
         watchedAt: Date.now(),
+        progress: секунда,
+        duration: длительность,
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -805,6 +809,80 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     if (!cssFullscreen) { try { screen.orientation.unlock(); } catch {} }
   }, [cssFullscreen]);
 
+  // ─── Полный экран для чужого окна (Alloha) ────────────────────────────
+  // Кнопка «на весь экран» внутри их плеера на телефоне не работает: iOS
+  // Safari вообще не даёт iframe уходить в фуллскрин, а на Android чужой
+  // плеер просит его у себя и часто получает отказ. Поэтому разворачиваем
+  // НАШУ обёртку — окно внутри растягивается вместе с ней.
+  //
+  // Порядок: сначала настоящий фуллскрин (на Android он ещё и прячет адресную
+  // строку и только в нём разрешён поворот экрана), а если браузер отказал
+  // (iPhone) — раскладываем обёртку на весь вид средствами CSS.
+  const [натЭкран, setНатЭкран] = useState(false);
+
+  const наВесьЭкранОкна = () => {
+    const эл: any = playerRef.current;
+    const док: any = document;
+    const вНативном = !!(док.fullscreenElement || док.webkitFullscreenElement);
+
+    if (вНативном) {
+      try { (док.exitFullscreen || док.webkitExitFullscreen)?.call(док); } catch {}
+      return;
+    }
+    if (cssFullscreen) {
+      setCssFullscreen(false);
+      try { (screen.orientation as any)?.unlock?.(); } catch {}
+      return;
+    }
+    const повернуть = () => {
+      try { (screen.orientation as any)?.lock?.("landscape")?.catch?.(() => {}); } catch {}
+    };
+    const просить = эл?.requestFullscreen || эл?.webkitRequestFullscreen;
+    if (просить) {
+      try {
+        const p = просить.call(эл);
+        if (p?.then) p.then(повернуть).catch(() => { setCssFullscreen(true); повернуть(); });
+        else повернуть();
+      } catch { setCssFullscreen(true); повернуть(); }
+    } else {
+      setCssFullscreen(true);
+      повернуть();
+    }
+  };
+
+  // Настоящий фуллскрин могут закрыть мимо нашей кнопки (свайп, системная
+  // кнопка «назад») — следим за событием, а не за своим состоянием.
+  useEffect(() => {
+    const сменился = () => {
+      const док: any = document;
+      const есть = !!(док.fullscreenElement || док.webkitFullscreenElement);
+      setНатЭкран(есть);
+      if (!есть) { try { (screen.orientation as any)?.unlock?.(); } catch {} }
+    };
+    document.addEventListener("fullscreenchange", сменился);
+    document.addEventListener("webkitfullscreenchange", сменился);
+    return () => {
+      document.removeEventListener("fullscreenchange", сменился);
+      document.removeEventListener("webkitfullscreenchange", сменился);
+    };
+  }, []);
+
+  // В CSS-фуллскрине страница под окном не должна скроллиться, иначе на
+  // телефоне из-под плеера выезжает описание фильма. И Escape должен выходить.
+  useEffect(() => {
+    if (!cssFullscreen) return;
+    const было = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const поEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setCssFullscreen(false); try { (screen.orientation as any)?.unlock?.(); } catch {} }
+    };
+    window.addEventListener("keydown", поEscape);
+    return () => {
+      document.body.style.overflow = было;
+      window.removeEventListener("keydown", поEscape);
+    };
+  }, [cssFullscreen]);
+
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -830,7 +908,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
           и переключатель/апселл (order-3) — под ним. В фуллскрине плеер
           становится fixed и выпадает из потока, order там неважен. */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col">
-        <div ref={playerRef} className={cssFullscreen
+        <div ref={playerRef} className={cssFullscreen || натЭкран
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "order-2 mt-8 aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
@@ -876,6 +954,18 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
             />
+          )}
+          {/* Наш полный экран поверх чужого окна — см. наВесьЭкранОкна. */}
+          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
+            <button
+              type="button"
+              onClick={наВесьЭкранОкна}
+              aria-label={cssFullscreen || натЭкран ? "Выйти из полного экрана" : "На весь экран"}
+              title={cssFullscreen || натЭкран ? "Выйти из полного экрана" : "На весь экран"}
+              className="absolute top-2 right-2 z-20 rounded-lg bg-black/55 hover:bg-black/75 backdrop-blur-sm p-2 text-white/85 hover:text-white transition active:scale-95"
+            >
+              {cssFullscreen || натЭкран ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+            </button>
           )}
           {/* Пре-ролл реклама (free-тариф) — перед контентом (Alloha-нативно ИЛИ
               collaps-iframe). Ждём резолва подписки, чтобы не мигнуть Pro-юзеру. */}
