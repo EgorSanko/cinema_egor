@@ -10,6 +10,7 @@ import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
+import { слушатьОкноAlloha } from "@/lib/alloha-events";
 import { потокЖивой } from "@/lib/stream-alive";
 import { FavoriteButton } from "./favorite-button";
 import { StatusButtons } from "./status-buttons";
@@ -111,6 +112,24 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
   // молча отбрасывается.
   const запускРеф = useRef(0);
 
+  // Окно Alloha само сообщает, сколько проиграно, — на этом держатся
+  // «продолжить просмотр» и история. Внутрь чужого окна не заглянуть, так что
+  // других способов узнать позицию у нас нет.
+  useEffect(() => {
+    if (!streamData?.allohaAd) return;
+    return слушатьОкноAlloha((секунда, длительность) => {
+      savePosition(movie.id, "movie", секунда, длительность);
+      addToHistory({
+        id: movie.id,
+        type: "movie",
+        title: movie.title,
+        poster_path: movie.poster_path,
+        watchedAt: Date.now(),
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamData?.allohaAd, movie.id]);
+
   const проверитьДоступность = useCallback(async (выбран: KinoSource, сыграл: KinoSource | null, номер: number) => {
     if (!isProRef.current) return;
     const год = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
@@ -140,8 +159,22 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     // ПУТЬ B (монетизация): FREE (подписка загружена, не Pro) с источником alloha
     // → плеер Alloha с белой рекламой (доход на наш токен). Рендерим как iframe
     // (флаг allohaAd: без нашего пре-ролла). Pro/ещё-не-загружено → нативный чистый.
-    if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
-      setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(movie.id, "movie") });
+    // Alloha — только в своём окне, независимо от тарифа.
+    //
+    // Свой разбор потока у неё больше не работает: прямые ссылки выпускались
+    // под чужой домен, и VK закрывал сессию на 5–8 минуте. Их окно под нашим
+    // токеном играет часами и даёт 4K, которого у остальных источников нет.
+    // Позицию продолжаем передавать параметром — плеер её понимает.
+    if (getSource() === "alloha") {
+      const поз = getPosition(movie.id, "movie");
+      setStreamData({
+        collaps: true,
+        allohaAd: true,
+        collapsEmbed: allohaAdEmbed(movie.id, "movie", undefined, undefined, поз?.time),
+      });
+      try {
+        window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "alloha" }));
+      } catch {}
       return true;
     }
     const мой = ++запускРеф.current;

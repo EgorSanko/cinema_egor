@@ -11,6 +11,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
+import { слушатьОкноAlloha } from "@/lib/alloha-events";
 import { потокЖивой } from "@/lib/stream-alive";
 import { FavoriteButton } from "./favorite-button";
 import { StatusButtons } from "./status-buttons";
@@ -113,6 +114,25 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // именем (напр. The Office: две «... MVO 2x2 / Kravec») и по имени их не
   // различить → сохраняем ещё и индекс.
   const allohaTrIdxRef = useRef(0);
+
+  // Окно Alloha шлёт наружу текущую секунду — иначе позиция серии терялась бы,
+  // и «продолжить просмотр» на сериалах перестал бы работать.
+  useEffect(() => {
+    if (!streamData?.allohaAd) return;
+    return слушатьОкноAlloha((секунда, длительность) => {
+      savePosition(show.id, "tv", секунда, длительность, selectedSeason, selectedEpisode);
+      addToHistory({
+        id: show.id,
+        type: "tv",
+        title: show.name,
+        poster_path: show.poster_path,
+        season: selectedSeason,
+        episode: selectedEpisode,
+        watchedAt: Date.now(),
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamData?.allohaAd, show.id, selectedSeason, selectedEpisode]);
   const allohaTranslators = useMemo(
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
@@ -134,11 +154,19 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // alloha → плеер Alloha с белой рекламой (доход на наш токен). Их плеер сам
     // держит сезоны/озвучки → рендерим как iframe (флаг allohaAd: без нашего
     // пре-ролла, свои контролы прячем). Pro/ещё-не-загружено → нативный чистый.
-    if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
-      const pos = getPosition(show.id, "tv", season, episode);
+    // Alloha — только в своём окне (свой разбор потока она режет на 5–8 минуте).
+    // Позицию отдаём параметром: плеер стартует с места остановки.
+    if (getSource() === "alloha") {
       if (устарел()) return false;
       setAllohaHls(null);
-      setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(show.id, "tv", season, episode, pos?.time) });
+      setStreamData({
+        collaps: true,
+        allohaAd: true,
+        collapsEmbed: allohaAdEmbed(show.id, "tv", season, episode, pos?.time),
+      });
+      try {
+        window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "alloha" }));
+      } catch {}
       return true;
     }
     let defQ = "1080";

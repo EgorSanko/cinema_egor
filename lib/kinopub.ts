@@ -67,6 +67,12 @@ export const HDREZKA_UP = false;
 // 13.09 в 10:00 включена обратно: все узлы свободны, 12 тайтлов из 12,
 // журнал /var/log/vk-ban.log показал «СВОБОДЕН» с 19:30 и всю ночь. Баны сошли
 // сами за несколько часов, как только мы перестали долбить источник.
+// Alloha играет ТОЛЬКО в своём окне (см. allohaAdEmbed и /api/alloha-embed).
+//
+// Прямые ссылки на видео они режут: сессия умирала через 5–8 минут
+// (X-VD: session_blocked), потому что наш резолвер ходил под чужим доменом.
+// Их окно под нашим доменом и нашим токеном играет часами, отдаёт 4K и все
+// озвучки — проверено прогоном на 26 минут.
 export const ALLOHA_UP = true;
 
 /**
@@ -301,19 +307,21 @@ export const ALLOHA_PLAYER_HOST = "https://player.sapkeflykino.ru";
 // кабинете остаётся на нуле (наш нативный резолв им не виден).
 export const ALLOHA_AD_FOR_FREE = false;
 
-/** Строит URL iframe-плеера Alloha (наш токен) по TMDB id. Плеер сам резолвит
- *  контент/озвучки/сезоны. startSec — резюм с позиции. */
+/** Адрес окна плеера Alloha — через наш маршрут, он знает нужный токен тайтла.
+ *
+ *  Раньше здесь собирался адрес напрямую из tmdb и токена сайта, и он ВСЕГДА
+ *  давал 404: их плеер открывается только по внутреннему token_movie, который
+ *  выдаёт их API. Теперь за ним ходит `/api/alloha-embed` на нашем сервере, а
+ *  сюда возвращается короткая ссылка — браузер по ней сам уходит на плеер.
+ *
+ *  startSec — продолжить с места остановки. */
 export function allohaAdEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number, startSec?: number,
 ): string {
-  const p = new URLSearchParams({
-    tmdb: String(tmdbId),
-    type: type === "tv" ? "serial" : "movie",
-    token: ALLOHA_AD_TOKEN,
-  });
+  const p = new URLSearchParams({ tmdb: String(tmdbId), type });
   if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
   if (startSec && startSec > 5) p.set("start", String(Math.floor(startSec)));
-  return `${ALLOHA_PLAYER_HOST}/?${p.toString()}`;
+  return `/api/alloha-embed?${p.toString()}`;
 }
 
 // Единый резолвер iframe-embed по текущему источнику (zenithjs или alloha).
