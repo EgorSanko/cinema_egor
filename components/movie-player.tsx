@@ -809,6 +809,37 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     if (!cssFullscreen) { try { screen.orientation.unlock(); } catch {} }
   }, [cssFullscreen]);
 
+  // ─── Прогрев окна Alloha и запуск командой ────────────────────────────
+  // Их окно понимает postMessage {"api":"play"} (проверено на боевом: в ответ
+  // приходит {"event":"play"}). Поэтому окно висит на странице заранее,
+  // скрытое и молчащее, а по «Смотреть» мы его показываем и просим играть —
+  // человеку не приходится ждать загрузку чужой страницы и жать play второй
+  // раз. Просим настойчиво: пока окно не отчитается, что пошло.
+  const окноРеф = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (!showPlayer || !streamData?.allohaAd) return;
+    let играет = false;
+    let попыток = 0;
+    const поймать = (e: MessageEvent) => {
+      try {
+        const д = JSON.parse(String(e.data));
+        if (д?.event === "play") играет = true;
+      } catch {}
+    };
+    window.addEventListener("message", поймать);
+    const тик = setInterval(() => {
+      if (играет || попыток++ > 40) { clearInterval(тик); return; }
+      try {
+        окноРеф.current?.contentWindow?.postMessage(JSON.stringify({ api: "play" }), "*");
+      } catch {}
+    }, 500);
+    return () => {
+      clearInterval(тик);
+      window.removeEventListener("message", поймать);
+    };
+  }, [showPlayer, streamData?.allohaAd]);
+
   // ─── Полный экран для чужого окна (Alloha) ────────────────────────────
   // Кнопка «на весь экран» внутри их плеера на телефоне не работает: iOS
   // Safari вообще не даёт iframe уходить в фуллскрин, а на Android чужой
@@ -946,11 +977,16 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
               Раскрывается на «Смотреть». Наш ArtPlayer тут не участвует. */}
           {/* Контент-iframe: Pro сразу; free-Collaps — после нашего пре-ролла;
               free-Alloha (allohaAd) — СРАЗУ, реклама уже в плеере Alloha. */}
-          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
+          {streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd)
+            && (showPlayer || streamData.allohaAd) && (
             <iframe
+              ref={окноРеф}
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}
-              className="absolute inset-0 w-full h-full border-0 z-10"
+              className={"absolute inset-0 w-full h-full border-0 "
+                + (showPlayer ? "z-10" : "z-0 opacity-0 pointer-events-none")}
+              tabIndex={showPlayer ? undefined : -1}
+              aria-hidden={showPlayer ? undefined : true}
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
             />
@@ -962,9 +998,12 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
               onClick={наВесьЭкранОкна}
               aria-label={cssFullscreen || натЭкран ? "Выйти из полного экрана" : "На весь экран"}
               title={cssFullscreen || натЭкран ? "Выйти из полного экрана" : "На весь экран"}
-              className="absolute top-2 right-2 z-20 rounded-lg bg-black/55 hover:bg-black/75 backdrop-blur-sm p-2 text-white/85 hover:text-white transition active:scale-95"
+              className="absolute top-2 right-2 z-20 flex items-center gap-1.5 rounded-xl bg-black/70 hover:bg-black/85 backdrop-blur-sm px-3 py-2.5 text-sm font-medium text-white shadow-lg shadow-black/40 ring-1 ring-white/15 transition active:scale-95"
             >
               {cssFullscreen || натЭкран ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+              <span>
+                {cssFullscreen || натЭкран ? "Свернуть" : "Во весь экран"}
+              </span>
             </button>
           )}
           {/* Пре-ролл реклама (free-тариф) — перед контентом (Alloha-нативно ИЛИ

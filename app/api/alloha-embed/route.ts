@@ -79,9 +79,10 @@ export async function GET(req: NextRequest) {
   const старт = Number(п.get("start") || 0);
   if (старт > 5) url.searchParams.set("start", String(Math.floor(старт)));
 
-  // Запуск с ПЕРВОГО нажатия. Без этого человек жмёт «Смотреть», дожидается
-  // загрузки чужого окна и жмёт play второй раз — выглядит как поломка.
-  url.searchParams.set("autoplay", "1");
+  // Автозапуска в самой ссылке НЕТ — и это намеренно. Окно монтируется
+  // заранее, скрытым, пока человек читает описание: так «Смотреть» включает
+  // уже прогруженный плеер, а не ждёт загрузки чужой страницы. Играть оно
+  // начинает по команде postMessage {"api":"play"} из плеера.
 
   return NextResponse.redirect(url.toString(), {
     status: 302,
