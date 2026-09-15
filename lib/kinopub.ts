@@ -93,13 +93,23 @@ export const ALLOHA_UP = true;
 export const KINOPUB_UP = false;
 
 /**
+ * Рубильник «только Alloha» (15.09.2026, решение Егора на время техработ).
+ *
+ * Пока true, у всех один плеер — Alloha: переключатель показывает только его,
+ * а getSource всегда отвечает "alloha", что бы ни лежало в настройке. Саму
+ * настройку в браузере НЕ перезаписываем — сняли рубильник, и у каждого
+ * вернулся его прежний выбор.
+ */
+export const ТОЛЬКО_ALLOHA = true;
+
+/**
  * Порядок плееров — ОДИН на всё приложение.
  *
  * Раньше он был записан дважды: в переключателе и в playerLabel. Достаточно
  * поправить в одном месте и забыть про другое, чтобы кнопка «Плеер 3» и
  * надпись «у Плеера 3 нет фильма» стали показывать на разные источники.
  */
-export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = ([
+export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = (ТОЛЬКО_ALLOHA ? ["alloha"] : [
   HDREZKA_UP ? "hdrezka" : null,
   ALLOHA_UP ? "alloha" : null,
   KINOPUB_UP ? "kinopub" : null,
@@ -118,6 +128,7 @@ const РУЧНОЙ_КЛЮЧ = "kino_source_manual"; // 'hdrezka' | 'kinopub' | '
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
 
 export function getSource(): KinoSource {
+  if (ТОЛЬКО_ALLOHA) return "alloha";
   // Дефолт для ВСЕХ — alloha (бесплатный = Alloha + пре-ролл; для Про — без рекламы).
   // zenithjs (Collaps, «джетикс») БОЛЬШЕ НЕ основной источник и не показывается как
   // плеер — он остался ТОЛЬКО тихим фолбэком (allohaFallbackToZenith), когда Alloha

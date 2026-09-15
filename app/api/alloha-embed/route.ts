@@ -52,6 +52,14 @@ async function адресОкна(tmdb: string, сериал: boolean): Promise<
   }
 }
 
+const СТРАНИЦА_НЕТ_ФИЛЬМА = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Нет в плеере</title>
+<style>html,body{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;
+background:#000;color:#fff;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+text-align:center;padding:0 24px}b{display:block;font-size:20px;margin-bottom:6px}
+span{color:rgba(255,255,255,.6)}</style></head><body><div><b>Этого фильма пока нет в плеере</b>
+<span>Мы уже знаем и добавим, как только он появится.</span></div></body></html>`;
+
 export async function GET(req: NextRequest) {
   if (!ТОКЕН) {
     return NextResponse.json({ error: "Alloha не настроена" }, { status: 503 });
@@ -66,8 +74,13 @@ export async function GET(req: NextRequest) {
 
   const адрес = await адресОкна(tmdb, сериал);
   if (!адрес) {
-    // Тайтла у них нет или API молчит — пусть плеер уходит к другому источнику.
-    return NextResponse.json({ error: "не найдено" }, { status: 404 });
+    // Тайтла у них нет или API молчит. Отдаём страницу, а не JSON: адрес
+    // открывается прямо в окне плеера, и при единственном плеере человек иначе
+    // увидел бы на месте видео голый {"error":"не найдено"}.
+    return new NextResponse(СТРАНИЦА_НЕТ_ФИЛЬМА, {
+      status: 404,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+    });
   }
 
   const url = new URL(адрес);
