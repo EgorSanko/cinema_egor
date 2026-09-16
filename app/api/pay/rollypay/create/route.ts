@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 
 /** Готова ли оплата картой/СБП — чтобы страница знала, показывать ли кнопку. */
 export async function GET() {
+  // 17.09.2026: покупка Про убрана — Про у всех бесплатно (решение Егора).
+  // Новых платежей не создаём; вебхуки старых оплат оставлены как были.
+  return NextResponse.json({ error: "Покупка Про отключена: все функции теперь бесплатны" }, { status: 410 });
   return NextResponse.json({ ready: rollypayГотов() }, { headers: { "Cache-Control": "no-store" } });
 }
 

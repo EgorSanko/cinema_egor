@@ -188,6 +188,40 @@ export async function resolveRutube(
   }
 }
 
+/** ТЕЛЕВИЗОРЫ И MSX: источник без Alloha (17.09.2026, решение Егора).
+ *
+ *  На ТВ Alloha не показываем: её окно на телевизорах не работает, а прямой
+ *  поток VK рвёт. Спрашиваем сразу Плееры 2–4 — vkmovie, cdnhub, rutube — и
+ *  берём того, КТО ПЕРВЫМ отдал видео. vkmovie и rutube знают только фильмы,
+ *  поэтому у сериалов остаётся cdnhub.
+ *
+ *  Promise.any не используем: его нет на старых движках телевизоров. */
+export function resolveTvFirst(
+  tmdbId: number, type: "movie" | "tv", title: string, year: string | number, otitle?: string,
+  season?: number, episode?: number,
+): Promise<AllohaHls | null> {
+  const запросы: Promise<AllohaHls | null>[] = [resolveCdnHub(tmdbId, type, season, episode)];
+  if (type === "movie") {
+    запросы.push(resolveVkMovie(title, year, otitle));
+    запросы.push(resolveRutube(title, year, otitle));
+  }
+  return new Promise((готово) => {
+    let осталось = запросы.length;
+    let отдали = false;
+    запросы.forEach((з) => {
+      з.then(
+        (a) => {
+          осталось--;
+          if (отдали) return;
+          if (a && a.translations && a.translations.length) { отдали = true; готово(a); }
+          else if (осталось === 0) готово(null);
+        },
+        () => { осталось--; if (!отдали && осталось === 0) готово(null); },
+      );
+    });
+  });
+}
+
 // Alloha (VK Video cloud, 4K, все озвучки) — тест-источник. Резолвим imdb из
 // TMDB → наш РФ-бэкенд /api/alloha (Alloha отдаёт только с РФ-IP) → iframe их
 // плеера (сам держит озвучки/качество/серии). Для сериала прокидываем s/e.

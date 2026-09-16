@@ -9,6 +9,9 @@ export const dynamic = "force-dynamic";
 // Создаёт платёж в YooKassa и возвращает confirmation_url для редиректа.
 // Цену берём ИЗ СЕРВЕРНОГО списка тарифов по planId (клиенту не доверяем).
 export async function POST(req: NextRequest) {
+  // 17.09.2026: покупка Про убрана — Про у всех бесплатно (решение Егора).
+  // Новых платежей не создаём; вебхуки старых оплат оставлены как были.
+  return NextResponse.json({ error: "Покупка Про отключена: все функции теперь бесплатны" }, { status: 410 });
   if (!isConfigured()) return NextResponse.json({ error: "Оплата пока не настроена" }, { status: 503 });
 
   const body = await req.json().catch(() => ({}));

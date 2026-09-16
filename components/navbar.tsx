@@ -78,8 +78,7 @@ export function Navbar() {
     // zenithjs), поэтому source больше не отличает free от Pro.
     let links = !isPro ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
     // Спорт удалён (2026-08): каналы шли с kino.pub, подписка на источник уходит.
-    // Вкладка «Про»: у free — апселл подписки; у Pro — управление подпиской. Всегда.
-    links = [...links, { label: "Про", href: "/pro", Icon: Crown }];
+    // Вкладка «Про» убрана 17.09.2026: Про у всех бесплатно, покупать нечего.
     return links;
   })();
   const searchPanelRef = useRef<HTMLDivElement>(null);

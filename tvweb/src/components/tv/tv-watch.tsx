@@ -4,7 +4,7 @@ import { useRouter } from "@/shim/router";
 import Hls from "hls.js";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
-import { resolveAllohaHls, ALLOHA_Q_ORDER, HDREZKA_UP } from "@/lib/kinopub";
+import { resolveTvFirst, ALLOHA_Q_ORDER, HDREZKA_UP } from "@/lib/kinopub";
 import {
   savePosition,
   getPosition,
@@ -253,11 +253,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // The actual resolve work — fetch chain that yields a playable ResolveData
       // or null. Raced against a timeout below so it can never hang forever.
       const doResolve = async (): Promise<ResolveData | null> => {
-        // Alloha (нативно) — ОСНОВНОЙ источник для ТВ: HDRezka забанена. Резолвим
-        // VK m3u8 (все озвучки/качества, уже проксированы) и мапим в ResolveData.
-        // trId = ИНДЕКС озвучки в списке Alloha.
+        // Плееры 2–4 (vkmovie, cdnhub, rutube) — кто ПЕРВЫМ отдаст видео. Alloha
+        // на телевизорах и в MSX не показываем (решение Егора 17.09.2026): её
+        // прямой поток VK рвёт, а окно на ТВ не работает. Ответ той же формы,
+        // ссылки уже проксированы бэкендом (флаг alloha: true = «не оборачивать»).
+        // trId = ИНДЕКС озвучки в списке источника.
         try {
-          const a = await resolveAllohaHls(media.id, media.type, s, e);
+          const a = await resolveTvFirst(media.id, media.type, searchTitle, year, origTitle, s, e);
           if (a && a.translations.length) {
             // Держим озвучку между сериями ПО ИМЕНИ; индекс — лишь запасной
             // вариант. Alloha может отдавать озвучки в РАЗНОМ порядке для разных
@@ -279,7 +281,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
             // следующая серия матчилась от актуальной дорожки.
             saveLastTranslator(media.id, media.type, trIdx, a.translations[trIdx].name);
             const q = a.translations[trIdx].quality || {};
-            const sq = ALLOHA_Q_ORDER.find((k) => q[k]) || Object.keys(q)[0];
+            // У vkmovie/cdnhub качества подписаны «1080p», у Alloha были «1080»:
+            // берём лучшее не выше 1080, иначе самое высокое из есть.
+            const ключи = Object.keys(q).sort((x, y) => (parseInt(y, 10) || 0) - (parseInt(x, 10) || 0));
+            const sq = ALLOHA_Q_ORDER.find((k) => q[k]) || ключи.find((k) => (parseInt(k, 10) || 0) <= 1080) || ключи[0];
             return {
               alloha: true,
               stream: q[sq],
@@ -410,7 +415,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     // episodes, а НЕ pickerEpisodes: этот список объявлен ниже по файлу, и
     // обращение к нему отсюда роняло весь экран просмотра.
     const первая = episodes[0]?.episode_number ?? 1;
-    resolveAllohaHls(media.id, media.type, season, первая)
+    resolveTvFirst(
+      media.id, media.type,
+      (media.title || media.originalTitle || "").replace(/["«»“”]/g, "").trim(),
+      media.year || "",
+      (media.originalTitle || "").replace(/["«»“”]/g, "").trim(),
+      season, первая,
+    )
       .then((a) => {
         if (!жив || !a || !a.translations?.length) return;
         setTranslators(
@@ -640,6 +651,41 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     })();
     let откат: ReturnType<typeof setTimeout> | null = null;
 
+    // Сеть отвалилась — самое опасное место.
+    //
+    // Здесь стоял голый startLoad(): он повторял мёртвый запрос без пауз и без
+    // счёта. 12.09 подпись ссылки протухла на шестой минуте серии, телевизор за
+    // три минуты выпустил в источник больше двух тысяч запросов, и источник
+    // закрыл сессию целиком — сериал перестал играть у всех. Теперь пауза
+    // растёт, а после трёх неудач поток перезапрашивается целиком: прокси
+    // подставит свежую подпись.
+    let сетьПопыток = 0;
+    let сетьСбросов = 0;
+    let сетьЖдём = false;
+    const сетьОтвалилась = (h: Hls, адрес: string) => {
+      if (сетьЖдём) return;
+      сетьПопыток += 1;
+      if (сетьПопыток <= 3) {
+        сетьЖдём = true;
+        setTimeout(() => {
+          сетьЖдём = false;
+          try { h.startLoad(); } catch {}
+        }, сетьПопыток * 2000);
+        return;
+      }
+      if (сетьСбросов < 2) {
+        сетьСбросов += 1;
+        сетьПопыток = 0;
+        сетьЖдём = true;
+        setTimeout(() => {
+          сетьЖдём = false;
+          try { h.loadSource(адрес); h.startLoad(); } catch {}
+        }, 2000);
+        return;
+      }
+      setError("Источник перестал отдавать это видео. Выберите другую озвучку.");
+    };
+
     const запуститьСвоим = () => {
       if (!Hls.isSupported()) return;
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
@@ -656,9 +702,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         применитьСкорость(v, speedRef.current);
         v.play().catch(() => {});
       });
+      h.on(Hls.Events.FRAG_BUFFERED, () => { сетьПопыток = 0; });
       h.on(Hls.Events.ERROR, (_e, d) => {
         if (!d.fatal) return;
-        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) h.startLoad();
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) сетьОтвалилась(h, url);
         else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) h.recoverMediaError();
         else setError("Ошибка воспроизведения");
       });
@@ -716,9 +763,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         применитьСкорость(v, speedRef.current);
         v.play().catch(() => {});
       });
+      hls.on(Hls.Events.FRAG_BUFFERED, () => { сетьПопыток = 0; });
       hls.on(Hls.Events.ERROR, (_e, d) => {
         if (!d.fatal) return;
-        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) сетьОтвалилась(hls, url);
         else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
         else setError("Ошибка воспроизведения");
       });
@@ -787,13 +835,40 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     };
   }, [data?.stream, zone]);
 
+  // ПОД КАКИМ КЛЮЧОМ РЕАЛЬНО ИГРАЕТ ВИДЕО.
+  //
+  // Сохранять позицию по номеру серии из состояния страницы нельзя. При
+  // переключении серии номер меняется мгновенно, а видеоэлемент ещё доигрывает
+  // предыдущее: таймер успевает записать время СТАРОГО видео под ключ НОВОЙ
+  // серии. У Егора так появились одинаковые «43:06 из 45:27» у 7-й и 8-й серий
+  // и точка «20:29» у девятой, которую он вообще не открывал — её тогда ещё не
+  // существовало.
+  //
+  // Поэтому ключ фиксируется в момент, когда видео загрузило метаданные нового
+  // источника, и до этого момента не сохраняем ничего.
+  const игралКлюч = useRef<{ s?: number; e?: number } | null>(null);
+  useEffect(() => { игралКлюч.current = null; }, [data?.stream]);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const принять = () => { игралКлюч.current = { s: season, e: episode }; };
+    v.addEventListener("loadedmetadata", принять);
+    v.addEventListener("durationchange", принять);
+    return () => {
+      v.removeEventListener("loadedmetadata", принять);
+      v.removeEventListener("durationchange", принять);
+    };
+  }, [data?.stream, season, episode]);
+
   // Periodic position save (drives resume + the site's continue-watching sync).
   useEffect(() => {
     if (!data?.stream) return;
     saveInt.current = setInterval(() => {
       const v = videoRef.current;
       if (!v || v.paused || !v.duration) return;
-      savePosition(media.id, media.type, v.currentTime, v.duration, isSeries ? season : undefined, isSeries ? episode : undefined);
+      const ключ = игралКлюч.current;
+      if (!ключ) return;   // новое видео ещё не загрузилось — писать нечего
+      savePosition(media.id, media.type, v.currentTime, v.duration, isSeries ? ключ.s : undefined, isSeries ? ключ.e : undefined);
       addToHistory({
         id: media.id,
         type: media.type,
@@ -804,8 +879,8 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         progress: v.currentTime,
         duration: v.duration,
         quality,
-        season: isSeries ? season : undefined,
-        episode: isSeries ? episode : undefined,
+        season: isSeries ? ключ.s : undefined,
+        episode: isSeries ? ключ.e : undefined,
       });
     }, 5000);
     return () => { if (saveInt.current) clearInterval(saveInt.current); };
@@ -814,8 +889,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
   const saveNow = useCallback(() => {
     const v = videoRef.current;
-    if (v && v.duration) {
-      savePosition(media.id, media.type, v.currentTime, v.duration, isSeries ? season : undefined, isSeries ? episode : undefined);
+    const ключ = игралКлюч.current;
+    if (v && v.duration && ключ) {
+      savePosition(media.id, media.type, v.currentTime, v.duration, isSeries ? ключ.s : undefined, isSeries ? ключ.e : undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, episode, isSeries, media]);

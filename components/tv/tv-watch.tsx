@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Hls from "hls.js";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
-import { resolveAllohaHls, ALLOHA_Q_ORDER, HDREZKA_UP } from "@/lib/kinopub";
+import { resolveTvFirst, ALLOHA_Q_ORDER, HDREZKA_UP } from "@/lib/kinopub";
 import {
   savePosition,
   getPosition,
@@ -254,11 +254,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // The actual resolve work — fetch chain that yields a playable ResolveData
       // or null. Raced against a timeout below so it can never hang forever.
       const doResolve = async (): Promise<ResolveData | null> => {
-        // Alloha (нативно) — ОСНОВНОЙ источник для ТВ: HDRezka забанена. Резолвим
-        // VK m3u8 (все озвучки/качества, уже проксированы) и мапим в ResolveData.
-        // trId = ИНДЕКС озвучки в списке Alloha.
+        // Плееры 2–4 (vkmovie, cdnhub, rutube) — кто ПЕРВЫМ отдаст видео. Alloha
+        // на телевизорах и в MSX не показываем (решение Егора 17.09.2026): её
+        // прямой поток VK рвёт, а окно на ТВ не работает. Ответ той же формы,
+        // ссылки уже проксированы бэкендом (флаг alloha: true = «не оборачивать»).
+        // trId = ИНДЕКС озвучки в списке источника.
         try {
-          const a = await resolveAllohaHls(media.id, media.type, s, e);
+          const a = await resolveTvFirst(media.id, media.type, searchTitle, year, origTitle, s, e);
           if (a && a.translations.length) {
             // Держим озвучку между сериями ПО ИМЕНИ; индекс — лишь запасной
             // вариант. Alloha может отдавать озвучки в РАЗНОМ порядке для разных
@@ -280,7 +282,10 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
             // следующая серия матчилась от актуальной дорожки.
             saveLastTranslator(media.id, media.type, trIdx, a.translations[trIdx].name);
             const q = a.translations[trIdx].quality || {};
-            const sq = ALLOHA_Q_ORDER.find((k) => q[k]) || Object.keys(q)[0];
+            // У vkmovie/cdnhub качества подписаны «1080p», у Alloha были «1080»:
+            // берём лучшее не выше 1080, иначе самое высокое из есть.
+            const ключи = Object.keys(q).sort((x, y) => (parseInt(y, 10) || 0) - (parseInt(x, 10) || 0));
+            const sq = ALLOHA_Q_ORDER.find((k) => q[k]) || ключи.find((k) => (parseInt(k, 10) || 0) <= 1080) || ключи[0];
             return {
               alloha: true,
               stream: q[sq],
@@ -399,7 +404,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     // episodes, а НЕ pickerEpisodes: этот список объявлен ниже по файлу, и
     // обращение к нему отсюда роняло весь экран просмотра.
     const первая = episodes[0]?.episode_number ?? 1;
-    resolveAllohaHls(media.id, media.type, season, первая)
+    resolveTvFirst(
+      media.id, media.type,
+      (media.title || media.originalTitle || "").replace(/["«»“”]/g, "").trim(),
+      media.year || "",
+      (media.originalTitle || "").replace(/["«»“”]/g, "").trim(),
+      season, первая,
+    )
       .then((a) => {
         if (!жив || !a || !a.translations?.length) return;
         setTranslators(

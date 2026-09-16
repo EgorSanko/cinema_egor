@@ -46,11 +46,15 @@ export function useSubscription(): SubState {
   // loading:true, isPro:false. Это убирает одно-рендерное отставание useState,
   // из-за которого энфорсер понижал источник Про-юзера на стейл-значении.
   const matches = !!resolved && resolved.email === email;
+  // 17.09.2026 — ПРО У ВСЕХ, ПОКУПКА УБРАНА (решение Егора). Выбор плееров,
+  // «Продолжить», отсутствие нашего пре-ролла — каждому, сразу, без ожидания
+  // ответа сервера. Расчёт подписки выше оставлен: чтобы вернуть платный тариф,
+  // достаточно снова отдавать resolved.active и loading.
   return {
-    isPro: matches ? resolved!.active : false,
+    isPro: true,
     until: matches ? resolved!.until : null,
     plan: matches ? resolved!.plan : null,
-    loading: !!email && !matches,
+    loading: false,
   };
 }
 

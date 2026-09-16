@@ -116,7 +116,7 @@ export default function RootLayout({
           } catch (e) {}
         `}</Script>
         <AuthProvider>
-          <PromoBanner />
+          {/* PromoBanner убран 17.09.2026: вёл на покупку Про, а Про теперь у всех. */}
           {children}
           <SiteFooter />
           <AuthGate />

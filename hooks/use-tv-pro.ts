@@ -11,7 +11,7 @@ let cache: { email: string; active: boolean; at: number } | null = null;
 
 export function useTvPro(): { isPro: boolean; loading: boolean; email: string } {
   const [state, setState] = useState<{ isPro: boolean; loading: boolean; email: string }>(
-    { isPro: false, loading: true, email: "" }
+    { isPro: true, loading: false, email: "" }
   );
 
   useEffect(() => {
@@ -34,7 +34,9 @@ export function useTvPro(): { isPro: boolean; loading: boolean; email: string } 
     return () => { cancelled = true; };
   }, []);
 
-  return state;
+  // 17.09.2026 — Про у всех (решение Егора): нашей рекламы перед фильмом на ТВ
+  // больше нет ни у кого, независимо от ответа сервера.
+  return { ...state, isPro: true, loading: false };
 }
 
 export function invalidateTvPro() { cache = null; }
