@@ -267,9 +267,10 @@ export async function resolveCdnHub(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
 ): Promise<AllohaHls | null> {
   try {
-    const imdb = await fetchImdb(tmdbId, type);
-    if (!imdb) return null;
-    const p = new URLSearchParams({ imdb, type });
+    // Код IMDb больше НЕ спрашиваем у TMDB из браузера: этот шаг стоил
+    // 0.7-0.8 секунды на каждом запуске (замер 16.09) и задерживал прогрев.
+    // Теперь код переводит наш бэкенд — у него канал быстрее и есть кэш.
+    const p = new URLSearchParams({ tmdb: String(tmdbId), type });
     if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
     const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/cdnhub?${p.toString()}`).then((r) => r.json());
     if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
