@@ -58,21 +58,6 @@ export const HDREZKA_UP = false;
  * TCP и TLS проходили (сертификат валидный), а HTTP-ответа не было вовсе.
  * Сайт при этом не проигрывал НИЧЕГО, потому что запасного пути не было.
  */
-// 12.09.2026 была выключена на вечер: VK забанил наши серверы на трёх своих
-// узлах раздачи (X-VD: client_blocked / session_blocked) после шторма повторов
-// из ТВ-плеера и моих же диагностических прогонов. Играло 6 тайтлов из 12.
-// Дело было не в коде: те же ссылки с домашнего ПК отдавались (200), и на
-// откаченной версии картина не менялась.
-//
-// 13.09 в 10:00 включена обратно: все узлы свободны, 12 тайтлов из 12,
-// журнал /var/log/vk-ban.log показал «СВОБОДЕН» с 19:30 и всю ночь. Баны сошли
-// сами за несколько часов, как только мы перестали долбить источник.
-// Alloha играет ТОЛЬКО в своём окне (см. allohaAdEmbed и /api/alloha-embed).
-//
-// Прямые ссылки на видео они режут: сессия умирала через 5–8 минут
-// (X-VD: session_blocked), потому что наш резолвер ходил под чужим доменом.
-// Их окно под нашим доменом и нашим токеном играет часами, отдаёт 4K и все
-// озвучки — проверено прогоном на 26 минут.
 export const ALLOHA_UP = true;
 
 /**
@@ -93,70 +78,26 @@ export const ALLOHA_UP = true;
 export const KINOPUB_UP = false;
 
 /**
- * Основной источник — cdnhub (16.09.2026, решение Егора).
- *
- * Почему он. Это НАШ плеер: свои озвучки, качество, скачивание, «продолжить»
- * и никакой чужой рекламы. Проверено в этот день: держит и фильмы, и сериалы
- * (12 популярных тайтлов из 12), максимум 1080p, длинный просмотр идёт без
- * обрывов — 1.6 ГБ подряд, заплатка от обрыва на гигабайте держит.
- *
- * Чем платим: 4K нет (у Alloha было), и где-то меньше озвучек. Alloha при
- * этом никуда не девается — остаётся вторым плеером.
- */
-export const ОСНОВНОЙ_CDNHUB = true;
-
-/**
  * Порядок плееров — ОДИН на всё приложение.
  *
  * Раньше он был записан дважды: в переключателе и в playerLabel. Достаточно
  * поправить в одном месте и забыть про другое, чтобы кнопка «Плеер 3» и
  * надпись «у Плеера 3 нет фильма» стали показывать на разные источники.
  */
-export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = (ОСНОВНОЙ_CDNHUB ? ([
-  // 16.09.2026, решение Егора: cdnhub убран. Это чужой открытый API, с
-  // которым у нас нет ни аккаунта, ни договора, ни поддержки — опираться
-  // на него как на основу Егор не захотел.
-  //
-  // ⚠️ Сериалы умели ТОЛЬКО cdnhub и Alloha. vkmovie и rutube — фильмы.
-  // Пока окно Alloha не поднято, сериалов на сайте нет.
-  ALLOHA_UP ? "alloha" : null,
-  "vkmovie",
-  "rutube",
-].filter(Boolean) as KinoSource[]) : [
+export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = ([
   HDREZKA_UP ? "hdrezka" : null,
-  ALLOHA_UP ? "alloha" : null,
+  "alloha",
   KINOPUB_UP ? "kinopub" : null,
   "vkmovie",
   "cdnhub",
   "rutube",
 ].filter(Boolean) as KinoSource[]);
 
-const SOURCE_KEY = "kino_source";
-// Отметка, что источник выбран ЧЕЛОВЕКОМ, а не подставлен нами на время аварии.
-// Без неё временный увод становится вечным: 12.09 мы перевели всех с
-// выключенной Alloha на vkmovie, и наутро, когда Alloha ожила, люди остались бы
-// на запасном плеере навсегда — они же не знают, что надо переключиться назад.
-const РУЧНОЙ_КЛЮЧ = "kino_source_manual"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
+const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
 
 export function getSource(): KinoSource {
-  // Основной — cdnhub. Тем, кто НЕ выбирал плеер руками, отдаём его; чужой
-  // выбор не трогаем, иначе человек каждый раз возвращается не туда, куда сам
-  // переключился.
-  if (ОСНОВНОЙ_CDNHUB) {
-    // cdnhub убран. Ведём на Alloha, пока она включена, иначе на vkmovie.
-    // Ручной выбор человека уважаем, если источник ещё в списке.
-    try {
-      const выбранное = localStorage.getItem(SOURCE_KEY);
-      const руками = localStorage.getItem(РУЧНОЙ_КЛЮЧ) === "1";
-      if (руками && (выбранное === "vkmovie" || выбранное === "rutube" ||
-                     (выбранное === "alloha" && ALLOHA_UP))) {
-        return выбранное as KinoSource;
-      }
-    } catch {}
-    return ALLOHA_UP ? "alloha" : "vkmovie";
-  }
   // Дефолт для ВСЕХ — alloha (бесплатный = Alloha + пре-ролл; для Про — без рекламы).
   // zenithjs (Collaps, «джетикс») БОЛЬШЕ НЕ основной источник и не показывается как
   // плеер — он остался ТОЛЬКО тихим фолбэком (allohaFallbackToZenith), когда Alloha
@@ -176,27 +117,9 @@ export function getSource(): KinoSource {
     // И сразу переписываем настройку, а не только подменяем ответ: иначе в
     // хранилище остаётся мёртвый источник, и любой другой код, читающий его
     // напрямую, снова уведёт человека в тупик.
-    // Alloha выключена — у кого она была выбрана, ведём на рабочий источник,
-    // иначе человек заперт в плеере, к которому мы даже не ходим. Пометку
-    // «выбрано руками» при этом НЕ ставим: это наша подстановка, а не выбор.
-    if (валидный === "alloha" && !ALLOHA_UP) {
-      try { localStorage.setItem(SOURCE_KEY, "vkmovie"); } catch {}
-      return "vkmovie";
-    }
-    // Alloha ожила — возвращаем тех, кого увели мы сами. Тех, кто выбрал плеер
-    // руками, не трогаем: их выбор важнее нашего дефолта.
-    if (ALLOHA_UP && валидный !== "alloha") {
-      let руками = false;
-      try { руками = localStorage.getItem(РУЧНОЙ_КЛЮЧ) === "1"; } catch {}
-      if (!руками) {
-        try { localStorage.setItem(SOURCE_KEY, "alloha"); } catch {}
-        return "alloha";
-      }
-    }
     if ((валидный === "kinopub" && !KINOPUB_UP) || (валидный === "hdrezka" && !HDREZKA_UP)) {
-      const запасной: KinoSource = ALLOHA_UP ? "alloha" : "vkmovie";
-      try { localStorage.setItem(SOURCE_KEY, запасной); } catch {}
-      return запасной;
+      try { localStorage.setItem(SOURCE_KEY, "alloha"); } catch {}
+      return "alloha";
     }
     return валидный;
   } catch {
@@ -279,10 +202,9 @@ export async function resolveCdnHub(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
 ): Promise<AllohaHls | null> {
   try {
-    // Код IMDb больше НЕ спрашиваем у TMDB из браузера: этот шаг стоил
-    // 0.7-0.8 секунды на каждом запуске (замер 16.09) и задерживал прогрев.
-    // Теперь код переводит наш бэкенд — у него канал быстрее и есть кэш.
-    const p = new URLSearchParams({ tmdb: String(tmdbId), type });
+    const imdb = await fetchImdb(tmdbId, type);
+    if (!imdb) return null;
+    const p = new URLSearchParams({ imdb, type });
     if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
     const d = await fetch(`https://kino.lead-seek.ru/hdrezka/api/cdnhub?${p.toString()}`).then((r) => r.json());
     if (!d || d.error || !Array.isArray(d.translations) || d.translations.length === 0) return null;
@@ -347,21 +269,19 @@ export const ALLOHA_PLAYER_HOST = "https://player.sapkeflykino.ru";
 // кабинете остаётся на нуле (наш нативный резолв им не виден).
 export const ALLOHA_AD_FOR_FREE = false;
 
-/** Адрес окна плеера Alloha — через наш маршрут, он знает нужный токен тайтла.
- *
- *  Раньше здесь собирался адрес напрямую из tmdb и токена сайта, и он ВСЕГДА
- *  давал 404: их плеер открывается только по внутреннему token_movie, который
- *  выдаёт их API. Теперь за ним ходит `/api/alloha-embed` на нашем сервере, а
- *  сюда возвращается короткая ссылка — браузер по ней сам уходит на плеер.
- *
- *  startSec — продолжить с места остановки. */
+/** Строит URL iframe-плеера Alloha (наш токен) по TMDB id. Плеер сам резолвит
+ *  контент/озвучки/сезоны. startSec — резюм с позиции. */
 export function allohaAdEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number, startSec?: number,
 ): string {
-  const p = new URLSearchParams({ tmdb: String(tmdbId), type });
+  const p = new URLSearchParams({
+    tmdb: String(tmdbId),
+    type: type === "tv" ? "serial" : "movie",
+    token: ALLOHA_AD_TOKEN,
+  });
   if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
   if (startSec && startSec > 5) p.set("start", String(Math.floor(startSec)));
-  return `/api/alloha-embed?${p.toString()}`;
+  return `${ALLOHA_PLAYER_HOST}/?${p.toString()}`;
 }
 
 // Единый резолвер iframe-embed по текущему источнику (zenithjs или alloha).
@@ -405,7 +325,6 @@ export async function resolveZenithEmbed(
 export function setSource(s: KinoSource) {
   try {
     localStorage.setItem(SOURCE_KEY, s);
-    localStorage.setItem(РУЧНОЙ_КЛЮЧ, "1");   // выбор человека, не наша подстановка
     window.dispatchEvent(new Event("kino-source-changed"));
   } catch {}
 }

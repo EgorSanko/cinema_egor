@@ -4,15 +4,13 @@ import { MovieDownloadButton } from './movie-download-button';
 import type { TVShowDetails } from "@/lib/tmdb";
 import {
   Play, Film, ChevronDown, Mic, Users, Tv as TvIcon, Subtitles, Settings, MoreHorizontal,
-  ChevronLeft, ChevronRight, Maximize, Minimize, SkipForward, Heart, Plus,
+  ChevronLeft, ChevronRight, Maximize, SkipForward, Heart, Plus,
 } from "lucide-react";
 import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
-import { слушатьОкноAlloha } from "@/lib/alloha-events";
-import { потокЖивой } from "@/lib/stream-alive";
 import { FavoriteButton } from "./favorite-button";
 import { StatusButtons } from "./status-buttons";
 import { ExpandableText } from "./expandable-text";
@@ -114,29 +112,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // именем (напр. The Office: две «... MVO 2x2 / Kravec») и по имени их не
   // различить → сохраняем ещё и индекс.
   const allohaTrIdxRef = useRef(0);
-
-  // Окно Alloha шлёт наружу текущую секунду — иначе позиция серии терялась бы,
-  // и «продолжить просмотр» на сериалах перестал бы работать.
-  useEffect(() => {
-    if (!streamData?.allohaAd) return;
-    return слушатьОкноAlloha((секунда, длительность) => {
-      savePosition(show.id, "tv", секунда, длительность, selectedSeason, selectedEpisode);
-      addToHistory({
-        id: show.id,
-        type: "tv",
-        title: show.name,
-        poster_path: show.poster_path,
-        vote_average: show.vote_average,
-        first_air_date: show.first_air_date,
-        season: selectedSeason,
-        episode: selectedEpisode,
-        watchedAt: Date.now(),
-        progress: секунда,
-        duration: длительность,
-      });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamData?.allohaAd, show.id, selectedSeason, selectedEpisode]);
   const allohaTranslators = useMemo(
     () => (allohaHls?.translations || []).map((t, i) => ({ id: i, name: t.name })),
     [allohaHls],
@@ -158,22 +133,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
     // alloha → плеер Alloha с белой рекламой (доход на наш токен). Их плеер сам
     // держит сезоны/озвучки → рендерим как iframe (флаг allohaAd: без нашего
     // пре-ролла, свои контролы прячем). Pro/ещё-не-загружено → нативный чистый.
-    // Alloha — только в своём окне (свой разбор потока она режет на 5–8 минуте).
-    // Позицию отдаём параметром: плеер стартует с места остановки.
-    if (getSource() === "alloha") {
+    if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
+      const pos = getPosition(show.id, "tv", season, episode);
       if (устарел()) return false;
       setAllohaHls(null);
-      // Позицию берём здесь же: в этой ветке готовой переменной с ней нет, и
-      // ссылка на несуществующую роняла запуск целиком (белый плеер).
-      const место = getPosition(show.id, "tv", season, episode);
-      setStreamData({
-        collaps: true,
-        allohaAd: true,
-        collapsEmbed: allohaAdEmbed(show.id, "tv", season, episode, место?.time),
-      });
-      try {
-        window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "alloha" }));
-      } catch {}
+      setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(show.id, "tv", season, episode, pos?.time) });
       return true;
     }
     let defQ = "1080";
@@ -185,34 +149,9 @@ export function TVPlayer({ show }: TVPlayerProps) {
       // Alloha умеет лечь целиком (см. ALLOHA_UP) — тогда сразу в cdnhub, не
       // тратя 25 секунд на её таймаут. У cdnhub есть и сериалы посерийно.
       a = ALLOHA_UP ? await resolveAllohaHls(show.id, "tv", season, episode) : null;
-      // Ссылки получены — это ещё не значит, что серия пойдёт.
-      //
-      // VK умеет закрыть раздачу целиком (session_blocked): Alloha исправно
-      // отдаёт ссылки, а плейлист по ним не открывается. Плеер тогда стоял с
-      // пустым экраном, хотя у соседнего источника та же серия играла — так
-      // 12.09 «не отдавался» Офис. Проверяем поток и, если он мёртв, спокойно
-      // уходим на следующий источник.
-      if (a) {
-        const проба = pickAllohaStream(a, 0, "1080");
-        if (!проба || !(await потокЖивой(проба.url))) a = null;
-      }
       if (!a) {
         a = await resolveCdnHub(show.id, "tv", season, episode);
-        if (a) {
-          defQ = "1080p";
-          // Сказать переключателю, КТО на самом деле играет.
-          //
-          // Без этого горит «Плеер 1», а видео идёт с другого источника —
-          // человек видит явное враньё и справедливо считает это поломкой.
-          // Егор поймал ровно это на «Офисе» 13.09.
-          try {
-            window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "cdnhub" }));
-          } catch {}
-        }
-      } else {
-        try {
-          window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "alloha" }));
-        } catch {}
+        if (a) defQ = "1080p";
       }
     }
     if (!a) return false;
@@ -1228,111 +1167,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
     if (!cssFullscreen) { try { screen.orientation.unlock(); } catch {} }
   }, [cssFullscreen]);
 
-  // ─── Прогрев окна Alloha и запуск командой ────────────────────────────
-  // Их окно понимает postMessage {"api":"play"} (проверено на боевом: в ответ
-  // приходит {"event":"play"}). Поэтому окно висит на странице заранее,
-  // скрытое и молчащее, а по «Смотреть» мы его показываем и просим играть —
-  // человеку не приходится ждать загрузку чужой страницы и жать play второй
-  // раз. Просим настойчиво: пока окно не отчитается, что пошло.
-  const окноРеф = useRef<HTMLIFrameElement>(null);
-
-  useEffect(() => {
-    if (!showPlayer || !streamData?.allohaAd) return;
-    let играет = false;
-    let попыток = 0;
-    const поймать = (e: MessageEvent) => {
-      try {
-        const д = JSON.parse(String(e.data));
-        if (д?.event === "play") играет = true;
-      } catch {}
-    };
-    window.addEventListener("message", поймать);
-    const тик = setInterval(() => {
-      if (играет || попыток++ > 40) { clearInterval(тик); return; }
-      try {
-        окноРеф.current?.contentWindow?.postMessage(JSON.stringify({ api: "play" }), "*");
-      } catch {}
-    }, 500);
-    return () => {
-      clearInterval(тик);
-      window.removeEventListener("message", поймать);
-    };
-  }, [showPlayer, streamData?.allohaAd]);
-
-  // ─── Полный экран для чужого окна (Alloha) ────────────────────────────
-  // Кнопка «на весь экран» внутри их плеера на телефоне не работает: iOS
-  // Safari вообще не даёт iframe уходить в фуллскрин, а на Android чужой
-  // плеер просит его у себя и часто получает отказ. Поэтому разворачиваем
-  // НАШУ обёртку — окно внутри растягивается вместе с ней.
-  //
-  // Порядок: сначала настоящий фуллскрин (на Android он ещё и прячет адресную
-  // строку и только в нём разрешён поворот экрана), а если браузер отказал
-  // (iPhone) — раскладываем обёртку на весь вид средствами CSS.
-  const [натЭкран, setНатЭкран] = useState(false);
-
-  const наВесьЭкранОкна = () => {
-    const эл: any = containerRef.current;
-    const док: any = document;
-    const вНативном = !!(док.fullscreenElement || док.webkitFullscreenElement);
-
-    if (вНативном) {
-      try { (док.exitFullscreen || док.webkitExitFullscreen)?.call(док); } catch {}
-      return;
-    }
-    if (cssFullscreen) {
-      setCssFullscreen(false);
-      try { (screen.orientation as any)?.unlock?.(); } catch {}
-      return;
-    }
-    const повернуть = () => {
-      try { (screen.orientation as any)?.lock?.("landscape")?.catch?.(() => {}); } catch {}
-    };
-    const просить = эл?.requestFullscreen || эл?.webkitRequestFullscreen;
-    if (просить) {
-      try {
-        const p = просить.call(эл);
-        if (p?.then) p.then(повернуть).catch(() => { setCssFullscreen(true); повернуть(); });
-        else повернуть();
-      } catch { setCssFullscreen(true); повернуть(); }
-    } else {
-      setCssFullscreen(true);
-      повернуть();
-    }
-  };
-
-  // Настоящий фуллскрин могут закрыть мимо нашей кнопки (свайп, системная
-  // кнопка «назад») — следим за событием, а не за своим состоянием.
-  useEffect(() => {
-    const сменился = () => {
-      const док: any = document;
-      const есть = !!(док.fullscreenElement || док.webkitFullscreenElement);
-      setНатЭкран(есть);
-      if (!есть) { try { (screen.orientation as any)?.unlock?.(); } catch {} }
-    };
-    document.addEventListener("fullscreenchange", сменился);
-    document.addEventListener("webkitfullscreenchange", сменился);
-    return () => {
-      document.removeEventListener("fullscreenchange", сменился);
-      document.removeEventListener("webkitfullscreenchange", сменился);
-    };
-  }, []);
-
-  // В CSS-фуллскрине страница под окном не должна скроллиться, иначе на
-  // телефоне из-под плеера выезжает описание фильма. И Escape должен выходить.
-  useEffect(() => {
-    if (!cssFullscreen) return;
-    const было = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const поEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setCssFullscreen(false); try { (screen.orientation as any)?.unlock?.(); } catch {} }
-    };
-    window.addEventListener("keydown", поEscape);
-    return () => {
-      document.body.style.overflow = было;
-      window.removeEventListener("keydown", поEscape);
-    };
-  }, [cssFullscreen]);
-
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -1360,7 +1194,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
           переключатель (order-3), список эпизодов (order-4) — снизу. В
           фуллскрине плеер fixed и выпадает из потока, order неважен. */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col">
-        <div ref={containerRef} className={cssFullscreen || натЭкран
+        <div ref={containerRef} className={cssFullscreen
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "order-2 mt-8 aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
@@ -1400,34 +1234,14 @@ export function TVPlayer({ show }: TVPlayerProps) {
               озвучками. Наши ArtPlayer/панель серий/скипы тут не участвуют. */}
           {/* Контент-iframe: Pro сразу; free-Collaps — после нашего пре-ролла;
               free-Alloha (allohaAd) — СРАЗУ, т.к. реклама уже в плеере Alloha. */}
-          {streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd)
-            && (showPlayer || streamData.allohaAd) && (
+          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
             <iframe
-              ref={окноРеф}
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}
-              className={"absolute inset-0 w-full h-full border-0 "
-                + (showPlayer ? "z-10" : "z-0 opacity-0 pointer-events-none")}
-              tabIndex={showPlayer ? undefined : -1}
-              aria-hidden={showPlayer ? undefined : true}
+              className="absolute inset-0 w-full h-full border-0 z-10"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
             />
-          )}
-          {/* Наш полный экран поверх чужого окна — см. наВесьЭкранОкна. */}
-          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
-            <button
-              type="button"
-              onClick={наВесьЭкранОкна}
-              aria-label={cssFullscreen || натЭкран ? "Выйти из полного экрана" : "На весь экран"}
-              title={cssFullscreen || натЭкран ? "Выйти из полного экрана" : "На весь экран"}
-              className="absolute top-2 right-2 z-20 flex items-center gap-1.5 rounded-xl bg-black/70 hover:bg-black/85 backdrop-blur-sm px-3 py-2.5 text-sm font-medium text-white shadow-lg shadow-black/40 ring-1 ring-white/15 transition active:scale-95"
-            >
-              {cssFullscreen || натЭкран ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-              <span>
-                {cssFullscreen || натЭкран ? "Свернуть" : "Во весь экран"}
-              </span>
-            </button>
           )}
           {/* Наш пре-ролл (free). НЕ показываем в режиме allohaAd — там своя
               реклама Alloha, наш пре-ролл был бы двойным. Ждём резолва подписки. */}

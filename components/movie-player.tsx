@@ -4,14 +4,12 @@ import type { MovieDetails } from "@/lib/tmdb";
 import { MovieDownloadButton } from './movie-download-button';
 import {
   Play, Film, ChevronDown, Mic, Clock, CalendarDays, Users,
-  Tv as TvIcon, Subtitles, Maximize, Minimize, Star, Download, Bookmark,
+  Tv as TvIcon, Subtitles, Maximize, Star, Download, Bookmark,
 } from "lucide-react";
 import { getImageUrl } from "@/lib/tmdb";
 import Link from "next/link";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
-import { слушатьОкноAlloha } from "@/lib/alloha-events";
-import { потокЖивой } from "@/lib/stream-alive";
 import { FavoriteButton } from "./favorite-button";
 import { StatusButtons } from "./status-buttons";
 import { ExpandableText } from "./expandable-text";
@@ -112,28 +110,6 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
   // молча отбрасывается.
   const запускРеф = useRef(0);
 
-  // Окно Alloha само сообщает, сколько проиграно, — на этом держатся
-  // «продолжить просмотр» и история. Внутрь чужого окна не заглянуть, так что
-  // других способов узнать позицию у нас нет.
-  useEffect(() => {
-    if (!streamData?.allohaAd) return;
-    return слушатьОкноAlloha((секунда, длительность) => {
-      savePosition(movie.id, "movie", секунда, длительность);
-      addToHistory({
-        id: movie.id,
-        type: "movie",
-        title: movie.title,
-        poster_path: movie.poster_path,
-        vote_average: movie.vote_average,
-        release_date: movie.release_date,
-        watchedAt: Date.now(),
-        progress: секунда,
-        duration: длительность,
-      });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamData?.allohaAd, movie.id]);
-
   const проверитьДоступность = useCallback(async (выбран: KinoSource, сыграл: KinoSource | null, номер: number) => {
     if (!isProRef.current) return;
     const год = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
@@ -163,22 +139,8 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     // ПУТЬ B (монетизация): FREE (подписка загружена, не Pro) с источником alloha
     // → плеер Alloha с белой рекламой (доход на наш токен). Рендерим как iframe
     // (флаг allohaAd: без нашего пре-ролла). Pro/ещё-не-загружено → нативный чистый.
-    // Alloha — только в своём окне, независимо от тарифа.
-    //
-    // Свой разбор потока у неё больше не работает: прямые ссылки выпускались
-    // под чужой домен, и VK закрывал сессию на 5–8 минуте. Их окно под нашим
-    // токеном играет часами и даёт 4K, которого у остальных источников нет.
-    // Позицию продолжаем передавать параметром — плеер её понимает.
-    if (getSource() === "alloha") {
-      const поз = getPosition(movie.id, "movie");
-      setStreamData({
-        collaps: true,
-        allohaAd: true,
-        collapsEmbed: allohaAdEmbed(movie.id, "movie", undefined, undefined, поз?.time),
-      });
-      try {
-        window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "alloha" }));
-      } catch {}
+    if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
+      setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(movie.id, "movie") });
       return true;
     }
     const мой = ++запускРеф.current;
@@ -207,13 +169,6 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
       // Тогда не ждём его таймаут, а сразу идём в живые: cdnhub держит и фильмы,
       // и сериалы, vkmovie — только фильмы, но берёт то, чего нет у cdnhub.
       a = ALLOHA_UP ? await resolveAllohaHls(movie.id, "movie") : null;
-      // Ссылки есть — но поток может не открыться: VK умеет закрыть раздачу
-      // целиком (session_blocked). Тогда экран оставался пустым, хотя соседний
-      // источник этот же фильм отдавал. Проверяем и уходим дальше.
-      if (a) {
-        const проба = pickAllohaStream(a, 0, "1080");
-        if (!проба || !(await потокЖивой(проба.url))) a = null;
-      }
       if (!a) {
         a = await resolveCdnHub(movie.id, "movie");
         if (a) { defQ = "1080p"; сыграл = "cdnhub"; }
@@ -809,111 +764,6 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     if (!cssFullscreen) { try { screen.orientation.unlock(); } catch {} }
   }, [cssFullscreen]);
 
-  // ─── Прогрев окна Alloha и запуск командой ────────────────────────────
-  // Их окно понимает postMessage {"api":"play"} (проверено на боевом: в ответ
-  // приходит {"event":"play"}). Поэтому окно висит на странице заранее,
-  // скрытое и молчащее, а по «Смотреть» мы его показываем и просим играть —
-  // человеку не приходится ждать загрузку чужой страницы и жать play второй
-  // раз. Просим настойчиво: пока окно не отчитается, что пошло.
-  const окноРеф = useRef<HTMLIFrameElement>(null);
-
-  useEffect(() => {
-    if (!showPlayer || !streamData?.allohaAd) return;
-    let играет = false;
-    let попыток = 0;
-    const поймать = (e: MessageEvent) => {
-      try {
-        const д = JSON.parse(String(e.data));
-        if (д?.event === "play") играет = true;
-      } catch {}
-    };
-    window.addEventListener("message", поймать);
-    const тик = setInterval(() => {
-      if (играет || попыток++ > 40) { clearInterval(тик); return; }
-      try {
-        окноРеф.current?.contentWindow?.postMessage(JSON.stringify({ api: "play" }), "*");
-      } catch {}
-    }, 500);
-    return () => {
-      clearInterval(тик);
-      window.removeEventListener("message", поймать);
-    };
-  }, [showPlayer, streamData?.allohaAd]);
-
-  // ─── Полный экран для чужого окна (Alloha) ────────────────────────────
-  // Кнопка «на весь экран» внутри их плеера на телефоне не работает: iOS
-  // Safari вообще не даёт iframe уходить в фуллскрин, а на Android чужой
-  // плеер просит его у себя и часто получает отказ. Поэтому разворачиваем
-  // НАШУ обёртку — окно внутри растягивается вместе с ней.
-  //
-  // Порядок: сначала настоящий фуллскрин (на Android он ещё и прячет адресную
-  // строку и только в нём разрешён поворот экрана), а если браузер отказал
-  // (iPhone) — раскладываем обёртку на весь вид средствами CSS.
-  const [натЭкран, setНатЭкран] = useState(false);
-
-  const наВесьЭкранОкна = () => {
-    const эл: any = playerRef.current;
-    const док: any = document;
-    const вНативном = !!(док.fullscreenElement || док.webkitFullscreenElement);
-
-    if (вНативном) {
-      try { (док.exitFullscreen || док.webkitExitFullscreen)?.call(док); } catch {}
-      return;
-    }
-    if (cssFullscreen) {
-      setCssFullscreen(false);
-      try { (screen.orientation as any)?.unlock?.(); } catch {}
-      return;
-    }
-    const повернуть = () => {
-      try { (screen.orientation as any)?.lock?.("landscape")?.catch?.(() => {}); } catch {}
-    };
-    const просить = эл?.requestFullscreen || эл?.webkitRequestFullscreen;
-    if (просить) {
-      try {
-        const p = просить.call(эл);
-        if (p?.then) p.then(повернуть).catch(() => { setCssFullscreen(true); повернуть(); });
-        else повернуть();
-      } catch { setCssFullscreen(true); повернуть(); }
-    } else {
-      setCssFullscreen(true);
-      повернуть();
-    }
-  };
-
-  // Настоящий фуллскрин могут закрыть мимо нашей кнопки (свайп, системная
-  // кнопка «назад») — следим за событием, а не за своим состоянием.
-  useEffect(() => {
-    const сменился = () => {
-      const док: any = document;
-      const есть = !!(док.fullscreenElement || док.webkitFullscreenElement);
-      setНатЭкран(есть);
-      if (!есть) { try { (screen.orientation as any)?.unlock?.(); } catch {} }
-    };
-    document.addEventListener("fullscreenchange", сменился);
-    document.addEventListener("webkitfullscreenchange", сменился);
-    return () => {
-      document.removeEventListener("fullscreenchange", сменился);
-      document.removeEventListener("webkitfullscreenchange", сменился);
-    };
-  }, []);
-
-  // В CSS-фуллскрине страница под окном не должна скроллиться, иначе на
-  // телефоне из-под плеера выезжает описание фильма. И Escape должен выходить.
-  useEffect(() => {
-    if (!cssFullscreen) return;
-    const было = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const поEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setCssFullscreen(false); try { (screen.orientation as any)?.unlock?.(); } catch {} }
-    };
-    window.addEventListener("keydown", поEscape);
-    return () => {
-      document.body.style.overflow = было;
-      window.removeEventListener("keydown", поEscape);
-    };
-  }, [cssFullscreen]);
-
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -939,7 +789,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
           и переключатель/апселл (order-3) — под ним. В фуллскрине плеер
           становится fixed и выпадает из потока, order там неважен. */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col">
-        <div ref={playerRef} className={cssFullscreen || натЭкран
+        <div ref={playerRef} className={cssFullscreen
           ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center"
           : "order-2 mt-8 aspect-video bg-black rounded-2xl overflow-hidden relative shadow-2xl shadow-black/50 border border-white/5 group"
         }>
@@ -977,34 +827,14 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
               Раскрывается на «Смотреть». Наш ArtPlayer тут не участвует. */}
           {/* Контент-iframe: Pro сразу; free-Collaps — после нашего пре-ролла;
               free-Alloha (allohaAd) — СРАЗУ, реклама уже в плеере Alloha. */}
-          {streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd)
-            && (showPlayer || streamData.allohaAd) && (
+          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
             <iframe
-              ref={окноРеф}
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}
-              className={"absolute inset-0 w-full h-full border-0 "
-                + (showPlayer ? "z-10" : "z-0 opacity-0 pointer-events-none")}
-              tabIndex={showPlayer ? undefined : -1}
-              aria-hidden={showPlayer ? undefined : true}
+              className="absolute inset-0 w-full h-full border-0 z-10"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
             />
-          )}
-          {/* Наш полный экран поверх чужого окна — см. наВесьЭкранОкна. */}
-          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
-            <button
-              type="button"
-              onClick={наВесьЭкранОкна}
-              aria-label={cssFullscreen || натЭкран ? "Выйти из полного экрана" : "На весь экран"}
-              title={cssFullscreen || натЭкран ? "Выйти из полного экрана" : "На весь экран"}
-              className="absolute top-2 right-2 z-20 flex items-center gap-1.5 rounded-xl bg-black/70 hover:bg-black/85 backdrop-blur-sm px-3 py-2.5 text-sm font-medium text-white shadow-lg shadow-black/40 ring-1 ring-white/15 transition active:scale-95"
-            >
-              {cssFullscreen || натЭкран ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-              <span>
-                {cssFullscreen || натЭкран ? "Свернуть" : "Во весь экран"}
-              </span>
-            </button>
           )}
           {/* Пре-ролл реклама (free-тариф) — перед контентом (Alloha-нативно ИЛИ
               collaps-iframe). Ждём резолва подписки, чтобы не мигнуть Pro-юзеру. */}
