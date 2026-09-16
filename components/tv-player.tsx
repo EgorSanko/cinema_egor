@@ -33,7 +33,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, allohaAdEmbed, allohaHasTitle, onAllohaTime, onAllohaState, askAllohaState, playAlloha, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -70,6 +70,8 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const [showLoadingMascot, setShowLoadingMascot] = useState(false);
   const [error, setError] = useState("");
   const [streamData, setStreamData] = useState<any>(null);
+  const streamDataRef = useRef<any>(null);
+  useEffect(() => { streamDataRef.current = streamData; }, [streamData]);
   // Position to start the next source switch at (set on a quality switch).
   const [seekOnSwitch, setSeekOnSwitch] = useState<number | undefined>(undefined);
   const [selectedQuality, setSelectedQuality] = useState("");
@@ -129,15 +131,17 @@ export function TVPlayer({ show }: TVPlayerProps) {
   const resolveAllohaNative = useCallback(async (season: number, episode: number): Promise<boolean> => {
     const seq = ++resolveSeqRef.current;
     const устарел = () => seq !== resolveSeqRef.current;
-    // ПУТЬ B (монетизация): FREE-тариф (подписка загружена, не Pro) с источником
-    // alloha → плеер Alloha с белой рекламой (доход на наш токен). Их плеер сам
-    // держит сезоны/озвучки → рендерим как iframe (флаг allohaAd: без нашего
-    // пре-ролла, свои контролы прячем). Pro/ещё-не-загружено → нативный чистый.
-    if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
-      const pos = getPosition(show.id, "tv", season, episode);
+    // ПЛЕЕР 1 = ОКНО ALLOHA (17.09.2026, решение Егора) — у всех, без нашего
+    // ArtPlayer. Прямой поток Alloha VK закрывал на 5–8 минуте, их окно под
+    // нашим доменом играет до конца, с 4K и всеми озвучками. Сезоны, серии и
+    // озвучки держит само окно; реклама внутри их, свой пре-ролл не показываем
+    // (флаг allohaAd). Нет сериала в их каталоге — идём в cdnhub ниже.
+    if (getSource() === "alloha" && ALLOHA_UP && (await allohaHasTitle(show.id, "tv"))) {
       if (устарел()) return false;
+      const pos = getPosition(show.id, "tv", season, episode);
       setAllohaHls(null);
       setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(show.id, "tv", season, episode, pos?.time) });
+      try { window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "alloha" })); } catch {}
       return true;
     }
     let defQ = "1080";
@@ -146,9 +150,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
       a = await resolveCdnHub(show.id, "tv", season, episode);
       defQ = "1080p";
     } else {
-      // Alloha умеет лечь целиком (см. ALLOHA_UP) — тогда сразу в cdnhub, не
-      // тратя 25 секунд на её таймаут. У cdnhub есть и сериалы посерийно.
-      a = ALLOHA_UP ? await resolveAllohaHls(show.id, "tv", season, episode) : null;
+      // Сюда попадаем, только если окна Alloha не будет: сериала нет в их
+      // каталоге или Alloha выключена рубильником. Прямой поток Alloha больше
+      // не пробуем — VK его рвёт. У cdnhub есть и сериалы посерийно.
+      a = null;
       if (!a) {
         a = await resolveCdnHub(show.id, "tv", season, episode);
         if (a) defQ = "1080p";
@@ -237,6 +242,10 @@ export function TVPlayer({ show }: TVPlayerProps) {
     const onSourceChange = () => {
       check();
       if (startedRef.current) return;
+      // Источник «сменился» на тот же Alloha, а её окно уже загружено под
+      // постером — не сбрасываем, иначе оно грузится заново (энфорсер подписки
+      // шлёт это событие при каждом открытии страницы).
+      if (getSource() === "alloha" && streamDataRef.current?.allohaAd) return;
       if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube")) {
         setStreamData(null);
         resolveAllohaNative(selectedSeason, selectedEpisode);
@@ -444,27 +453,50 @@ export function TVPlayer({ show }: TVPlayerProps) {
   // докрутку/навигацию серий держит сам их плеер.
   useEffect(() => {
     if (!showPlayer || !streamData?.collapsEmbed) return;
-    const durSec = ((show as any)?.episode_run_time?.[0] > 0 ? (show as any).episode_run_time[0] : 45) * 60;
+    let durSec = ((show as any)?.episode_run_time?.[0] > 0 ? (show as any).episode_run_time[0] : 45) * 60;
     const startedAt = Date.now();
+    // Окно Alloha сообщает секунду, длительность и какая серия играет. Серию
+    // внутри окна переключают их кнопками — без этого позиция писалась бы на
+    // ту серию, с которой окно открыли.
+    const alloha = !!streamData?.allohaAd;
+    let секунда = 0;
+    let сезон = selectedSeason;
+    let серия = selectedEpisode;
+    const отписка = alloha ? onAllohaTime((t) => { секунда = t; }) : null;
+    const отпискаСост = alloha ? onAllohaState((с) => {
+      if (с.duration) durSec = с.duration;
+      if (с.season && с.episode && (с.season !== сезон || с.episode !== серия)) {
+        сезон = с.season; серия = с.episode; секунда = 0;
+      }
+    }) : null;
     const write = () => {
-      const elapsed = Math.min((Date.now() - startedAt) / 1000, durSec - 1);
+      if (alloha) askAllohaState();
+      const elapsed = alloha
+        ? Math.min(секунда, durSec - 1)
+        : Math.min((Date.now() - startedAt) / 1000, durSec - 1);
       if (elapsed < 10) return;
       watchHeartbeat();
-      savePosition(show.id, "tv", elapsed, durSec, selectedSeason, selectedEpisode);
-      saveLastEpisode(show.id, selectedSeason, selectedEpisode);
-      const epName = episodes.find((e) => e.episode_number === selectedEpisode)?.name || "";
+      savePosition(show.id, "tv", elapsed, durSec, сезон, серия);
+      saveLastEpisode(show.id, сезон, серия);
+      const epName = сезон === selectedSeason ? (episodes.find((e) => e.episode_number === серия)?.name || "") : "";
       addToHistory({
         id: show.id, type: "tv", title: show.name, poster_path: show.poster_path,
         vote_average: show.vote_average, first_air_date: show.first_air_date, watchedAt: Date.now(),
-        progress: elapsed, duration: durSec, season: selectedSeason, episode: selectedEpisode,
+        progress: elapsed, duration: durSec, season: сезон, episode: серия,
         episodeName: epName, genre_ids: show.genres?.map((g) => g.id),
-        episodeCount: show.seasons?.find((s) => s.season_number === selectedSeason)?.episode_count,
+        episodeCount: show.seasons?.find((s) => s.season_number === сезон)?.episode_count,
         seasonCount: show.seasons?.filter((s) => s.season_number > 0).length,
       });
     };
     const iv = setInterval(write, 20000);
-    return () => { clearInterval(iv); write(); };
-  }, [showPlayer, streamData?.collapsEmbed, show, selectedSeason, selectedEpisode, episodes, episodeRestored]);
+    return () => { clearInterval(iv); write(); отписка?.(); отпискаСост?.(); };
+  }, [showPlayer, streamData?.collapsEmbed, streamData?.allohaAd, show, selectedSeason, selectedEpisode, episodes, episodeRestored]);
+
+  // Окно Alloha показали или сменилась серия — запускаем его.
+  useEffect(() => {
+    if (!showPlayer || !streamData?.allohaAd || !streamData?.collapsEmbed) return;
+    return playAlloha();
+  }, [showPlayer, streamData?.allohaAd, streamData?.collapsEmbed]);
 
   // Prefetch the selected episode's stream before the user presses "Смотреть"
   // so the first play is instant. Only warms while the player isn't open;
@@ -1234,7 +1266,20 @@ export function TVPlayer({ show }: TVPlayerProps) {
               озвучками. Наши ArtPlayer/панель серий/скипы тут не участвуют. */}
           {/* Контент-iframe: Pro сразу; free-Collaps — после нашего пре-ролла;
               free-Alloha (allohaAd) — СРАЗУ, т.к. реклама уже в плеере Alloha. */}
-          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
+          {/* Окно Alloha (Плеер 1) монтируется СРАЗУ, как только известен адрес, —
+              скрытым под постером. «Смотреть» запускает уже загруженный плеер. */}
+          {streamData?.collapsEmbed && streamData.allohaAd && (
+            <iframe
+              key={streamData.collapsEmbed}
+              src={streamData.collapsEmbed}
+              className={"absolute inset-0 w-full h-full border-0 z-10" + (showPlayer ? "" : " opacity-0 pointer-events-none")}
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+              tabIndex={showPlayer ? undefined : -1}
+              aria-hidden={showPlayer ? undefined : true}
+            />
+          )}
+          {showPlayer && streamData?.collapsEmbed && !streamData.allohaAd && (isPro || adDone) && (
             <iframe
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}

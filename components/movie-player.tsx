@@ -22,7 +22,7 @@ import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
 import { ArtPlayerView, type ArtSubtitle } from "./art-player";
-import { getSource, setSource, KINOPUB_UP, type KinoSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, KINOPUB_UP, type KinoSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveVkMovie, resolveCdnHub, resolveRutube, pickAllohaStream, playerLabel, allohaAdEmbed, allohaHasTitle, onAllohaTime, onAllohaState, askAllohaState, playAlloha, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { ProUpsell } from "./pro-upsell";
 import { PlayerSwitcher } from "./player-switcher";
 import { ProblemReport } from "./problem-report";
@@ -58,6 +58,8 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
   const [showLoadingMascot, setShowLoadingMascot] = useState(false);
   const [error, setError] = useState("");
   const [streamData, setStreamData] = useState<any>(null);
+  const streamDataRef = useRef<any>(null);
+  useEffect(() => { streamDataRef.current = streamData; }, [streamData]);
   // Free (zenithjs) по умолчанию → init true, чтобы SSR/первый рендер сразу
   // скрывали платные кнопки (скачать/вместе) без мелькания.
   const [srcIsZenith, setSrcIsZenith] = useState(true);
@@ -119,7 +121,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     // выключенный kino.pub бессмысленно — он всегда отвечает ошибкой и лишь
     // задерживает подсказку.
     const проверки: [KinoSource, Promise<unknown>][] = [
-      ["alloha", resolveAllohaHls(movie.id, "movie")],
+      ["alloha", allohaHasTitle(movie.id, "movie").then((ok) => ok || null)],
       ...(KINOPUB_UP
         ? ([["kinopub", resolveKinopub({ tmdbId: movie.id, type: "movie", title: назв, year: год, otitle: ориг })]] as [KinoSource, Promise<unknown>][])
         : []),
@@ -136,16 +138,27 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
   }, [movie.id]);
 
   const resolveAllohaNative = useCallback(async (): Promise<boolean> => {
-    // ПУТЬ B (монетизация): FREE (подписка загружена, не Pro) с источником alloha
-    // → плеер Alloha с белой рекламой (доход на наш токен). Рендерим как iframe
-    // (флаг allohaAd: без нашего пре-ролла). Pro/ещё-не-загружено → нативный чистый.
-    if (ALLOHA_AD_FOR_FREE && getSource() === "alloha" && subLoadedRef.current && !isProRef.current) {
-      setStreamData({ collaps: true, allohaAd: true, collapsEmbed: allohaAdEmbed(movie.id, "movie") });
-      return true;
-    }
     const мой = ++запускРеф.current;
     // Новый запуск — старая жалоба неактуальна, убираем сразу.
     setНехватка(null);
+
+    // ПЛЕЕР 1 = ОКНО ALLOHA (17.09.2026, решение Егора) — у всех, без нашего
+    // ArtPlayer. Прямой поток Alloha VK закрывал на 5–8 минуте, их окно под
+    // нашим доменом играет до конца, с 4K и всеми озвучками. Реклама внутри
+    // окна их, поэтому свой пре-ролл не показываем (флаг allohaAd).
+    // Нет тайтла в их каталоге — идём дальше по запасным источникам ниже.
+    if (getSource() === "alloha" && ALLOHA_UP && (await allohaHasTitle(movie.id, "movie"))) {
+      if (мой !== запускРеф.current) return false;
+      const поз = getPosition(movie.id, "movie");
+      setAllohaHls(null);
+      setStreamData({
+        collaps: true,
+        allohaAd: true,
+        collapsEmbed: allohaAdEmbed(movie.id, "movie", undefined, undefined, поз?.time),
+      });
+      try { window.dispatchEvent(new CustomEvent("kino-source-played", { detail: "alloha" })); } catch {}
+      return true;
+    }
 
     let a: AllohaHls | null;
     let defQ = "1080";
@@ -165,10 +178,11 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
       a = await resolveRutube(movie.title || "", yr, (movie as any).original_title);
       defQ = "Авто";
     } else {
-      // Alloha — основной источник, но он умеет лежать целиком (см. ALLOHA_UP).
-      // Тогда не ждём его таймаут, а сразу идём в живые: cdnhub держит и фильмы,
-      // и сериалы, vkmovie — только фильмы, но берёт то, чего нет у cdnhub.
-      a = ALLOHA_UP ? await resolveAllohaHls(movie.id, "movie") : null;
+      // Сюда попадаем, только если окна Alloha не будет: тайтла нет в их
+      // каталоге или Alloha выключена рубильником. Прямой поток Alloha больше
+      // не пробуем — VK его рвёт. Идём в живые: cdnhub держит и фильмы, и
+      // сериалы, vkmovie — только фильмы, но берёт то, чего нет у cdnhub.
+      a = null;
       if (!a) {
         a = await resolveCdnHub(movie.id, "movie");
         if (a) { defQ = "1080p"; сыграл = "cdnhub"; }
@@ -218,6 +232,10 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
     const onSourceChange = () => {
       check();
       if (startedRef.current) return;
+      // Источник «сменился» на тот же Alloha, а её окно уже загружено под
+      // постером — не сбрасываем, иначе оно грузится заново (энфорсер подписки
+      // шлёт это событие при каждом открытии страницы).
+      if (getSource() === "alloha" && streamDataRef.current?.allohaAd) return;
       if ((getSource() === "alloha" || getSource() === "vkmovie" || getSource() === "cdnhub" || getSource() === "rutube")) {
         setStreamData(null);
         resolveAllohaNative();
@@ -436,10 +454,19 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
   // Точную докрутку внутри держит сам их плеер (свой сторедж по домену).
   useEffect(() => {
     if (!showPlayer || !streamData?.collapsEmbed) return;
-    const durSec = ((movie as any)?.runtime > 0 ? (movie as any).runtime : 90) * 60;
+    let durSec = ((movie as any)?.runtime > 0 ? (movie as any).runtime : 90) * 60;
     const startedAt = Date.now();
+    // Окно Alloha само сообщает секунду просмотра и длительность — берём их, а
+    // не время, сколько окно открыто: иначе пауза и перемотка портили «Продолжить».
+    const alloha = !!streamData?.allohaAd;
+    let секунда = 0;
+    const отписка = alloha ? onAllohaTime((t) => { секунда = t; }) : null;
+    const отпискаСост = alloha ? onAllohaState((с) => { if (с.duration) durSec = с.duration; }) : null;
     const write = () => {
-      const elapsed = Math.min((Date.now() - startedAt) / 1000, durSec - 1);
+      if (alloha) askAllohaState();
+      const elapsed = alloha
+        ? Math.min(секунда, durSec - 1)
+        : Math.min((Date.now() - startedAt) / 1000, durSec - 1);
       if (elapsed < 10) return;
       watchHeartbeat();
       savePosition(movie.id, "movie", elapsed, durSec);
@@ -450,8 +477,14 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
       });
     };
     const iv = setInterval(write, 20000);
-    return () => { clearInterval(iv); write(); };
-  }, [showPlayer, streamData?.collapsEmbed, movie]);
+    return () => { clearInterval(iv); write(); отписка?.(); отпискаСост?.(); };
+  }, [showPlayer, streamData?.collapsEmbed, streamData?.allohaAd, movie]);
+
+  // Окно Alloha показали — запускаем его. Оно уже загружено под постером.
+  useEffect(() => {
+    if (!showPlayer || !streamData?.allohaAd || !streamData?.collapsEmbed) return;
+    return playAlloha();
+  }, [showPlayer, streamData?.allohaAd, streamData?.collapsEmbed]);
 
   // Apply a fetched resolve with the smart default quality (connection-aware +
   // remembered manual choice) instead of the backend's raw max.
@@ -827,7 +860,22 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
               Раскрывается на «Смотреть». Наш ArtPlayer тут не участвует. */}
           {/* Контент-iframe: Pro сразу; free-Collaps — после нашего пре-ролла;
               free-Alloha (allohaAd) — СРАЗУ, реклама уже в плеере Alloha. */}
-          {showPlayer && streamData?.collapsEmbed && (isPro || adDone || streamData.allohaAd) && (
+          {/* Окно Alloha (Плеер 1) монтируется СРАЗУ, как только известен адрес, —
+              скрытым под постером. Пока человек читает описание, их плеер уже
+              загружен, и «Смотреть» запускает его командой, а не ждёт загрузки
+              чужой страницы. */}
+          {streamData?.collapsEmbed && streamData.allohaAd && (
+            <iframe
+              key={streamData.collapsEmbed}
+              src={streamData.collapsEmbed}
+              className={"absolute inset-0 w-full h-full border-0 z-10" + (showPlayer ? "" : " opacity-0 pointer-events-none")}
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+              tabIndex={showPlayer ? undefined : -1}
+              aria-hidden={showPlayer ? undefined : true}
+            />
+          )}
+          {showPlayer && streamData?.collapsEmbed && !streamData.allohaAd && (isPro || adDone) && (
             <iframe
               key={streamData.collapsEmbed}
               src={streamData.collapsEmbed}

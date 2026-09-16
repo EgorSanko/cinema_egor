@@ -269,8 +269,12 @@ export const ALLOHA_PLAYER_HOST = "https://player.sapkeflykino.ru";
 // кабинете остаётся на нуле (наш нативный резолв им не виден).
 export const ALLOHA_AD_FOR_FREE = false;
 
-/** Строит URL iframe-плеера Alloha (наш токен) по TMDB id. Плеер сам резолвит
- *  контент/озвучки/сезоны. startSec — резюм с позиции. */
+/** Строит URL окна Alloha (наш токен) по TMDB id. Плеер сам резолвит
+ *  контент/озвучки/сезоны. startSec — продолжить с места остановки.
+ *
+ *  С 17.09.2026 это и есть Плеер 1 у всех: их окно вместо нашего ArtPlayer.
+ *  Прямые ссылки Alloha VK закрывал на 5–8 минуте, а окно под нашим доменом
+ *  играет до конца. Проверено: открывается прямо по tmdb, token_movie не нужен. */
 export function allohaAdEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number, startSec?: number,
 ): string {
@@ -281,7 +285,104 @@ export function allohaAdEmbed(
   });
   if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
   if (startSec && startSec > 5) p.set("start", String(Math.floor(startSec)));
+  // Автозапуска в адресе НЕТ намеренно: окно грузится заранее, скрытым под
+  // постером, пока человек читает описание. Адрес должен остаться тем же и
+  // после нажатия «Смотреть» — иначе окно перезагрузится и вся заготовка
+  // пропадёт. Запускаем командой playAlloha().
   return `${ALLOHA_PLAYER_HOST}/?${p.toString()}`;
+}
+
+/** Есть ли тайтл в каталоге Alloha (через наш /api/alloha-check). Нужна, чтобы
+ *  при промахе не показывать пустое окно, а уйти на следующий источник.
+ *  При сбое проверки отвечаем «есть» — пусть окно попробует само. */
+export async function allohaHasTitle(tmdbId: number, type: "movie" | "tv"): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/alloha-check?tmdb=${tmdbId}&type=${type}`, { cache: "no-store" });
+    if (!r.ok) return true;
+    const d = await r.json();
+    return d?.ok !== false;
+  } catch {
+    return true;
+  }
+}
+
+/** Слушает сообщения окна Alloha: оно шлёт {"event":"timeupdate","time":N}
+ *  строкой JSON. Внутрь чужого окна не заглянуть, поэтому это единственный
+ *  способ знать точную секунду для «Продолжить просмотр». */
+export function onAllohaTime(cb: (sec: number) => void): () => void {
+  const h = (e: MessageEvent) => {
+    if (e.origin !== ALLOHA_PLAYER_HOST) return;
+    let d: any = e.data;
+    if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
+    if (d && d.event === "timeupdate" && typeof d.time === "number" && d.time > 0) cb(d.time);
+  };
+  window.addEventListener("message", h);
+  return () => window.removeEventListener("message", h);
+}
+
+/** Что сейчас играет в окне Alloha. Окно отвечает на команду getTimeSave:
+ *  {"event":"getTimeSave","status":"success","saveInfo":{"serial":{"season":2,
+ *  "episode":3},"translation":"Кравец",...}} и на duration: {"event":"duration",
+ *  "time":1293.38}. Серию внутри окна человек может переключить их кнопками —
+ *  без этого мы писали бы позицию не той серии. */
+export function onAllohaState(cb: (s: { season?: number; episode?: number; duration?: number }) => void): () => void {
+  const h = (e: MessageEvent) => {
+    if (e.origin !== ALLOHA_PLAYER_HOST) return;
+    let d: any = e.data;
+    if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
+    if (!d) return;
+    if (d.event === "getTimeSave" && d.status === "success") {
+      const с = d.saveInfo?.serial;
+      if (с && Number(с.season) > 0 && Number(с.episode) > 0) cb({ season: Number(с.season), episode: Number(с.episode) });
+    } else if (d.event === "duration" && typeof d.time === "number" && d.time > 0) {
+      cb({ duration: d.time });
+    }
+  };
+  window.addEventListener("message", h);
+  return () => window.removeEventListener("message", h);
+}
+
+/** Запустить заранее загруженное окно Alloha. Окно могло ещё не догрузиться
+ *  (или только что сменилась серия и оно открылось заново), поэтому шлём
+ *  команду play раз в секунду, пока окно не ответит событием play, но не
+ *  дольше ~12 секунд. Возвращает функцию отмены. */
+export function playAlloha(): () => void {
+  let готово = false;
+  let n = 0;
+  const h = (e: MessageEvent) => {
+    if (e.origin !== ALLOHA_PLAYER_HOST) return;
+    let d: any = e.data;
+    if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
+    if (d && d.event === "play") стоп();
+  };
+  const послать = () => {
+    try {
+      document.querySelectorAll<HTMLIFrameElement>(`iframe[src^="${ALLOHA_PLAYER_HOST}"]`).forEach((f) => {
+        f.contentWindow?.postMessage(JSON.stringify({ api: "play" }), ALLOHA_PLAYER_HOST);
+      });
+    } catch {}
+    if (++n >= 12) стоп();
+  };
+  const iv = window.setInterval(послать, 1000);
+  function стоп() {
+    if (готово) return;
+    готово = true;
+    window.clearInterval(iv);
+    window.removeEventListener("message", h);
+  }
+  window.addEventListener("message", h);
+  послать();
+  return стоп;
+}
+
+/** Спросить у открытых окон Alloha текущую серию и длительность (ответ придёт в onAllohaState). */
+export function askAllohaState() {
+  try {
+    document.querySelectorAll<HTMLIFrameElement>(`iframe[src^="${ALLOHA_PLAYER_HOST}"]`).forEach((f) => {
+      f.contentWindow?.postMessage(JSON.stringify({ api: "getTimeSave" }), ALLOHA_PLAYER_HOST);
+      f.contentWindow?.postMessage(JSON.stringify({ api: "duration" }), ALLOHA_PLAYER_HOST);
+    });
+  } catch {}
 }
 
 // Единый резолвер iframe-embed по текущему источнику (zenithjs или alloha).
