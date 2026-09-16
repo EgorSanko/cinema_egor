@@ -28,7 +28,7 @@ const ТОКЕН = process.env.ALLOHA_TOKEN || ALLOHA_AD_TOKEN;
 // Ответ «есть/нет» у тайтла не меняется днями, а лимит у них 120 запросов в
 // минуту на токен. Держим в памяти процесса, чтобы не тратить лимит на каждое
 // открытие страницы.
-const кэш = new Map<string, { есть: boolean; до: number }>();
+const кэш = new Map<string, { есть: boolean; by: "tmdb" | "imdb"; до: number }>();
 const ЧАС = 3600_000;
 
 export async function GET(req: NextRequest) {
@@ -40,33 +40,45 @@ export async function GET(req: NextRequest) {
   const сериал = п.get("type") === "tv";
   const ключ = `${tmdb}:${сериал ? "serial" : "movie"}`;
 
-  const было = кэш.get(ключ);
+  // IMDb передаёт клиент: у части тайтлов в каталоге Alloha НЕ заполнен код
+  // TMDB (так было с «Мэйдэй» 2026 — tmdb пустой, а imdb и kp есть). Тогда
+  // ищем по IMDb, и окно открываем тоже по нему (поле by в ответе).
+  const imdb = (п.get("imdb") || "").trim();
+  const imdbOk = /^tt\d+$/.test(imdb);
+  const ключПолный = ключ + ":" + (imdbOk ? imdb : "");
+
+  const было = кэш.get(ключПолный);
   if (было && было.до > Date.now()) {
-    return NextResponse.json({ ok: было.есть }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: было.есть, by: было.by }, { headers: { "Cache-Control": "no-store" } });
   }
 
-  try {
-    const адрес =
-      `https://api.alloha.tv/?token=${encodeURIComponent(ТОКЕН)}` +
-      `&tmdb=${encodeURIComponent(tmdb)}&type=${сериал ? "serial" : "movie"}`;
-    // У их API сертификат периодически числится просроченным, а ответ при этом
-    // верный. Ходим обычным fetch: Node с их цепочкой справляется, но таймаут
-    // держим коротким — это проверка перед открытием плеера, ждать нельзя.
-    const о = await fetch(адрес, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!о.ok) {
-      // Их API молчит — НЕ говорим «нет»: иначе при их аварии мы увели бы всех
-      // с рабочего плеера. Отвечаем «есть» и даём окну попробовать само.
-      return NextResponse.json({ ok: true, guessed: true }, { headers: { "Cache-Control": "no-store" } });
+  const спросить = async (запрос: string): Promise<"да" | "нет" | "сбой"> => {
+    try {
+      const о = await fetch(
+        `https://api.alloha.tv/?token=${encodeURIComponent(ТОКЕН)}&${запрос}&type=${сериал ? "serial" : "movie"}`,
+        { headers: { Accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(6000) },
+      );
+      if (!о.ok) return "сбой";
+      const д = await о.json();
+      return д?.status === "success" && д?.data?.token_movie ? "да" : "нет";
+    } catch {
+      return "сбой";
     }
-    const д = await о.json();
-    const есть = д?.status === "success" && !!д?.data?.token_movie;
-    кэш.set(ключ, { есть, до: Date.now() + ЧАС });
-    return NextResponse.json({ ok: есть }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
-    return NextResponse.json({ ok: true, guessed: true }, { headers: { "Cache-Control": "no-store" } });
-  }
+  };
+
+  const поTmdb = await спросить(`tmdb=${encodeURIComponent(tmdb)}`);
+  let итог: { есть: boolean; by: "tmdb" | "imdb" } | null = null;
+  if (поTmdb === "да") итог = { есть: true, by: "tmdb" };
+  else if (imdbOk) {
+    const поImdb = await спросить(`imdb=${encodeURIComponent(imdb)}`);
+    if (поImdb === "да") итог = { есть: true, by: "imdb" };
+    else if (поTmdb === "нет" && поImdb === "нет") итог = { есть: false, by: "tmdb" };
+  } else if (поTmdb === "нет") итог = { есть: false, by: "tmdb" };
+
+  // Их API молчит — НЕ говорим «нет»: иначе при их аварии мы увели бы всех
+  // с рабочего плеера. Отвечаем «есть» и даём окну попробовать само.
+  if (!итог) return NextResponse.json({ ok: true, by: "tmdb", guessed: true }, { headers: { "Cache-Control": "no-store" } });
+
+  кэш.set(ключПолный, { есть: итог.есть, by: итог.by, до: Date.now() + ЧАС });
+  return NextResponse.json({ ok: итог.есть, by: итог.by }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -312,11 +312,12 @@ export const ALLOHA_AD_FOR_FREE = false;
 export function allohaAdEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number, startSec?: number,
 ): string {
-  const p = new URLSearchParams({
-    tmdb: String(tmdbId),
-    type: type === "tv" ? "serial" : "movie",
-    token: ALLOHA_AD_TOKEN,
-  });
+  // Обычно окно открываем по TMDB. Если проверка нашла тайтл только по IMDb
+  // (у Alloha пустой код TMDB) — открываем по IMDb, иначе окно скажет «нет».
+  const imdb = allohaПоImdb.get(`${type}:${tmdbId}`);
+  const p = new URLSearchParams(imdb ? { imdb } : { tmdb: String(tmdbId) });
+  p.set("type", type === "tv" ? "serial" : "movie");
+  p.set("token", ALLOHA_AD_TOKEN);
   if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
   if (startSec && startSec > 5) p.set("start", String(Math.floor(startSec)));
   // Автозапуска в адресе НЕТ намеренно: окно грузится заранее, скрытым под
@@ -331,14 +332,25 @@ export function allohaAdEmbed(
  *  При сбое проверки отвечаем «есть» — пусть окно попробует само. */
 export async function allohaHasTitle(tmdbId: number, type: "movie" | "tv"): Promise<boolean> {
   try {
-    const r = await fetch(`/api/alloha-check?tmdb=${tmdbId}&type=${type}`, { cache: "no-store" });
+    // IMDb нужен на случай, когда в каталоге Alloha у тайтла пустой код TMDB
+    // («Мэйдэй» 2026): тогда сервер находит его по IMDb, а окно открываем по нему.
+    const imdb = await fetchImdb(tmdbId, type);
+    const r = await fetch(
+      `/api/alloha-check?tmdb=${tmdbId}&type=${type}${imdb ? `&imdb=${encodeURIComponent(imdb)}` : ""}`,
+      { cache: "no-store" },
+    );
     if (!r.ok) return true;
     const d = await r.json();
+    if (d?.ok !== false && d?.by === "imdb" && imdb) allohaПоImdb.set(`${type}:${tmdbId}`, imdb);
+    else allohaПоImdb.delete(`${type}:${tmdbId}`);
     return d?.ok !== false;
   } catch {
     return true;
   }
 }
+
+/** Тайтлы, которые Alloha знает только по IMDb (код TMDB у них пустой). */
+const allohaПоImdb = new Map<string, string>();
 
 /** Слушает сообщения окна Alloha: оно шлёт {"event":"timeupdate","time":N}
  *  строкой JSON. Внутрь чужого окна не заглянуть, поэтому это единственный
