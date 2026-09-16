@@ -93,14 +93,17 @@ export const ALLOHA_UP = true;
 export const KINOPUB_UP = false;
 
 /**
- * Рубильник «только Alloha» (15.09.2026, решение Егора на время техработ).
+ * Основной источник — cdnhub (16.09.2026, решение Егора).
  *
- * Пока true, у всех один плеер — Alloha: переключатель показывает только его,
- * а getSource всегда отвечает "alloha", что бы ни лежало в настройке. Саму
- * настройку в браузере НЕ перезаписываем — сняли рубильник, и у каждого
- * вернулся его прежний выбор.
+ * Почему он. Это НАШ плеер: свои озвучки, качество, скачивание, «продолжить»
+ * и никакой чужой рекламы. Проверено в этот день: держит и фильмы, и сериалы
+ * (12 популярных тайтлов из 12), максимум 1080p, длинный просмотр идёт без
+ * обрывов — 1.6 ГБ подряд, заплатка от обрыва на гигабайте держит.
+ *
+ * Чем платим: 4K нет (у Alloha было), и где-то меньше озвучек. Alloha при
+ * этом никуда не девается — остаётся вторым плеером.
  */
-export const ТОЛЬКО_ALLOHA = true;
+export const ОСНОВНОЙ_CDNHUB = true;
 
 /**
  * Порядок плееров — ОДИН на всё приложение.
@@ -109,7 +112,12 @@ export const ТОЛЬКО_ALLOHA = true;
  * поправить в одном месте и забыть про другое, чтобы кнопка «Плеер 3» и
  * надпись «у Плеера 3 нет фильма» стали показывать на разные источники.
  */
-export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = (ТОЛЬКО_ALLOHA ? ["alloha"] : [
+export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = (ОСНОВНОЙ_CDNHUB ? ([
+  "cdnhub",
+  ALLOHA_UP ? "alloha" : null,
+  "vkmovie",
+  "rutube",
+].filter(Boolean) as KinoSource[]) : [
   HDREZKA_UP ? "hdrezka" : null,
   ALLOHA_UP ? "alloha" : null,
   KINOPUB_UP ? "kinopub" : null,
@@ -128,7 +136,21 @@ const РУЧНОЙ_КЛЮЧ = "kino_source_manual"; // 'hdrezka' | 'kinopub' | '
 export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
 
 export function getSource(): KinoSource {
-  if (ТОЛЬКО_ALLOHA) return "alloha";
+  // Основной — cdnhub. Тем, кто НЕ выбирал плеер руками, отдаём его; чужой
+  // выбор не трогаем, иначе человек каждый раз возвращается не туда, куда сам
+  // переключился.
+  if (ОСНОВНОЙ_CDNHUB) {
+    try {
+      const выбранное = localStorage.getItem(SOURCE_KEY);
+      const руками = localStorage.getItem(РУЧНОЙ_КЛЮЧ) === "1";
+      if (руками && выбранное &&
+          (выбранное === "cdnhub" || выбранное === "vkmovie" ||
+           выбранное === "rutube" || (выбранное === "alloha" && ALLOHA_UP))) {
+        return выбранное as KinoSource;
+      }
+    } catch {}
+    return "cdnhub";
+  }
   // Дефолт для ВСЕХ — alloha (бесплатный = Alloha + пре-ролл; для Про — без рекламы).
   // zenithjs (Collaps, «джетикс») БОЛЬШЕ НЕ основной источник и не показывается как
   // плеер — он остался ТОЛЬКО тихим фолбэком (allohaFallbackToZenith), когда Alloha
