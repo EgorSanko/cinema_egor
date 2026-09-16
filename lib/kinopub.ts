@@ -113,10 +113,11 @@ export const ОСНОВНОЙ_CDNHUB = true;
  * надпись «у Плеера 3 нет фильма» стали показывать на разные источники.
  */
 export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = (ОСНОВНОЙ_CDNHUB ? ([
+  // 16.09.2026, решение Егора: «оставляй cdnhub, пока будем только на нём».
+  // Остальные источники живы и вернутся одной строкой — допиши сюда
+  // "alloha", "vkmovie", "rutube". Риск помню: если cdnhub ляжет,
+  // переключиться людям будет некуда.
   "cdnhub",
-  ALLOHA_UP ? "alloha" : null,
-  "vkmovie",
-  "rutube",
 ].filter(Boolean) as KinoSource[]) : [
   HDREZKA_UP ? "hdrezka" : null,
   ALLOHA_UP ? "alloha" : null,
@@ -140,15 +141,8 @@ export function getSource(): KinoSource {
   // выбор не трогаем, иначе человек каждый раз возвращается не туда, куда сам
   // переключился.
   if (ОСНОВНОЙ_CDNHUB) {
-    try {
-      const выбранное = localStorage.getItem(SOURCE_KEY);
-      const руками = localStorage.getItem(РУЧНОЙ_КЛЮЧ) === "1";
-      if (руками && выбранное &&
-          (выбранное === "cdnhub" || выбранное === "vkmovie" ||
-           выбранное === "rutube" || (выбранное === "alloha" && ALLOHA_UP))) {
-        return выбранное as KinoSource;
-      }
-    } catch {}
+    // Плеер сейчас один, поэтому отдаём его всем. Прежний выбор в браузере не
+    // стираем: вернём остальные источники — и каждый окажется там, где был.
     return "cdnhub";
   }
   // Дефолт для ВСЕХ — alloha (бесплатный = Alloha + пре-ролл; для Про — без рекламы).
