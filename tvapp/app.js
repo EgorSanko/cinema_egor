@@ -602,7 +602,17 @@
     el("who").innerHTML = S.user ? esc(S.user.name || S.user.email) : "Гость";
     опроситьКодеки();
     узнатьПодписку(null);
+    изMSX();
     loadHome();
+    var возврат = lsGet("kino_tv_return", null);
+    if (возврат && возврат.item && возврат.item.id && (Date.now() - возврат.at) < 12 * 3600 * 1000) {
+      try { localStorage.removeItem("kino_tv_return"); } catch (e) {}
+      var it = возврат.item;
+      if (возврат.season) it.__season = возврат.season;
+      маяк("alloha-msx: вернулись, открываю карточку");
+      S.stack.push("home");
+      openDetail(it);
+    }
   }
 
   function loadHome() {
@@ -1080,6 +1090,10 @@
         if (!d || d.ok === false) {
           маяк("alloha-окно: нет в каталоге");
           msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
+          return;
+        }
+        if (изMSX()) {
+          открытьAllohaВMSX(item, type, season, episode, d.by === "imdb" ? imdbКод : "");
           return;
         }
         открытьОкноAlloha(item, type, season, episode, d.by === "imdb" ? imdbКод : "");
@@ -1692,6 +1706,47 @@
     var m = { api: api };
     if (value !== undefined) m.value = value;
     try { f.contentWindow.postMessage(JSON.stringify(m), location.protocol + "//" + location.host); } catch (e) {}
+  }
+
+  // ── ALLOHA ЧЕРЕЗ ПЛЕЕР MSX (Samsung) ──────────────────────────────────
+  //
+  // Окно Alloha на нашей странице забирало кнопку «назад» — выйти было нельзя.
+  // Если мы запущены из Media Station X, уходим в её плеер: страница ленты
+  // /msx/feed.json?view=alloha сразу запускает плагин tvapp/msx-alloha.html, а
+  // пульт и «назад» обрабатывает сама MSX. Оттуда пункт «Вернуться в кинотеатр»
+  // открывает клиент, и он сам показывает ту же карточку (kino_tv_return).
+  //
+  // Признак MSX: ссылки из меню MSX открывают /tvweb/?msx=1, развилка Samsung
+  // передаёт его сюда; запоминаем, чтобы пережил перезапуски страницы.
+  function изMSX() {
+    if (/[?&]msx=1/.test(location.search)) { lsSet("kino_msx", Date.now()); return true; }
+    var t = lsGet("kino_msx", 0);
+    return !!t && (Date.now() - t) < 30 * 24 * 3600 * 1000;
+  }
+
+  function открытьAllohaВMSX(item, type, season, episode, imdb) {
+    var поз = getPosition(item.id, type, season, episode);
+    var старт = поз && поз.time ? Math.floor(поз.time) : 0;
+    var карточка = S.detail && S.detail.id === item.id ? S.detail : item;
+    lsSet("kino_tv_return", {
+      at: Date.now(), season: season || 0,
+      item: {
+        id: карточка.id, title: карточка.title, name: карточка.name,
+        original_title: карточка.original_title, original_name: карточка.original_name,
+        poster_path: карточка.poster_path, backdrop_path: карточка.backdrop_path,
+        release_date: карточка.release_date, first_air_date: карточка.first_air_date,
+        vote_average: карточка.vote_average, __kind: type
+      }
+    });
+    var ф = "https://sapkeflykino.ru/api/msx-alloha?id=" + item.id + "&type=" + type +
+      (type === "tv" ? "&season=" + (season || 1) + "&episode=" + (episode || 1) : "") +
+      (imdb ? "&imdb=" + encodeURIComponent(imdb) : "") +
+      (старт > 5 ? "&start=" + старт : "") +
+      "&title=" + encodeURIComponent(titleOf(item));
+    маяк("alloha-msx: ухожу в плеер MSX" + (type === "tv" ? " s" + season + "e" + episode : ""));
+    msg("Открываю плеер Alloha…");
+    try { el("video").pause(); } catch (e) {}
+    location.href = "https://msx.benzac.de/?start=" + encodeURIComponent("content:" + ф);
   }
 
   function открытьОкноAlloha(item, type, season, episode, imdb) {

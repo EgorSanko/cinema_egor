@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Hls from "hls.js";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
-import { resolveTvFirst, ALLOHA_Q_ORDER, HDREZKA_UP } from "@/lib/kinopub";
+import { resolveTvFirst, ALLOHA_Q_ORDER, HDREZKA_UP, тянетAlloha, allohaНаТв, allohaТвАдрес, allohaКоманда, ALLOHA_PLAYER_HOST } from "@/lib/kinopub";
 import {
   savePosition,
   getPosition,
@@ -185,6 +185,28 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   const [speed, setSpeed] = useState(1);
   const [toast, setToast] = useState<string | null>(null);
 
+  // ── ALLOHA ДОПОЛНИТЕЛЬНОЙ КНОПКОЙ (17.09.2026) ────────────────────────────
+  // Основной поток — первый ответивший из Плееров 2–4. Кнопка «Alloha» в ряду
+  // плеера открывает ИХ окно поверх нашего: видео запрашивает сам телевизор под
+  // доменом плеера, и VK его не режет. Кнопка есть, только если движок ТВ
+  // читает их код (тянетAlloha) и тайтл есть в их каталоге.
+  //
+  // Пульт внутрь чужого окна НЕ отдаём — «назад» оттуда не поймать. Нажатия
+  // переводим в команды их плееру: ОК — пауза, ◀▶ — ±10 с, «назад» — к нам.
+  const [allohaКлюч, setAllohaКлюч] = useState<{ imdb?: string } | null>(null);
+  const [allohaОткрыта, setAllohaОткрыта] = useState<string | null>(null);
+  const allohaОткрытаRef = useRef<string | null>(null);
+  allohaОткрытаRef.current = allohaОткрыта;
+  const allohaFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const allohaВремя = useRef(0);
+  const allohaИграет = useRef(false);
+  const [allohaПодсказка, setAllohaПодсказка] = useState(false);
+  // Ряд кнопок плеера. Порядок ОДИН для отрисовки и для пульта.
+  type КнопкаПлеера = "rew" | "play" | "fwd" | "set" | "alloha" | "exit";
+  const кнопки: КнопкаПлеера[] = allohaКлюч
+    ? ["rew", "play", "fwd", "set", "alloha", "exit"]
+    : ["rew", "play", "fwd", "set", "exit"];
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const saveInt = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -202,6 +224,52 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     setToast(m);
     setTimeout(() => setToast(null), 1800);
   }, []);
+
+  // Есть ли у этого тайтла окно Alloha — спрашиваем один раз на тайтл и только
+  // на телевизорах, которые их код прочитают.
+  useEffect(() => {
+    setAllohaКлюч(null);
+    if (!тянетAlloha()) return;
+    let жив = true;
+    allohaНаТв(media.id, media.type).then((к) => { if (жив) setAllohaКлюч(к); });
+    return () => { жив = false; };
+  }, [media.id, media.type]);
+
+  // Пока открыто окно Alloha: слушаем его секунду и паузу, пишем позицию.
+  useEffect(() => {
+    if (!allohaОткрыта) return;
+    const h = (ev: MessageEvent) => {
+      if (ev.origin !== ALLOHA_PLAYER_HOST) return;
+      let d: any = ev.data;
+      if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
+      if (!d || !d.event) return;
+      if (d.event === "timeupdate" && typeof d.time === "number") allohaВремя.current = d.time;
+      else if (d.event === "play") allohaИграет.current = true;
+      else if (d.event === "pause") allohaИграет.current = false;
+    };
+    // Их окно может забрать фокус себе — тогда кнопки пульта перестанут
+    // доходить до нас. Возвращаем фокус странице.
+    const вернутьФокус = () => { setTimeout(() => { try { window.focus(); } catch {} }, 0); };
+    window.addEventListener("message", h);
+    window.addEventListener("blur", вернутьФокус);
+    const iv = setInterval(() => {
+      const t = allohaВремя.current;
+      const dur = videoRef.current?.duration || 0;
+      if (t > 10 && dur > 0) savePosition(media.id, media.type, t, dur, isSeries ? season : undefined, isSeries ? episode : undefined);
+    }, 20000);
+    return () => {
+      window.removeEventListener("message", h);
+      window.removeEventListener("blur", вернутьФокус);
+      clearInterval(iv);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allohaОткрыта]);
+
+  useEffect(() => {
+    if (!allohaПодсказка) return;
+    const t = setTimeout(() => setAllohaПодсказка(false), 5000);
+    return () => clearTimeout(t);
+  }, [allohaПодсказка]);
 
   // Restore last-watched season/episode + remembered dub on mount.
   useEffect(() => {
@@ -1044,6 +1112,29 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   }, [resolve, media]);
 
   // Exit: back to /tv-home (or, for a series in the player, back to the picker).
+  const открытьAlloha = useCallback(() => {
+    if (!allohaКлюч) return;
+    const v = videoRef.current;
+    const start = v ? v.currentTime : 0;
+    if (v) v.pause();
+    allohaВремя.current = start;
+    allohaИграет.current = true;
+    clearHideTimer();
+    setOverlay("none");
+    setAllohaОткрыта(allohaТвАдрес(media.id, media.type, allohaКлюч, season, episode, start));
+    setAllohaПодсказка(true);
+    try { const i = new Image(); i.src = "/tv-error?m=" + encodeURIComponent("alloha: открыто окно"); } catch {}
+  }, [allohaКлюч, media.id, media.type, season, episode, clearHideTimer]);
+
+  const закрытьAlloha = useCallback(() => {
+    const t = allohaВремя.current;
+    setAllohaОткрыта(null);
+    const v = videoRef.current;
+    if (v && t > 1) { try { v.currentTime = t; } catch {} }
+    if (v) v.play().catch(() => {});
+    flash("Наш плеер");
+  }, [flash]);
+
   const exit = useCallback(() => {
     saveNow();
     if (videoRef.current) videoRef.current.pause();
@@ -1075,6 +1166,12 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   useEffect(() => {
     try { history.pushState({ tvBack: true }, ""); } catch { return; }
     const onPop = () => {
+      // Открыто окно Alloha — «назад» возвращает в наш плеер, а не выходит.
+      if (allohaОткрытаRef.current) {
+        закрытьAlloha();
+        try { history.pushState({ tvBack: true }, ""); } catch {}
+        return;
+      }
       try {
         const i = new Image();
         i.src = "/tv-error?m=" + encodeURIComponent("назад: перехвачено, оверлей=" + overlayRef.current);
@@ -1095,7 +1192,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exit, revealControls]);
+  }, [exit, revealControls, закрытьAlloha]);
 
   // ════════════════════════════════════════════════════════════════
   // REMOTE / KEYBOARD — e.key AND legacy e.keyCode.
@@ -1130,6 +1227,27 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // срабатывал, и человек не мог запустить серию вообще: мышью работало,
       // пультом нет. Именно на это Егор и жаловался.
       if (zone === "player" && adActiveRef.current) { if (isBack) exit(); return; }
+
+      // Открыто окно Alloha: пульт управляет им командами, сам в окно не уходит.
+      if (zone === "player" && allohaОткрыта) {
+        const fr = allohaFrameRef.current;
+        if (isBack) { закрытьAlloha(); return; }
+        if (isEnter || isSpace || isPlayPause) {
+          allohaКоманда(fr, allohaИграет.current ? "pause" : "play");
+          allohaИграет.current = !allohaИграет.current;
+          setAllohaПодсказка(true);
+          return;
+        }
+        if (isLeft || isRight) {
+          const t = Math.max(0, allohaВремя.current + (isRight ? 10 : -10));
+          allohaКоманда(fr, "seek", t);
+          allohaВремя.current = t;
+          flash(isRight ? "+10 секунд" : "−10 секунд");
+          return;
+        }
+        if (isUp || isDown) { setAllohaПодсказка(true); return; }
+        return;
+      }
 
       // ────────── SERIES PICKER (Озвучка | Сезоны | Серии) ──────────
       if (zone === "picker") {
@@ -1257,7 +1375,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
       // ════════ overlay === "controls" ════════
       // Two focus zones: "bar" (the timeline scrubber) and "buttons" (the
       // ⏪ ⏯ ⏩ ⚙ ✕ row).
-      const CTRL_COUNT = 5;
+      const CTRL_COUNT = кнопки.length;
       if (overlay === "controls") {
         // ───── zone "bar": the scrubbable timeline ─────
         if (ctrlZone === "bar") {
@@ -1284,11 +1402,13 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         if (isRight) { setCtrlIdx((i) => Math.min(CTRL_COUNT - 1, i + 1)); bumpHideTimer(); return; }
         // OK → ACTIVATE the focused button. Settings open ONLY here, on ⚙.
         if (isEnter || isSpace || isPlayPause) {
-          if (ctrlIdx === 0) { seek(-10); bumpHideTimer(); }
-          else if (ctrlIdx === 1) { togglePlay(); bumpHideTimer(); }
-          else if (ctrlIdx === 2) { seek(10); bumpHideTimer(); }
-          else if (ctrlIdx === 3) { clearHideTimer(); setSettingsTab(0); setSettingsIdx(0); setOverlay("settings"); }
-          else if (ctrlIdx === 4) { exit(); }
+          const id = кнопки[ctrlIdx];
+          if (id === "rew") { seek(-10); bumpHideTimer(); }
+          else if (id === "play") { togglePlay(); bumpHideTimer(); }
+          else if (id === "fwd") { seek(10); bumpHideTimer(); }
+          else if (id === "set") { clearHideTimer(); setSettingsTab(0); setSettingsIdx(0); setOverlay("settings"); }
+          else if (id === "alloha") { открытьAlloha(); }
+          else if (id === "exit") { exit(); }
           return;
         }
         return;
@@ -1312,7 +1432,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
     zone, overlay, pickerCol, dubIdx, seasonIdx, episodeIdx, validSeasons, gatedSeasons,
     episodes, pickerEpisodes, playerDubs, hasDubCol, season, episode,
     isSeries, data, translators, translatorId, settingsTab, settingsIdx, ctrlIdx, ctrlZone,
-    errBtnIdx, router, exit, resolve, playEpisode, pickDub, changeQuality, changeTranslator, changeSpeed, seek, scrub,
+    errBtnIdx, router, exit, resolve, playEpisode, allohaОткрыта, закрытьAlloha, открытьAlloha, allohaКлюч, flash, pickDub, changeQuality, changeTranslator, changeSpeed, seek, scrub,
     togglePlay, revealControls, bumpHideTimer, flashControls, clearHideTimer,
     retryResolve, errorBack,
   ]);
@@ -1512,6 +1632,30 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
         <>
           <video ref={videoRef} className="absolute inset-0 h-full w-full bg-black" playsInline autoPlay />
 
+          {/* Окно Alloha поверх нашего плеера (кнопка «Alloha»). tabIndex -1:
+              фокус остаётся у страницы, пульт работает через команды. */}
+          {allohaОткрыта && (
+            <iframe
+              ref={allohaFrameRef}
+              src={allohaОткрыта}
+              className="absolute inset-0 h-full w-full border-0 bg-black"
+              style={{ zIndex: 30 }}
+              allow="autoplay; fullscreen; encrypted-media"
+              tabIndex={-1}
+              onLoad={() => { try { window.focus(); } catch {} }}
+            />
+          )}
+          {allohaОткрыта && allohaПодсказка && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent pt-12"
+              style={{ zIndex: 31, paddingLeft: "4vw", paddingRight: "4vw", paddingBottom: "4vh" }}>
+              <HintRow>
+                <Hint icon={<IconOk size={16} />}>пауза</Hint>
+                <Hint icon={<><IconChevronLeft size={16} /><IconChevronRight size={16} /></>}>перемотка</Hint>
+                <Hint icon={<IconClose size={16} />}>«назад» — наш плеер</Hint>
+              </HintRow>
+            </div>
+          )}
+
           {/* FREE-тариф: пре-ролл поверх плеера (пультом: OK — пропустить когда
               можно). Контент под ним не грузится, пока adDone=false (гейт в hls). */}
           {adActive && <PreRollAd ads={AD_SEQUENCE} onDone={() => setAdDone(true)} tvMode />}
@@ -1596,24 +1740,26 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
               })()}
               <div className="flex items-center justify-center gap-3">
                 {/* Order MUST match the key handler: 0 rewind 1 play/pause 2 forward 3 settings 4 exit */}
-                {[
-                  { ic: <IconRewind10 size={28} />, label: "Назад 10 секунд" },
-                  { ic: playing ? <IconPause size={34} /> : <IconPlay size={34} />, label: playing ? "Пауза" : "Смотреть" },
-                  { ic: <IconForward10 size={28} />, label: "Вперёд 10 секунд" },
-                  { ic: <IconSettings size={28} />, label: "Настройки" },
-                  { ic: <IconClose size={28} />, label: "Выход" },
-                ].map((b, i) => {
+                {кнопки.map((id) => (
+                  id === "rew" ? { id, ic: <IconRewind10 size={28} />, label: "Назад 10 секунд" }
+                  : id === "play" ? { id, ic: playing ? <IconPause size={34} /> : <IconPlay size={34} />, label: playing ? "Пауза" : "Смотреть" }
+                  : id === "fwd" ? { id, ic: <IconForward10 size={28} />, label: "Вперёд 10 секунд" }
+                  : id === "set" ? { id, ic: <IconSettings size={28} />, label: "Настройки" }
+                  : id === "alloha" ? { id, ic: <span className="text-[13px] font-bold">Alloha</span>, label: "Смотреть в плеере Alloha" }
+                  : { id, ic: <IconClose size={28} />, label: "Выход" }
+                )).map((b, i) => {
                   const f = ctrlZone === "buttons" && ctrlIdx === i;
                   return (
                     <button
-                      key={i}
+                      key={b.id}
                       onClick={() => {
                         setCtrlZone("buttons");
                         setCtrlIdx(i);
-                        if (i === 0) { seek(-10); bumpHideTimer(); }
-                        else if (i === 1) { togglePlay(); bumpHideTimer(); }
-                        else if (i === 2) { seek(10); bumpHideTimer(); }
-                        else if (i === 3) { clearHideTimer(); setSettingsTab(0); setSettingsIdx(0); setOverlay("settings"); }
+                        if (b.id === "rew") { seek(-10); bumpHideTimer(); }
+                        else if (b.id === "play") { togglePlay(); bumpHideTimer(); }
+                        else if (b.id === "fwd") { seek(10); bumpHideTimer(); }
+                        else if (b.id === "set") { clearHideTimer(); setSettingsTab(0); setSettingsIdx(0); setOverlay("settings"); }
+                        else if (b.id === "alloha") { открытьAlloha(); }
                         else { exit(); }
                       }}
                       className="inline-flex items-center justify-center rounded-full"
@@ -1623,7 +1769,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
                       // подсвечивается только та кнопка, на которой курсор;
                       // пауза остаётся крупнее — этого достаточно, чтобы её
                       // выделить.
-                      style={{ ...ringStyle(f), width: i === 1 ? 68 : 54, height: i === 1 ? 68 : 54 }}
+                      style={{ ...ringStyle(f), width: b.id === "play" ? 68 : b.id === "alloha" ? 84 : 54, height: b.id === "play" ? 68 : 54 }}
                       aria-label={b.label}
                     >
                       {b.ic}

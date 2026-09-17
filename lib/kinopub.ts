@@ -269,6 +269,67 @@ export function resolveTvFirst(
   return первый.then((a) => a || resolveAllohaHls(tmdbId, type, season, episode));
 }
 
+// ─── Alloha на телевизоре: доп. кнопка в плеере (17.09.2026) ────────────────
+//
+// Основной источник на ТВ — первый ответивший из Плееров 2–4 (resolveTvFirst).
+// Alloha — ДОПОЛНИТЕЛЬНО, их собственным окном: видео тогда запрашивает сам
+// телевизор под доменом плеера, и VK его не режет (режет только прямые ссылки,
+// которые доставал наш сервер).
+//
+// Их окно требует свежий движок: основной код — ES2016, рекламный модуль —
+// ES2018. Старые Samsung (Tizen 2.4, Chrome 47) его не прочитают, поэтому
+// кнопку показываем только там, где движок проходит проверку ниже.
+
+/** Прочитает ли движок телевизора код окна Alloha (ES2018: остаток объекта,
+ *  именованные группы в регулярках, возведение в степень). */
+export function тянетAlloha(): boolean {
+  try {
+    // eslint-disable-next-line no-new-func
+    const f = new Function("var o = {a: 1, b: 2}; var {a, ...r} = o; var m = /(?<x>b)/.exec('b'); return a + r.b + (2 ** 2) + (m.groups.x === 'b' ? 1 : 0);");
+    return f() === 8;
+  } catch {
+    return false;
+  }
+}
+
+/** Есть ли тайтл у Alloha и по какому коду открывать окно. null — нет. */
+export async function allohaНаТв(tmdbId: number, type: "movie" | "tv"): Promise<{ imdb?: string } | null> {
+  try {
+    const imdb = await fetchImdb(tmdbId, type);
+    const r = await fetch(
+      `/api/alloha-check?tmdb=${tmdbId}&type=${type}${imdb ? `&imdb=${encodeURIComponent(imdb)}` : ""}`,
+      { cache: "no-store" },
+    );
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!d || d.ok === false || d.guessed) return null;
+    return d.by === "imdb" && imdb ? { imdb } : {};
+  } catch {
+    return null;
+  }
+}
+
+/** Адрес окна Alloha для ТВ: с автозапуском и позицией. */
+export function allohaТвАдрес(
+  tmdbId: number, type: "movie" | "tv", ключ: { imdb?: string },
+  season?: number, episode?: number, startSec?: number,
+): string {
+  const p = new URLSearchParams(ключ.imdb ? { imdb: ключ.imdb } : { tmdb: String(tmdbId) });
+  p.set("type", type === "tv" ? "serial" : "movie");
+  if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+  if (startSec && startSec > 5) p.set("start", String(Math.floor(startSec)));
+  p.set("autoplay", "1");
+  p.set("token", ALLOHA_AD_TOKEN);
+  return `${ALLOHA_PLAYER_HOST}/?${p.toString()}`;
+}
+
+/** Команда окну Alloha: play / pause / seek (value — секунда). */
+export function allohaКоманда(frame: HTMLIFrameElement | null, api: "play" | "pause" | "seek", value?: number) {
+  try {
+    frame?.contentWindow?.postMessage(JSON.stringify(value == null ? { api } : { api, value }), ALLOHA_PLAYER_HOST);
+  } catch {}
+}
+
 // Alloha (VK Video cloud, 4K, все озвучки) — тест-источник. Резолвим imdb из
 // TMDB → наш РФ-бэкенд /api/alloha (Alloha отдаёт только с РФ-IP) → iframe их
 // плеера (сам держит озвучки/качество/серии). Для сериала прокидываем s/e.

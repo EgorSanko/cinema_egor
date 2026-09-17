@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SAPKEFLY KINO — Alloha</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000000; width: 100%; height: 100%; overflow: hidden; }
+  iframe { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; background: #000000; }
+</style>
+</head>
+<body>
+<!--
+  Окно Alloha как ПЛАГИН ПЛЕЕРА Media Station X (17.09.2026).
+
+  Зачем. В лёгком клиенте на Samsung (Tizen 5) окно Alloha прямо на нашей
+  странице играло, но кнопку «назад» забирал их плеер: выйти в кинотеатр
+  было нельзя. По документации MSX плагин плеера — страница в iframe, которая
+  НЕ получает ввод: пульт и «назад» обрабатывает сама MSX, рисует свою полосу
+  и закрывает плеер. Внутри плагина — окно Alloha (во фрейме: целиком их
+  плеер не открывается, «контент недоступен в вашем регионе»).
+
+  Команды MSX (пауза, перемотка) передаём окну через postMessage. На Tizen 5
+  их плеер его может не слышать — тогда видео просто идёт, а «назад» всё
+  равно работает, потому что его обрабатывает MSX, а не окно.
+
+  Только ES5.
+-->
+<script src="https://msx.benzac.de/js/tvx-plugin.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  var АЛЛОХА = "https://player.sapkeflykino.ru";
+
+  function маяк(t) { try { var i = new Image(); i.src = "/tv-error?m=" + encodeURIComponent("msx-alloha: " + t); } catch (e) {} }
+  window.onerror = function (m, s, l) { маяк("ошибка " + m + " @" + l); };
+
+  function param(name) {
+    var m = new RegExp("[?&]" + name + "=([^&]*)").exec(window.location.search);
+    return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : "";
+  }
+
+  var src = param("src");
+  if (src.indexOf(АЛЛОХА + "/") !== 0) { маяк("отказ: чужой адрес"); return; }
+
+  var позиция = Number(param("start")) || 0;
+  var длительность = 0;
+  var сигналБыл = false;
+
+  var f = document.createElement("iframe");
+  f.src = src;
+  f.setAttribute("allow", "autoplay; fullscreen; encrypted-media");
+  f.setAttribute("allowfullscreen", "");
+  f.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
+  f.setAttribute("tabindex", "-1");
+  document.body.appendChild(f);
+
+  function команда(api, value) {
+    var m = { api: api };
+    if (value !== undefined) m.value = value;
+    try { f.contentWindow.postMessage(JSON.stringify(m), АЛЛОХА); } catch (e) {}
+  }
+
+  window.addEventListener("message", function (e) {
+    if (e.origin !== АЛЛОХА) return;
+    var d = e.data;
+    if (typeof d === "string") { try { d = JSON.parse(d); } catch (x) { return; } }
+    if (!d || !d.event) return;
+    if (!сигналБыл) { сигналБыл = true; маяк("первый сигнал " + d.event); }
+    if (d.event === "timeupdate" && typeof d.time === "number") позиция = d.time;
+    else if (d.event === "duration" && typeof d.time === "number") длительность = d.time;
+  }, false);
+
+  // ФОКУС — ОБРАТНО MSX. Плеер Alloha в режиме ТВ (Tizen/webOS) забирает фокус
+  // себе, и тогда кнопки, включая «назад», уходят в него, а не в MSX: выйти
+  // из плеера нельзя. Как только фокус ушёл в их окно — возвращаем верхнему
+  // окну MSX (focus() разрешён и через границу доменов). Управление их
+  // плеером идёт командами от MSX, пульт ему не нужен.
+  var отдачФокуса = 0;
+  function вернутьФокусMSX() {
+    try { window.top.focus(); } catch (e) {}
+    try { window.parent.focus(); } catch (e) {}
+    if (++отдачФокуса === 1) маяк("их окно забрало фокус — вернул MSX");
+  }
+  window.addEventListener("blur", function () { setTimeout(вернутьФокусMSX, 0); }, false);
+  setInterval(function () {
+    try { if (document.activeElement === f || document.hasFocus()) вернутьФокусMSX(); } catch (e) {}
+  }, 700);
+
+  маяк("плагин загружен, tvx=" + (window.TVXVideoPlugin ? "есть" : "НЕТ"));
+
+  if (window.TVXVideoPlugin) {
+    TVXVideoPlugin.setupPlayer({
+      play: function () { команда("play"); },
+      pause: function () { команда("pause"); },
+      stop: function () { команда("pause"); },
+      getDuration: function () { return длительность; },
+      getPosition: function () { return позиция; },
+      setPosition: function (pos) { позиция = pos; команда("seek", pos); },
+      getSpeed: function () { return 1; },
+      setSpeed: function () {}
+    });
+    TVXVideoPlugin.init();
+    f.onload = function () {
+      маяк("окно Alloha загружено");
+      // Показать полосу MSX и начать опрос позиции.
+      setTimeout(function () { try { TVXVideoPlugin.startPlayback(); } catch (e) {} }, 1500);
+      // Длительность их плеер отдаёт только по запросу.
+      var n = 0;
+      var iv = setInterval(function () {
+        команда("duration");
+        if (длительность > 0 || ++n > 20) clearInterval(iv);
+      }, 1500);
+    };
+  }
+})();
+</script>
+</body>
+</html>
