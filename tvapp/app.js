@@ -1714,8 +1714,12 @@
     // плеер проверяет домен сайта.
     f.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
     f.setAttribute("allowfullscreen", "");
-    f.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;border:0;background:#000;z-index:50";
-    el("screen-player").appendChild(f);
+    // Окно — ВНЕ холста приложения. Холст 1280x720 растягивается на экран через
+    // transform: scale (см. «подгонка холста»), и окно внутри него рисовалось
+    // в 1280x720 и масштабировалось: мыльный интерфейс, съехавшие меню, их
+    // ТВ-режим видел неправильный размер экрана. Поверх страницы, на весь экран.
+    f.style.cssText = "position:fixed;left:0;top:0;width:100vw;height:100vh;border:0;margin:0;padding:0;background:#000;z-index:2147483000";
+    document.body.appendChild(f);
 
     S.play.окноAlloha = f;
     S.play.аВремя = старт;
