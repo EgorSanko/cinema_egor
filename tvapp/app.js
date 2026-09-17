@@ -1070,15 +1070,19 @@
     // раньше. Последней: VK иногда рвёт такую сессию посреди просмотра, но это
     // лучше, чем «нет ни у одного источника» (решение Егора 17.09.2026).
     function запаснаяAlloha() {
-      if (!imdbКод) {
-        msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
-        return;
-      }
-      msg("Пробую ещё один источник…");
-      get(безСтарогоКэша(RESOLVE + "/alloha-hls?imdb=" + encodeURIComponent(imdbКод) + "&type=" + type + tail), однажды(function (d) {
+      // 17.09.2026: прямой поток Alloha VK обрывал на 7-й минуте (проверил
+      // Егор на «Холоде»). Поэтому — ИХ ОКНО: видео тогда запрашивает сам
+      // телевизор под доменом плеера, и так VK не режет (на сайте играет).
+      msg("Открываю плеер Alloha…");
+      get("/api/alloha-check?tmdb=" + item.id + "&type=" + type +
+          (imdbКод ? "&imdb=" + encodeURIComponent(imdbКод) : ""), однажды(function (d) {
         if (S.play.item !== мойЗапуск) return;
-        if (d && d.translations && d.translations.length) { onTranslations(d); return; }
-        msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
+        if (!d || d.ok === false) {
+          маяк("alloha-окно: нет в каталоге");
+          msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
+          return;
+        }
+        открытьОкноAlloha(item, type, season, episode, d.by === "imdb" ? imdbКод : "");
       }));
     }
     function однажды(f) {
@@ -1664,7 +1668,118 @@
       pushHistory(S.play.item, type, S.play.season, S.play.episode, v.currentTime, v.duration);
     }, 10000);
   }
+  // ── ОКНО ALLOHA НА ТЕЛЕВИЗОРЕ ────────────────────────────────────────
+  //
+  // Пульт внутрь чужого окна не отдаём (оттуда не поймать «назад»): ОК —
+  // пауза, стрелки — ±10 с, всё командами postMessage. Что происходит на
+  // телевизоре, шлём себе маяками: открыто → первый сигнал → «видео идёт».
+  // Не пошло за 25 секунд — закрываем и честно пишем, что здесь не работает.
+  var АЛЛОХА = "https://player.sapkeflykino.ru";
+  var ТОКЕН_АЛЛОХА = "5df2e966475ea2b00c904164736c50";
+
+  function командаAlloha(api, value) {
+    var f = S.play.окноAlloha;
+    if (!f || !f.contentWindow) return;
+    var m = { api: api };
+    if (value !== undefined) m.value = value;
+    try { f.contentWindow.postMessage(JSON.stringify(m), АЛЛОХА); } catch (e) {}
+  }
+
+  function открытьОкноAlloha(item, type, season, episode, imdb) {
+    var p = imdb ? "imdb=" + encodeURIComponent(imdb) : "tmdb=" + item.id;
+    p += "&type=" + (type === "tv" ? "serial" : "movie");
+    if (type === "tv") p += "&season=" + (season || 1) + "&episode=" + (episode || 1);
+    var поз = getPosition(item.id, type, season, episode);
+    var старт = поз && поз.time ? поз.time : 0;
+    if (старт > 5) p += "&start=" + Math.floor(старт);
+    p += "&autoplay=1&token=" + ТОКЕН_АЛЛОХА;
+
+    var v = el("video");
+    try { v.pause(); } catch (e) {}
+    закрытьОкноAlloha();
+    var f = document.createElement("iframe");
+    f.id = "alloha-frame";
+    f.src = АЛЛОХА + "/?" + p;
+    f.setAttribute("allow", "autoplay; fullscreen; encrypted-media");
+    f.setAttribute("tabindex", "-1");
+    f.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;border:0;background:#000;z-index:50";
+    el("screen-player").appendChild(f);
+
+    S.play.окноAlloha = f;
+    S.play.аВремя = старт;
+    S.play.аДлит = 0;
+    // «Играет» — только по сигналу их плеера: автозапуск на телевизоре может
+    // не сработать, и тогда первое ОК должно запускать, а не ставить паузу.
+    S.play.аИграет = false;
+    S.play.аСигнал = false;
+    S.play.аПошло = false;
+    S.play.аПервая = -1;
+    msg("");
+    маяк("alloha-окно: открыто по " + (imdb ? "imdb" : "tmdb") + (type === "tv" ? " s" + season + "e" + episode : ""));
+
+    S.play.аСлушатель = function (e) {
+      if (e.origin !== АЛЛОХА) return;
+      var d = e.data;
+      if (typeof d === "string") { try { d = JSON.parse(d); } catch (x) { return; } }
+      if (!d || !d.event) return;
+      if (!S.play.аСигнал) { S.play.аСигнал = true; маяк("alloha-окно: первый сигнал " + d.event); }
+      if (d.event === "timeupdate" && typeof d.time === "number") {
+        S.play.аВремя = d.time;
+        // «Идёт» — когда секунда реально растёт, а не просто пришла стартовая.
+        if (S.play.аПервая < 0) S.play.аПервая = d.time;
+        if (!S.play.аПошло && d.time > S.play.аПервая + 1.5) {
+          S.play.аПошло = true; S.play.аИграет = true;
+          маяк("alloha-окно: ВИДЕО ИДЁТ с " + Math.floor(S.play.аПервая) + " с");
+        }
+      } else if (d.event === "play") { S.play.аИграет = true; }
+      else if (d.event === "pause") { S.play.аИграет = false; }
+      else if (d.event === "duration" && typeof d.time === "number") { S.play.аДлит = d.time; }
+    };
+    window.addEventListener("message", S.play.аСлушатель, false);
+    // Окно может забрать фокус — тогда пульт перестанет доходить до нас.
+    S.play.аФокус = function () { setTimeout(function () { try { window.focus(); } catch (e) {} }, 0); };
+    window.addEventListener("blur", S.play.аФокус, false);
+
+    S.play.аСторож = setTimeout(function () {
+      if (S.play.окноAlloha !== f || S.play.аПошло) return;
+      маяк("alloha-окно: за 25 с видео НЕ пошло, сигналы=" + (S.play.аСигнал ? "были" : "не было"));
+      закрытьОкноAlloha();
+      msg("Плеер Alloha не запустился на этом телевизоре.");
+    }, 25000);
+
+    S.play.аЗапись = setInterval(function () {
+      if (S.play.окноAlloha !== f) return;
+      командаAlloha("duration");
+      var dur = S.play.аДлит || (поз && поз.duration) || 0;
+      if (S.play.аВремя > 10 && dur > 0) {
+        savePosition(item.id, type, S.play.аВремя, dur, season, episode);
+        pushHistory(item, type, season, episode, S.play.аВремя, dur);
+      }
+    }, 20000);
+  }
+
+  function закрытьОкноAlloha() {
+    var f = S.play.окноAlloha;
+    if (S.play.аСлушатель) { window.removeEventListener("message", S.play.аСлушатель, false); S.play.аСлушатель = null; }
+    if (S.play.аФокус) { window.removeEventListener("blur", S.play.аФокус, false); S.play.аФокус = null; }
+    if (S.play.аСторож) { clearTimeout(S.play.аСторож); S.play.аСторож = null; }
+    if (S.play.аЗапись) { clearInterval(S.play.аЗапись); S.play.аЗапись = null; }
+    if (f) {
+      var item = S.play.item;
+      if (item && S.play.аВремя > 10 && S.play.аДлит > 0) {
+        var t = typeOf(item);
+        savePosition(item.id, t, S.play.аВремя, S.play.аДлит, S.play.season, S.play.episode);
+        pushHistory(item, t, S.play.season, S.play.episode, S.play.аВремя, S.play.аДлит);
+        pushSync();
+      }
+      try { f.src = "about:blank"; } catch (e) {}
+      if (f.parentNode) f.parentNode.removeChild(f);
+    }
+    S.play.окноAlloha = null;
+  }
+
   function stopPlayback() {
+    закрытьОкноAlloha();
     var v = el("video");
     if (v && v.duration && S.play.item) {
       var type = typeOf(S.play.item);
@@ -1843,6 +1958,23 @@
 
   function playerKey(c) {
     var v = el("video");
+
+    if (S.play.окноAlloha) {
+      if (c === K.OK || c === K.PLAY || c === K.PLAYPAUSE || c === K.PAUSE) {
+        командаAlloha(S.play.аИграет ? "pause" : "play");
+        S.play.аИграет = !S.play.аИграет;
+        return;
+      }
+      if (c === K.LEFT || c === K.RIGHT || c === K.FWD || c === K.REW) {
+        var вперёд = (c === K.RIGHT || c === K.FWD);
+        var t = Math.max(0, (S.play.аВремя || 0) + (вперёд ? 10 : -10));
+        командаAlloha("seek", t);
+        S.play.аВремя = t;
+        toast(вперёд ? "+10 секунд" : "−10 секунд");
+        return;
+      }
+      return;
+    }
 
     // Во время рекламы пульт почти не действует: можно только пропустить
     // ролик, и только когда это разрешено. Иначе человек нечаянно перемотает

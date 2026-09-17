@@ -18,14 +18,20 @@ const { chromium } = require("playwright");
   await p.keyboard.press("Enter"); await p.waitForTimeout(5000);
   console.log("карточка: " + (await p.evaluate(() => (document.querySelector(".detail-title") || {}).innerText)));
   await p.keyboard.press("Enter");
+  const окно = () => p.frames().find((fr) => fr.url().startsWith("https://player.sapkeflykino.ru"));
+  const ав = async () => { const f = окно(); return f ? await f.evaluate(() => { const x = document.querySelector("video"); return x ? { t: +x.currentTime.toFixed(1), пауза: x.paused } : null; }).catch(() => "ERR") : null; };
   let v = null;
-  for (let i = 0; i < 10; i++) {
-    await p.waitForTimeout(4000);
-    v = await p.evaluate(() => { const x = document.querySelector("video"); return x ? { t: +(x.currentTime || 0).toFixed(1), пауза: x.paused } : null; });
-    if (v && v.t > 5) break;
-  }
-  console.log("экран: " + (await p.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 110))));
-  console.log("видео: " + JSON.stringify(v));
+  for (let i = 0; i < 10; i++) { await p.waitForTimeout(4000); v = await ав(); if (v && v.t > 3) break; }
+  console.log("окно: " + (окно() ? окно().url().replace(/token=[0-9a-f]+/, "token=…").slice(0, 110) : "НЕТ"));
+  console.log("Alloha играет: " + JSON.stringify(v));
+  await p.keyboard.press("Enter"); await p.waitForTimeout(2500);
+  console.log("после ОК: " + JSON.stringify(await ав()));
+  await p.keyboard.press("Enter"); await p.waitForTimeout(2500);
+  const до = (await ав())?.t;
+  await p.keyboard.press("ArrowRight"); await p.waitForTimeout(3000);
+  console.log("перемотка: " + до + " -> " + (await ав())?.t);
+  await p.keyboard.press("Backspace"); await p.waitForTimeout(3000);
+  console.log("после «назад»: окно закрыто=" + !окно() + ", экран: " + (await p.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 70))));
   console.log("сеть: " + [...new Set(сеть)].join(" | "));
   console.log("ошибки: " + (ошибки.length ? ошибки.join(" | ") : "нет"));
   await browser.close();
