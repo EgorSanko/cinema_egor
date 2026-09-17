@@ -248,7 +248,7 @@ export function resolveTvFirst(
     запросы.push(resolveVkMovie(title, year, otitle));
     запросы.push(resolveRutube(title, year, otitle));
   }
-  return new Promise((готово) => {
+  const первый = new Promise<AllohaHls | null>((готово) => {
     let осталось = запросы.length;
     let отдали = false;
     запросы.forEach((з) => {
@@ -263,6 +263,10 @@ export function resolveTvFirst(
       );
     });
   });
+  // Никто из Плееров 2–4 не отдал — последней пробуем Alloha прямым потоком,
+  // как раньше. VK иногда рвёт такую сессию, но это лучше, чем «нет ни у
+  // одного источника» (так было с «Холодом»; решение Егора 17.09.2026).
+  return первый.then((a) => a || resolveAllohaHls(tmdbId, type, season, episode));
 }
 
 // Alloha (VK Video cloud, 4K, все озвучки) — тест-источник. Резолвим imdb из

@@ -1027,8 +1027,10 @@
     // и rutube по названию — они только для фильмов) и играем того, кто ПЕРВЫМ
     // отдал видео.
     var мойЗапуск = S.play.item;
+    var imdbКод = "";
     tmdb("/" + type + "/" + item.id + "/external_ids", {}, function (ids) {
       var imdb = ids && ids.imdb_id;
+      imdbКод = imdb || "";
       if (imdb) {
         steps.push(безСтарогоКэша(RESOLVE + "/cdnhub?imdb=" + encodeURIComponent(imdb) + "&type=" + type + tail));
       }
@@ -1058,11 +1060,26 @@
           // Пока ждали, человек мог уйти на другой фильм — чужой ответ не играем.
           if (отдали || S.play.item !== мойЗапуск) return;
           if (d && d.translations && d.translations.length) { отдали = true; onTranslations(d); return; }
-          if (осталось === 0) {
-            msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
-          }
+          if (осталось === 0) запаснаяAlloha();
         }));
       }
+    }
+
+    // Никто из Плееров 2–4 не отдал (так было с «Холодом»: у cdnhub его нет,
+    // а vkmovie и rutube сериалы не знают). Тогда — Alloha прямым потоком, как
+    // раньше. Последней: VK иногда рвёт такую сессию посреди просмотра, но это
+    // лучше, чем «нет ни у одного источника» (решение Егора 17.09.2026).
+    function запаснаяAlloha() {
+      if (!imdbКод) {
+        msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
+        return;
+      }
+      msg("Пробую ещё один источник…");
+      get(безСтарогоКэша(RESOLVE + "/alloha-hls?imdb=" + encodeURIComponent(imdbКод) + "&type=" + type + tail), однажды(function (d) {
+        if (S.play.item !== мойЗапуск) return;
+        if (d && d.translations && d.translations.length) { onTranslations(d); return; }
+        msg("Этого " + (type === "tv" ? "эпизода" : "фильма") + " сейчас нет ни у одного источника.");
+      }));
     }
     function однажды(f) {
       var был = false;
