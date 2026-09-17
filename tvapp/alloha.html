@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Alloha</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+  iframe { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; background: #000; }
+</style>
+</head>
+<body>
+<!--
+  Прослойка для окна Alloha в лёгком ТВ-клиенте (17.09.2026).
+
+  Зачем. На Samsung Егора (Tizen 5, внутри MSX) окно Alloha прямо на странице
+  /tvapp ломало кнопку «назад»: код, который обрабатывает её на странице, раз
+  за разом падал с «SecurityError: Blocked a frame ... from accessing a
+  cross-origin frame» — он перебирает окна страницы и натыкается на чужое.
+  Эта страница — НАША (тот же домен), поэтому для верхнего уровня она «своё»
+  окно; чужое окно Alloha лежит уже внутри неё.
+
+  Открывать Alloha не во фрейме нельзя: целиком их плеер отвечает
+  «Контент не найден или недоступен в вашем регионе».
+
+  ES5, без сторонних скриптов. Адрес окна приходит параметром src и
+  пропускается только на player.sapkeflykino.ru.
+-->
+<script>
+(function () {
+  function маяк(t) { try { var i = new Image(); i.src = "/tv-error?m=" + encodeURIComponent("alloha-прослойка: " + t); } catch (e) {} }
+  window.onerror = function (m, s, l, c) { маяк("ошибка " + m + " @" + l + ":" + c); };
+  var q = location.search.replace(/^\?/, "").split("&");
+  var src = "";
+  for (var i = 0; i < q.length; i++) {
+    if (q[i].indexOf("src=") === 0) { try { src = decodeURIComponent(q[i].slice(4)); } catch (e) {} }
+  }
+  if (src.indexOf("https://player.sapkeflykino.ru/") !== 0) { маяк("отказ: чужой адрес"); return; }
+  var f = document.createElement("iframe");
+  f.src = src;
+  f.setAttribute("allow", "autoplay; fullscreen; encrypted-media");
+  f.setAttribute("allowfullscreen", "");
+  f.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
+  document.body.appendChild(f);
+  function фокус() {
+    try { f.focus(); } catch (e) {}
+    try { if (f.contentWindow) f.contentWindow.focus(); } catch (e) {}
+  }
+  f.onload = function () { фокус(); setTimeout(фокус, 1500); маяк("окно загружено, фокус отдан"); };
+  // Фокус пришёл в прослойку (клиент отдаёт его нам) — сразу дальше, их плееру:
+  // иначе пульт жмёт по пустой прослойке.
+  window.addEventListener("focus", function () { setTimeout(фокус, 0); }, false);
+  // Нажатие дошло до прослойки, а не до их плеера — значит фокус застрял у нас.
+  // Отдаём дальше и шлём маяк (не чаще раза в 5 с), чтобы видеть это в логах.
+  var последнийМаяк = 0;
+  document.addEventListener("keydown", function (e) {
+    фокус();
+    if (Date.now() - последнийМаяк > 5000) { последнийМаяк = Date.now(); маяк("нажатие застряло в прослойке: " + e.keyCode); }
+  }, true);
+  // Посредник сообщений: события окна Alloha — наверх лёгкому клиенту,
+  // команды клиента (play/pause/seek) — вниз окну.
+  var свой = location.protocol + "//" + location.host;
+  window.addEventListener("message", function (e) {
+    if (e.origin === "https://player.sapkeflykino.ru") {
+      try { parent.postMessage(e.data, свой); } catch (x) {}
+    } else if (e.origin === свой && e.source === parent) {
+      try { f.contentWindow.postMessage(e.data, "https://player.sapkeflykino.ru"); } catch (x) {}
+    }
+  }, false);
+})();
+</script>
+</body>
+</html>

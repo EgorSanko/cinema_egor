@@ -1691,7 +1691,7 @@
     if (!f || !f.contentWindow) return;
     var m = { api: api };
     if (value !== undefined) m.value = value;
-    try { f.contentWindow.postMessage(JSON.stringify(m), АЛЛОХА); } catch (e) {}
+    try { f.contentWindow.postMessage(JSON.stringify(m), location.protocol + "//" + location.host); } catch (e) {}
   }
 
   function открытьОкноAlloha(item, type, season, episode, imdb) {
@@ -1701,14 +1701,19 @@
     var поз = getPosition(item.id, type, season, episode);
     var старт = поз && поз.time ? поз.time : 0;
     if (старт > 5) p += "&start=" + Math.floor(старт);
-    p += "&autoplay=1&token=" + ТОКЕН_АЛЛОХА;
+    // Без autoplay: браузер разрешает автозапуск только без звука, и у Егора
+    // всё стартовало беззвучно. Фокус у их плеера — первое ОК запускает со звуком.
+    p += "&token=" + ТОКЕН_АЛЛОХА;
 
     var v = el("video");
     try { v.pause(); } catch (e) {}
     закрытьОкноAlloha();
     var f = document.createElement("iframe");
     f.id = "alloha-frame";
-    f.src = АЛЛОХА + "/?" + p;
+    // Не чужое окно напрямую, а НАША прослойка с ним внутри: иначе на Samsung
+    // в MSX падал код обработки «назад» (SecurityError при доступе к чужому
+    // окну), и из плеера было не выйти. См. tvapp/alloha.html.
+    f.src = "/tvapp/alloha.html?src=" + encodeURIComponent(АЛЛОХА + "/?" + p);
     f.setAttribute("allow", "autoplay; fullscreen; encrypted-media");
     // Как в документации Alloha: без этого часть движков не шлёт Referer, а
     // плеер проверяет домен сайта.
@@ -1734,7 +1739,7 @@
     маяк("alloha-окно: открыто по " + (imdb ? "imdb" : "tmdb") + (type === "tv" ? " s" + season + "e" + episode : ""));
 
     S.play.аСлушатель = function (e) {
-      if (e.origin !== АЛЛОХА) return;
+      if (e.origin !== location.protocol + "//" + location.host || e.source !== f.contentWindow) return;
       var d = e.data;
       if (typeof d === "string") { try { d = JSON.parse(d); } catch (x) { return; } }
       if (!d || !d.event) return;

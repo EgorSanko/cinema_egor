@@ -19,11 +19,13 @@ const { chromium } = require("playwright");
   console.log("карточка: " + (await p.evaluate(() => (document.querySelector(".detail-title") || {}).innerText)));
   await p.keyboard.press("Enter");
   const окно = () => p.frames().find((fr) => fr.url().startsWith("https://player.sapkeflykino.ru"));
+  const прослойка = () => p.frames().find((fr) => fr.url().includes("/tvapp/alloha.html"));
   const ав = async () => { const f = окно(); return f ? await f.evaluate(() => { const x = document.querySelector("video"); return x ? { t: +x.currentTime.toFixed(1), пауза: x.paused } : null; }).catch(() => "ERR") : null; };
   let v = null;
   for (let i = 0; i < 10; i++) { await p.waitForTimeout(4000); v = await ав(); if (v && v.t > 3) break; }
   console.log("окно: " + (окно() ? окно().url().replace(/token=[0-9a-f]+/, "token=…").slice(0, 110) : "НЕТ"));
   console.log("Alloha играет: " + JSON.stringify(v));
+  console.log("прослойка: " + !!прослойка() + ", окно Alloha внутри неё: " + (окно() && окно().parentFrame() === прослойка()));
   console.log("фокус у окна Alloha: " + (await p.evaluate(() => document.activeElement && document.activeElement.tagName)));
   await p.goBack(); await p.waitForTimeout(3000);
   console.log("после «назад» (история): окно закрыто=" + !окно() + ", экран: " + (await p.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 60))));
