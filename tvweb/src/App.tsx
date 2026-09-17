@@ -4,6 +4,26 @@ import { TvSearch } from "@/components/tv/tv-search";
 import { TvLogin } from "@/components/tv/tv-login";
 import { TvWatch } from "@/components/tv/tv-watch";
 import { loadRails, loadWatchMedia, netState, type Rail } from "@/lib/api";
+import { syncFromServer } from "@/lib/storage";
+
+/**
+ * Синхронизация с аккаунтом (17.09.2026).
+ *
+ * Раньше /tvweb забирал данные с сервера ТОЛЬКО в момент входа. Вход на LG был
+ * давно — и «Продолжить просмотр», избранное и позиции с сайта и Samsung на
+ * нём не появлялись (за сутки в логах ни одного /api/sync с LG, у Samsung —
+ * сотни). Теперь забираем при запуске и при каждом возврате на главную, не
+ * чаще раза в минуту. Главная сама перерисуется по событию sync-complete.
+ */
+let последняяСинхр = 0;
+function синхронизировать() {
+  if (Date.now() - последняяСинхр < 60000) return;
+  let email = "";
+  try { email = (JSON.parse(localStorage.getItem("user") || "null") || {}).email || ""; } catch {}
+  if (!email) return;
+  последняяСинхр = Date.now();
+  syncFromServer(email).catch(() => {});
+}
 
 /**
  * Строка состояния в углу экрана.
@@ -56,6 +76,14 @@ export default function App({ initialRails, booting }: { initialRails?: Rail[] |
   const [media, setMedia] = React.useState<any | null>(null);
   const [error, setError] = React.useState("");
   const [, setTickCount] = React.useState(0);   // только чтобы перерисовать счётчик
+
+  // Первый показ главной пропускаем: при запуске данные уже забирает main.tsx.
+  const перваяГлавная = React.useRef(true);
+  React.useEffect(() => {
+    if (route.name !== "home") return;
+    if (перваяГлавная.current) { перваяГлавная.current = false; последняяСинхр = Date.now(); return; }
+    синхронизировать();
+  }, [route.name]);
 
   React.useEffect(() => {
     const onHash = () => { setRoute(parse(window.location.hash)); };

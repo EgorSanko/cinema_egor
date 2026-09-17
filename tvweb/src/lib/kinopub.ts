@@ -223,7 +223,84 @@ export function resolveTvFirst(
   // Никто из Плееров 2–4 не отдал — последней пробуем Alloha прямым потоком,
   // как раньше. VK иногда рвёт такую сессию, но это лучше, чем «нет ни у
   // одного источника» (так было с «Холодом»; решение Егора 17.09.2026).
+  // Внутри MSX прямой поток не берём: на LG он отвечал 503, а там есть путь
+  // лучше — окно Alloha в плеере MSX (allohaВMSX).
+  if (изMSX()) return первый;
   return первый.then((a) => a || resolveAllohaHls(tmdbId, type, season, episode));
+}
+
+// ─── Alloha через ПЛЕЕР MSX (LG, 17.09.2026) ────────────────────────────────
+//
+// Так же, как в лёгком клиенте Samsung: если у Плееров 2–4 видео нет, уходим в
+// плеер MSX — страница /api/msx-alloha сразу запускает плагин с окном Alloha,
+// пульт и «назад» обрабатывает сама MSX. Пункт «Вернуться в кинотеатр» снова
+// открывает /tvweb, и он сам возвращает на тот же тайтл (kino_tv_return).
+
+/** Запущены ли мы из Media Station X.
+ *
+ *  Ссылки из нашего меню MSX несут ?msx=1, но LG открывает /tvweb/?t=… (метку
+ *  времени добавляет MSX) — без нашего признака. На телевизоре /tvweb и так
+ *  запускается только через MSX, поэтому признак ТВ-браузера тоже считаем. */
+export function изMSX(): boolean {
+  try {
+    const q = window.location.search;
+    const ua = navigator.userAgent || "";
+    if (/[?&]msx=1/.test(q) || /[?&]t=\d+\.\d+/.test(q) || /Web0S|webOS|Tizen|SMART-TV/i.test(ua)) {
+      localStorage.setItem("kino_msx", String(Date.now()));
+      return true;
+    }
+    const t = Number(localStorage.getItem("kino_msx") || 0);
+    return !!t && Date.now() - t < 30 * 24 * 3600 * 1000;
+  } catch {
+    return false;
+  }
+}
+
+/** Уйти в плеер MSX с окном Alloha; запомнить, куда вернуться. */
+export function allohaВMSX(
+  tmdbId: number, type: "movie" | "tv", ключ: { imdb?: string }, title: string,
+  season?: number, episode?: number, startSec?: number,
+): void {
+  try {
+    localStorage.setItem("kino_tv_return", JSON.stringify({
+      at: Date.now(), hash: `#/tv-watch/${type}/${tmdbId}`,
+    }));
+  } catch {}
+  const p = new URLSearchParams({ id: String(tmdbId), type });
+  if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
+  if (ключ.imdb) p.set("imdb", ключ.imdb);
+  if (startSec && startSec > 5) p.set("start", String(Math.floor(startSec)));
+  p.set("title", title.slice(0, 80));
+  try {
+    const i = new Image();
+    i.src = "/tv-error?m=" + encodeURIComponent("tvweb alloha-msx: ухожу в плеер MSX " + type + " " + tmdbId +
+      (type === "tv" ? ` s${season}e${episode}` : ""));
+  } catch {}
+  window.location.href = "https://msx.benzac.de/?start=" +
+    encodeURIComponent("content:https://sapkeflykino.ru/api/msx-alloha?" + p.toString());
+}
+
+/** Вернулись из плеера MSX — сразу тот же тайтл (одноразово, не старше 12 ч). */
+export function возвратИзMSX(): void {
+  try {
+    const raw = localStorage.getItem("kino_tv_return");
+    if (!raw) return;
+    const r = JSON.parse(raw);
+    if (!r || typeof r.hash !== "string") return; // запись лёгкого клиента Samsung — не наша
+    localStorage.removeItem("kino_tv_return");
+    if (Date.now() - (r.at || 0) > 12 * 3600 * 1000) return;
+    if (!/^#\/tv-watch\/(movie|tv)\/\d+$/.test(r.hash)) return;
+    (window as any).__kinoВернулисьИзMSX = true;
+    window.location.hash = r.hash;
+  } catch {}
+}
+
+/** Экран просмотра открыт сразу после возврата из плеера MSX? (читается один раз) */
+export function вернулисьИзMSX(): boolean {
+  const w = window as any;
+  const да = !!w.__kinoВернулисьИзMSX;
+  w.__kinoВернулисьИзMSX = false;
+  return да;
 }
 
 // ─── Alloha на телевизоре: доп. кнопка в плеере (17.09.2026) ────────────────

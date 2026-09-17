@@ -4,7 +4,7 @@ import { useRouter } from "@/shim/router";
 import Hls from "hls.js";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
-import { resolveTvFirst, ALLOHA_Q_ORDER, HDREZKA_UP, тянетAlloha, allohaНаТв, allohaТвАдрес, allohaКоманда, ALLOHA_PLAYER_HOST } from "@/lib/kinopub";
+import { resolveTvFirst, ALLOHA_Q_ORDER, HDREZKA_UP, тянетAlloha, allohaНаТв, allohaТвАдрес, allohaКоманда, ALLOHA_PLAYER_HOST, изMSX, allohaВMSX, вернулисьИзMSX } from "@/lib/kinopub";
 import {
   savePosition,
   getPosition,
@@ -140,6 +140,9 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // Hard failure → full-screen error card (timeout / no playable stream / threw).
   // Distinct from the small inline `error` toast used during dub/quality switches.
   const [resolveFailed, setResolveFailed] = useState(false);
+  // Видео есть только у Alloha, а человек только что вернулся из плеера MSX:
+  // обратно сами не уходим, показываем кнопку «Смотреть в Alloha».
+  const [толькоAlloha, setТолькоAlloha] = useState(false);
   // Error-card focus: 0 = Повторить, 1 = Назад.
   const [errBtnIdx, setErrBtnIdx] = useState<0 | 1>(0);
 
@@ -292,7 +295,7 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
   // RESOLVE — reuse the site player's exact endpoint + fallback chain.
   // ════════════════════════════════════════════════════════════════
   const resolve = useCallback(
-    async (opts?: { trId?: number | null; s?: number; e?: number; preservePos?: boolean }) => {
+    async (opts?: { trId?: number | null; s?: number; e?: number; preservePos?: boolean; безMSX?: boolean }) => {
       const trId = opts?.trId ?? translatorId ?? getLastTranslator(media.id, media.type)?.id ?? null;
       const s = opts?.s ?? season;
       const e = opts?.e ?? episode;
@@ -363,6 +366,21 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
             };
           }
         } catch {}
+        // У Плееров 2–4 пусто, а мы внутри MSX (LG): играем окно Alloha в
+        // плеере MSX — там пульт и «назад» обрабатывает сама MSX. Страница
+        // уходит, поэтому обещание не завершаем: иначе мелькнёт «недоступно».
+        if (!isSwitch && изMSX()) {
+          try {
+            const ключ = await allohaНаТв(media.id, media.type);
+            if (ключ && opts?.безMSX) { setТолькоAlloha(true); return null; }
+            if (ключ) {
+              const поз = getPosition(media.id, media.type, isSeries ? s : undefined, isSeries ? e : undefined);
+              if (isSeries) saveLastEpisode(media.id, s, e);
+              allohaВMSX(media.id, media.type, ключ, searchTitle, s, e, поз?.time);
+              return await new Promise<ResolveData | null>(() => {});
+            }
+          } catch {}
+        }
         // Дальше — HDRezka (только если поднимется; сейчас HDREZKA_UP=false).
         if (!HDREZKA_UP) return null;
         // HDRezka-native title → resolve DIRECTLY by URL (the same endpoint the
@@ -462,9 +480,12 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
 
   // Auto-resolve a movie immediately on mount (few clicks → straight to player).
   useEffect(() => {
+    // Сразу после плеера MSX фильм не запускаем в него же снова — иначе
+    // «Вернуться в кинотеатр» тут же уводил бы обратно в Alloha.
+    const безMSX = вернулисьИзMSX();
     if (!isSeries) {
       setZone("loading");
-      resolve().then((ok) => { setZone(ok ? "player" : "error"); });
+      resolve(безMSX ? { безMSX: true } : undefined).then((ok) => { setZone(ok ? "player" : "error"); });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1669,14 +1690,16 @@ export function TvWatch({ media }: { media: TvWatchMedia }) {
             <h2 className="text-3xl font-extrabold tracking-tight text-white">
               {media.title}{isSeries ? ` · S${season}E${episode}` : ""}
             </h2>
-            <p className="text-xl font-semibold" style={{ color: "var(--primary)" }}>Не удалось загрузить</p>
+            <p className="text-xl font-semibold" style={{ color: "var(--primary)" }}>{толькоAlloha ? "Есть в плеере Alloha" : "Не удалось загрузить"}</p>
             <p className="max-w-[640px] text-base text-muted-foreground">
-              Возможно, фильм ещё не вышел или временно недоступен.
+              {толькоAlloha
+                ? "Этот фильм сейчас играет только плеер Alloha. Нажмите «Смотреть в Alloha», чтобы открыть его снова."
+                : "Возможно, фильм ещё не вышел или временно недоступен."}
             </p>
           </div>
           <div className="mt-2 flex items-center gap-4">
             {[
-              { label: "Повторить", primary: true },
+              { label: толькоAlloha ? "Смотреть в Alloha" : "Повторить", primary: true },
               { label: "Назад", primary: false },
             ].map((b, i) => {
               const f = errBtnIdx === i;

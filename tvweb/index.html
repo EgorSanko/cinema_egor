@@ -86,7 +86,7 @@
       } catch (e) {}
       // msx=1 — признак запуска из MSX: лёгкому клиенту он нужен, чтобы играть
       // Alloha в плеере MSX (там работает «назад»).
-      location.replace("/tvapp/?t=" + new Date().getTime() + (/[?&]msx=1/.test(location.search) ? "&msx=1" : ""));
+      location.replace("/tvapp/?t=" + new Date().getTime() + (/[?&](msx=1|t=\d+\.\d+)/.test(location.search) ? "&msx=1" : ""));
     }
   } catch (e) {}
 })();

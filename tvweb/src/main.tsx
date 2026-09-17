@@ -2,6 +2,8 @@ import * as React from "react";
 import { render } from "react-dom";
 import App from "./App";
 import { loadRailsCb } from "@/lib/api";
+import { возвратИзMSX } from "@/lib/kinopub";
+import { syncFromServer } from "@/lib/storage";
 import "./index.css";
 
 // Ловушка ошибок: на телевизоре нет консоли, и «чёрный экран» неотличим от
@@ -42,6 +44,19 @@ if (!w.__SAPKEFLY_TV_MOUNTED__) {
   // живой сети — то есть эффект, который эти запросы делает, не выполнялся
   // вовсе. Так приложение получает данные сразу и от эффектов не зависит.
   var el = document.getElementById("root")!;
+
+  // Вернулись из плеера MSX (окно Alloha) — сразу на тот же тайтл.
+  возвратИзMSX();
+
+  // Данные аккаунта с сервера — обычным кодом, до отрисовки: эффекты React
+  // на части телевизоров не выполнялись (см. ниже). Эффект в App повторит это
+  // при возврате на главную, не чаще раза в минуту.
+  try {
+    var пользователь = JSON.parse(localStorage.getItem("user") || "null");
+    if (пользователь && пользователь.email) {
+      syncFromServer(пользователь.email).then(function (ok) { beacon("синхронизация при запуске: " + (ok ? "есть" : "нет")); });
+    }
+  } catch (e) {}
 
   // СИНХРОННАЯ ОТРИСОВКА, как у Deeplex.
   //
