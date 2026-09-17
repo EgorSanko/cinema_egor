@@ -24,14 +24,9 @@ const { chromium } = require("playwright");
   for (let i = 0; i < 10; i++) { await p.waitForTimeout(4000); v = await ав(); if (v && v.t > 3) break; }
   console.log("окно: " + (окно() ? окно().url().replace(/token=[0-9a-f]+/, "token=…").slice(0, 110) : "НЕТ"));
   console.log("Alloha играет: " + JSON.stringify(v));
-  await p.keyboard.press("Enter"); await p.waitForTimeout(2500);
-  console.log("после ОК: " + JSON.stringify(await ав()));
-  await p.keyboard.press("Enter"); await p.waitForTimeout(2500);
-  const до = (await ав())?.t;
-  await p.keyboard.press("ArrowRight"); await p.waitForTimeout(3000);
-  console.log("перемотка: " + до + " -> " + (await ав())?.t);
-  await p.keyboard.press("Backspace"); await p.waitForTimeout(3000);
-  console.log("после «назад»: окно закрыто=" + !окно() + ", экран: " + (await p.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 70))));
+  console.log("фокус у окна Alloha: " + (await p.evaluate(() => document.activeElement && document.activeElement.tagName)));
+  await p.goBack(); await p.waitForTimeout(3000);
+  console.log("после «назад» (история): окно закрыто=" + !окно() + ", экран: " + (await p.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 60))));
   console.log("сеть: " + [...new Set(сеть)].join(" | "));
   console.log("ошибки: " + (ошибки.length ? ошибки.join(" | ") : "нет"));
   await browser.close();

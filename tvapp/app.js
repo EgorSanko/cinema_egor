@@ -1670,10 +1670,19 @@
   }
   // ── ОКНО ALLOHA НА ТЕЛЕВИЗОРЕ ────────────────────────────────────────
   //
-  // Пульт внутрь чужого окна не отдаём (оттуда не поймать «назад»): ОК —
-  // пауза, стрелки — ±10 с, всё командами postMessage. Что происходит на
-  // телевизоре, шлём себе маяками: открыто → первый сигнал → «видео идёт».
-  // Не пошло за 25 секунд — закрываем и честно пишем, что здесь не работает.
+  // 17.09.2026, проверка на Samsung Tizen 5 Егора: окно играло, но пульт «не
+  // реагировал» и от окна не пришло НИ ОДНОГО postMessage-события — мы держали
+  // фокус у себя и слали команды, которые их плеер на этом движке не слышит.
+  // Сторож на 25 с по событиям закрыл окно посреди просмотра.
+  //
+  // У плеера Alloha есть СВОЙ режим телевизора (в их коде isTV/isTizen/isWebOS,
+  // registerTizenKeys, фокусное меню). Поэтому теперь ОТДАЁМ ФОКУС ОКНУ — пультом
+  // управляет их плеер: пауза, перемотка, озвучки, серии.
+  //
+  // Выход: «назад» у телевизоров приходит как шаг назад по истории даже при
+  // фокусе во фрейме. При открытии кладём в историю лишний шаг; popstate —
+  // закрываем окно. Нажатия, дошедшие до нас (если фокус всё же наш), работают
+  // по-старому. Маяки в /tv-error оставлены: открыто / первый сигнал / видео идёт.
   var АЛЛОХА = "https://player.sapkeflykino.ru";
   var ТОКЕН_АЛЛОХА = "5df2e966475ea2b00c904164736c50";
 
@@ -1701,7 +1710,10 @@
     f.id = "alloha-frame";
     f.src = АЛЛОХА + "/?" + p;
     f.setAttribute("allow", "autoplay; fullscreen; encrypted-media");
-    f.setAttribute("tabindex", "-1");
+    // Как в документации Alloha: без этого часть движков не шлёт Referer, а
+    // плеер проверяет домен сайта.
+    f.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
+    f.setAttribute("allowfullscreen", "");
     f.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;border:0;background:#000;z-index:50";
     el("screen-player").appendChild(f);
 
@@ -1736,15 +1748,31 @@
       else if (d.event === "duration" && typeof d.time === "number") { S.play.аДлит = d.time; }
     };
     window.addEventListener("message", S.play.аСлушатель, false);
-    // Окно может забрать фокус — тогда пульт перестанет доходить до нас.
-    S.play.аФокус = function () { setTimeout(function () { try { window.focus(); } catch (e) {} }, 0); };
-    window.addEventListener("blur", S.play.аФокус, false);
 
+    // Фокус — их плееру, чтобы пульт управлял им напрямую.
+    var отдатьФокус = function () {
+      if (S.play.окноAlloha !== f) return;
+      try { f.focus(); } catch (e) {}
+      try { if (f.contentWindow) f.contentWindow.focus(); } catch (e) {}
+    };
+    f.onload = function () { отдатьФокус(); setTimeout(отдатьФокус, 1500); маяк("alloha-окно: загружено, фокус отдан окну"); };
+
+    // «Назад» через историю: лишний шаг снимается кнопкой — закрываем окно.
+    S.play.аИстория = true;
+    try { history.pushState({ alloha: 1 }, ""); } catch (e) { S.play.аИстория = false; }
+    S.play.аНазад = function () {
+      if (S.play.окноAlloha !== f) return;
+      S.play.аИстория = false;          // шаг уже снят самой кнопкой
+      маяк("alloha-окно: назад через историю");
+      stopPlayback(); show("detail"); renderDetail();
+    };
+    window.addEventListener("popstate", S.play.аНазад, false);
+
+    // Только маяк — окно НЕ закрываем: на Tizen 5 событий может не быть вовсе,
+    // а видео при этом идёт.
     S.play.аСторож = setTimeout(function () {
-      if (S.play.окноAlloha !== f || S.play.аПошло) return;
-      маяк("alloha-окно: за 25 с видео НЕ пошло, сигналы=" + (S.play.аСигнал ? "были" : "не было"));
-      закрытьОкноAlloha();
-      msg("Плеер Alloha не запустился на этом телевизоре.");
+      if (S.play.окноAlloha !== f) return;
+      маяк("alloha-окно: через 25 с сигналы=" + (S.play.аСигнал ? "были" : "не было") + ", видео по сигналам=" + (S.play.аПошло ? "идёт" : "неизвестно"));
     }, 25000);
 
     S.play.аЗапись = setInterval(function () {
@@ -1761,7 +1789,10 @@
   function закрытьОкноAlloha() {
     var f = S.play.окноAlloha;
     if (S.play.аСлушатель) { window.removeEventListener("message", S.play.аСлушатель, false); S.play.аСлушатель = null; }
-    if (S.play.аФокус) { window.removeEventListener("blur", S.play.аФокус, false); S.play.аФокус = null; }
+    if (S.play.аНазад) { window.removeEventListener("popstate", S.play.аНазад, false); S.play.аНазад = null; }
+    // Закрыли не кнопкой «назад», а сами (стоп, другой фильм) — снимаем свой
+    // лишний шаг истории, иначе следующий «назад» уйдёт в пустоту.
+    if (S.play.аИстория) { S.play.аИстория = false; try { history.back(); } catch (e) {} }
     if (S.play.аСторож) { clearTimeout(S.play.аСторож); S.play.аСторож = null; }
     if (S.play.аЗапись) { clearInterval(S.play.аЗапись); S.play.аЗапись = null; }
     if (f) {
