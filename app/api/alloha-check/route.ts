@@ -28,7 +28,7 @@ const ТОКЕН = process.env.ALLOHA_TOKEN || ALLOHA_AD_TOKEN;
 // Ответ «есть/нет» у тайтла не меняется днями, а лимит у них 120 запросов в
 // минуту на токен. Держим в памяти процесса, чтобы не тратить лимит на каждое
 // открытие страницы.
-const кэш = new Map<string, { есть: boolean; by: "tmdb" | "imdb"; до: number }>();
+const кэш = new Map<string, { есть: boolean; by: "tmdb" | "imdb"; tm: string; до: number }>();
 const ЧАС = 3600_000;
 
 export async function GET(req: NextRequest) {
@@ -49,9 +49,15 @@ export async function GET(req: NextRequest) {
 
   const было = кэш.get(ключПолный);
   if (было && было.до > Date.now()) {
-    return NextResponse.json({ ok: было.есть, by: было.by }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: было.есть, by: было.by, tm: было.tm }, { headers: { "Cache-Control": "no-store" } });
   }
 
+  // Вместе с ответом забираем token_movie — «паспорт» тайтла в их базе. Окно
+  // надёжнее открывать по нему, чем по коду TMDB: у части тайтлов их каталог
+  // просто не находит себя по внешним кодам (у «Тетради смерти» IMDb записан с
+  // опечаткой — t0877057 вместо tt0877057, и окно по tmdb отвечало «контент не
+  // найден», хотя все 37 серий у них есть).
+  let токенФильма = "";
   const спросить = async (запрос: string): Promise<"да" | "нет" | "сбой"> => {
     try {
       const о = await fetch(
@@ -60,7 +66,11 @@ export async function GET(req: NextRequest) {
       );
       if (!о.ok) return "сбой";
       const д = await о.json();
-      return д?.status === "success" && д?.data?.token_movie ? "да" : "нет";
+      if (д?.status === "success" && д?.data?.token_movie) {
+        токенФильма = String(д.data.token_movie);
+        return "да";
+      }
+      return "нет";
     } catch {
       return "сбой";
     }
@@ -79,6 +89,6 @@ export async function GET(req: NextRequest) {
   // с рабочего плеера. Отвечаем «есть» и даём окну попробовать само.
   if (!итог) return NextResponse.json({ ok: true, by: "tmdb", guessed: true }, { headers: { "Cache-Control": "no-store" } });
 
-  кэш.set(ключПолный, { есть: итог.есть, by: итог.by, до: Date.now() + ЧАС });
-  return NextResponse.json({ ok: итог.есть, by: итог.by }, { headers: { "Cache-Control": "no-store" } });
+  кэш.set(ключПолный, { есть: итог.есть, by: итог.by, tm: токенФильма, до: Date.now() + ЧАС });
+  return NextResponse.json({ ok: итог.есть, by: итог.by, tm: токенФильма }, { headers: { "Cache-Control": "no-store" } });
 }

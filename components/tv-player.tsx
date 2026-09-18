@@ -645,7 +645,7 @@ export function TVPlayer({ show }: TVPlayerProps) {
         const embed = await resolveIframeEmbed(show.id, "tv", season, episode, { allohaFallbackToZenith: !isProRef.current });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
-      setError("Этой серии нет на бесплатном источнике. Она доступна по подписке Про.");
+      setError(`Нет на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);
       return;
     }

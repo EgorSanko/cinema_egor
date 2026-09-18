@@ -91,11 +91,12 @@ export const ПОРЯДОК_ПЛЕЕРОВ: KinoSource[] = ([
   "vkmovie",
   "cdnhub",
   "rutube",
+  "kodik",
 ].filter(Boolean) as KinoSource[]);
 
 const SOURCE_KEY = "kino_source"; // 'hdrezka' | 'kinopub' | 'zenithjs' | 'alloha'
 
-export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube";
+export type KinoSource = "hdrezka" | "kinopub" | "zenithjs" | "alloha" | "vkmovie" | "cdnhub" | "rutube" | "kodik";
 
 export function getSource(): KinoSource {
   // Дефолт для ВСЕХ — alloha (бесплатный = Alloha + пре-ролл; для Про — без рекламы).
@@ -110,7 +111,7 @@ export function getSource(): KinoSource {
     const v = localStorage.getItem(SOURCE_KEY);
     const валидный =
       v === "kinopub" || v === "hdrezka" || v === "alloha" ||
-      v === "vkmovie" || v === "cdnhub" || v === "rutube" ? v : "alloha";
+      v === "vkmovie" || v === "cdnhub" || v === "rutube" || v === "kodik" ? v : "alloha";
     // Выключенный источник — не приговор для человека: молча ведём на Alloha,
     // иначе он навсегда заперт в плеере, который всегда падает.
     //
@@ -132,7 +133,67 @@ export function getSource(): KinoSource {
 // /api/alloha-hls + прокси), поэтому больше НЕ iframe.
 export function isIframeSource(s?: KinoSource): boolean {
   const x = s || getSource();
-  return x === "zenithjs";
+  return x === "zenithjs" || x === "kodik";
+}
+
+// ─── Плеер 5: Kodik (18.09.2026) ────────────────────────────────────────────
+//
+// База восточного контента: аниме, дорамы, турецкие/индийские/бразильские
+// сериалы. Западного и российского там нет (кроме стримингов по их тематике),
+// поэтому Kodik стоит последним — он закрывает аниме и дорамы, где остальные
+// плееры пустые. Играет только их окно: в бесплатном режиме реклама внутри
+// плеера оплачивает трафик, прямые ссылки у них платные.
+
+/** Адрес окна Kodik для тайтла или null, если его нет в их базе. */
+export async function resolveKodikEmbed(
+  tmdbId: number, type: "movie" | "tv", season?: number, episode?: number, startSec?: number,
+): Promise<string | null> {
+  try {
+    const imdb = await fetchImdb(tmdbId, type);
+    if (!imdb) return null;
+    const d = await fetch(`/api/kodik?imdb=${encodeURIComponent(imdb)}&type=${type}`).then((r) => r.json());
+    if (!d || !d.ok || !d.link) return null;
+    const p = new URLSearchParams();
+    if (type === "tv") {
+      p.set("season", String(season || 1));
+      p.set("episode", String(episode || 1));
+    }
+    if (startSec && startSec > 5) p.set("start_from", String(Math.floor(startSec)));
+    // Их плеер сам держит озвучки, серии и качество — наш интерфейс поверх не
+    // нужен. Кнопки пропуска заставки у них свои, из базы.
+    return p.toString() ? `${d.link}?${p.toString()}` : d.link;
+  } catch {
+    return null;
+  }
+}
+
+/** Текущее время из окна Kodik (их API плеера шлёт его раз в секунду). */
+export function onKodikTime(cb: (t: number) => void): () => void {
+  const h = (e: MessageEvent) => {
+    const d: any = e.data;
+    if (!d || d.key !== "kodik_player_time_update") return;
+    const t = Number(d.value);
+    if (!isNaN(t)) cb(t);
+  };
+  window.addEventListener("message", h);
+  return () => window.removeEventListener("message", h);
+}
+
+/** Сезон, серия и озвучка, выбранные внутри окна Kodik. */
+export function onKodikEpisode(
+  cb: (v: { season: number | null; episode: number | null; translation?: string }) => void,
+): () => void {
+  const h = (e: MessageEvent) => {
+    const d: any = e.data;
+    if (!d || d.key !== "kodik_player_current_episode" || !d.value) return;
+    cb({
+      season: d.value.season ?? null,
+      episode: d.value.episode ?? null,
+      translation: d.value.translation?.title,
+    });
+  };
+  window.addEventListener("message", h);
+  return () => window.removeEventListener("message", h);
 }
 
 // Человекочитаемая метка выбранного движка ("Плеер 2") — та же нумерация, что в
@@ -377,11 +438,16 @@ export const ALLOHA_AD_FOR_FREE = false;
 export function allohaAdEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number, startSec?: number,
 ): string {
-  // Обычно окно открываем по TMDB. Если проверка нашла тайтл только по IMDb
-  // (у Alloha пустой код TMDB) — открываем по IMDb, иначе окно скажет «нет».
+  // Лучший ключ — token_movie, «паспорт» тайтла в базе Alloha: его отдаёт их
+  // же API, и по нему окно находит тайтл всегда. Коды TMDB и IMDb в их базе
+  // бывают кривыми («Тетрадь смерти»: imdb записан как t0877057 вместо
+  // tt0877057), и окно по ним отвечало «контент не найден» при живых 37 сериях.
+  const tm = allohaТокенФильма.get(`${type}:${tmdbId}`);
   const imdb = allohaПоImdb.get(`${type}:${tmdbId}`);
-  const p = new URLSearchParams(imdb ? { imdb } : { tmdb: String(tmdbId) });
-  p.set("type", type === "tv" ? "serial" : "movie");
+  const p = new URLSearchParams(
+    tm ? { token_movie: tm } : imdb ? { imdb } : { tmdb: String(tmdbId) },
+  );
+  if (!tm) p.set("type", type === "tv" ? "serial" : "movie");
   p.set("token", ALLOHA_AD_TOKEN);
   if (type === "tv") { p.set("season", String(season || 1)); p.set("episode", String(episode || 1)); }
   if (startSec && startSec > 5) p.set("start", String(Math.floor(startSec)));
@@ -408,6 +474,8 @@ export async function allohaHasTitle(tmdbId: number, type: "movie" | "tv"): Prom
     const d = await r.json();
     if (d?.ok !== false && d?.by === "imdb" && imdb) allohaПоImdb.set(`${type}:${tmdbId}`, imdb);
     else allohaПоImdb.delete(`${type}:${tmdbId}`);
+    if (d?.ok !== false && d?.tm) allohaТокенФильма.set(`${type}:${tmdbId}`, String(d.tm));
+    else allohaТокенФильма.delete(`${type}:${tmdbId}`);
     return d?.ok !== false;
   } catch {
     return true;
@@ -416,6 +484,9 @@ export async function allohaHasTitle(tmdbId: number, type: "movie" | "tv"): Prom
 
 /** Тайтлы, которые Alloha знает только по IMDb (код TMDB у них пустой). */
 const allohaПоImdb = new Map<string, string>();
+
+/** token_movie тайтла в базе Alloha — самый надёжный ключ для их окна. */
+const allohaТокенФильма = new Map<string, string>();
 
 /** Слушает сообщения окна Alloha: оно шлёт {"event":"timeupdate","time":N}
  *  строкой JSON. Внутрь чужого окна не заглянуть, поэтому это единственный
@@ -504,6 +575,10 @@ export async function resolveIframeEmbed(
   tmdbId: number, type: "movie" | "tv", season?: number, episode?: number,
   opts?: { allohaFallbackToZenith?: boolean },
 ): Promise<string | null> {
+  // Плеер 5 — Kodik: аниме и дорамы, где остальные пустые. Запасным на Collaps
+  // не уходим: человек выбрал именно этот плеер, и подмена на другой каталог
+  // сбивала бы с толку — пусть лучше скажем, что тайтла тут нет.
+  if (getSource() === "kodik") return resolveKodikEmbed(tmdbId, type, season, episode);
   if (getSource() === "alloha") {
     const a = await resolveAllohaEmbed(tmdbId, type, season, episode);
     if (a) return a;

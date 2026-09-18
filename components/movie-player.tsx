@@ -524,7 +524,7 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
         const embed = await resolveIframeEmbed(movie.id, "movie", undefined, undefined, { allohaFallbackToZenith: !isProRef.current });
         if (embed) { setStreamData({ collaps: true, collapsEmbed: embed }); setLoading(false); return; }
       } catch {}
-      setError("Этого фильма нет на бесплатном источнике. Он доступен по подписке Про.");
+      setError(`Нет на ${playerLabel(getSource())} — попробуйте другой плеер.`);
       setLoading(false);
       return;
     }
