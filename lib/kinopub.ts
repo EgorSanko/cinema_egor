@@ -159,6 +159,10 @@ export async function resolveKodikEmbed(
       p.set("episode", String(episode || 1));
     }
     if (startSec && startSec > 5) p.set("start_from", String(Math.floor(startSec)));
+    // Их окно по умолчанию спрашивает подтверждение возраста у тайтлов 18+ —
+    // это лишний экран поверх уже открытого плеера, возраст человек и так
+    // подтвердил на входе в кинотеатр.
+    p.set("min_age_confirmation", "false");
     // Их плеер сам держит озвучки, серии и качество — наш интерфейс поверх не
     // нужен. Кнопки пропуска заставки у них свои, из базы.
     return p.toString() ? `${d.link}?${p.toString()}` : d.link;
