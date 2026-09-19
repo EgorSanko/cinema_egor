@@ -183,6 +183,18 @@ export function onKodikTime(cb: (t: number) => void): () => void {
   return () => window.removeEventListener("message", h);
 }
 
+/** Длительность из окна Kodik (шлётся в начале и при смене качества). */
+export function onKodikDuration(cb: (sec: number) => void): () => void {
+  const h = (e: MessageEvent) => {
+    const d: any = e.data;
+    if (!d || d.key !== "kodik_player_duration_update") return;
+    const t = Number(d.value);
+    if (!isNaN(t) && t > 0) cb(t);
+  };
+  window.addEventListener("message", h);
+  return () => window.removeEventListener("message", h);
+}
+
 /** Сезон, серия и озвучка, выбранные внутри окна Kodik. */
 export function onKodikEpisode(
   cb: (v: { season: number | null; episode: number | null; translation?: string }) => void,
