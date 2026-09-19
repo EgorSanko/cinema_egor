@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Tv, Search, Grid3X3, Users } from "lucide-react";
+import { Home, Tv, Search, Grid3X3 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -14,35 +14,21 @@ import { getSource } from "@/lib/kinopub";
  * Для кинотеатра это главное действие, ему и место главное.
  *
  * «Избранное» убрано: оно доступно из меню и с карточек, а место в панели
- * дороже. «Вместе» сдвинуто в край — это редкий сценарий.
+ * дороже. «Вместе» удалено совсем 19.09.2026 — им никто не пользовался.
  */
 const tabs = [
   { href: "/", icon: Home, label: "Главная" },
   { href: "/tv", icon: Tv, label: "Сериалы" },
   { href: "/search", icon: Search, label: "Поиск", главная: true },
   { href: "/collections", icon: Grid3X3, label: "Подборки" },
-  { href: "/watch", icon: Users, label: "Вместе" },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
-  // «Вместе» (совместный просмотр в нашем плеере) недоступно на zenithjs (чужой
-  // iframe) — прячем таб на бесплатном источнике.
-  const [hideWatch, setHideWatch] = useState(true); // free по умолчанию → без флеша «Вместе»
-  useEffect(() => {
-    const check = () => setHideWatch(getSource() === "zenithjs");
-    check();
-    window.addEventListener("storage", check);
-    window.addEventListener("kino-source-changed", check);
-    return () => { window.removeEventListener("storage", check); window.removeEventListener("kino-source-changed", check); };
-  }, []);
-  const visibleTabs = hideWatch ? tabs.filter((t) => t.href !== "/watch") : tabs;
+  const visibleTabs = tabs;
 
   // The /tv-* routes are the full-screen Android-TV UI — no site chrome there.
   if (pathname.startsWith("/tv-")) return null;
-
-  // Hide on watch room pages (not /watch or /watch/create)
-  if (pathname.match(/^\/watch\/[A-Z0-9]{4,}$/i)) return null;
 
   return (
     <nav className="mobile-bottom-nav fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-t border-border lg:hidden">

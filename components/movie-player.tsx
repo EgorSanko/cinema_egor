@@ -7,7 +7,6 @@ import {
   Tv as TvIcon, Subtitles, Maximize, Star, Download, Bookmark,
 } from "lucide-react";
 import { getImageUrl } from "@/lib/tmdb";
-import Link from "next/link";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
 import { FavoriteButton } from "./favorite-button";
@@ -1121,10 +1120,11 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                       <Play size={15} fill="currentColor" /> {"Продолжить с " + formatTime(resumeTime)}
                     </button>
                   )}
-                  {/* Скачивание и «Вместе» — Pro-фичи, но обе резолвятся через
-                      HDRezka. Пока HDRezka лежит (HDREZKA_UP=false) — прячем. */}
+                  {/* Скачивание резолвится через HDRezka: пока она лежит
+                      (HDREZKA_UP=false) — прячем. Кнопка «Вместе» удалена
+                      19.09.2026 вместе со всем совместным просмотром. */}
                   {isPro && HDREZKA_UP && (
-                    <div className="grid grid-cols-2 gap-2.5 w-full sm:contents">
+                    <div className="w-full sm:contents">
                       <MovieDownloadButton type="movie" movie={{
                         id: movie.id,
                         title: movie.title,
@@ -1132,13 +1132,6 @@ export function MoviePlayer({ movie, variant }: MoviePlayerProps) {
                         release_date: movie.release_date,
                         runtime: movie.runtime,
                       }} />
-                      <Link
-                        href={"/watch/create?q=" + encodeURIComponent(movie.title) + "&id=" + movie.id + "&type=movie&year=" + (movie.release_date ? new Date(movie.release_date).getFullYear() : "") + "&poster=" + (movie.poster_path || "")}
-                        className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 px-4 rounded-xl bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[13px] font-semibold"
-                        title="Смотреть вместе"
-                      >
-                        <Users size={15} /> <span className="sm:hidden">{"Вместе"}</span><span className="hidden sm:inline">{"Смотреть вместе"}</span>
-                      </Link>
                     </div>
                   )}
                 </div>

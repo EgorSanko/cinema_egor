@@ -6,7 +6,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { getImageUrl } from "@/lib/tmdb";
 import {
   Menu, Search, X, User, LogOut, LogIn,
-  Home, Tv, Layers, Users, LayoutGrid,
+  Home, Tv, Layers, LayoutGrid,
   Bookmark, ChevronDown, Heart, Clock, Send, Crown, Tv2,
   Sparkles, ListVideo, Download, LifeBuoy, Inbox, Settings,
 } from "lucide-react";
@@ -24,7 +24,6 @@ const NAV_LINKS: { label: string; href: string; Icon: IconType }[] = [
   { label: "Главная", href: "/", Icon: Home },
   { label: "Сериалы", href: "/tv", Icon: Tv },
   { label: "Подборки", href: "/collections", Icon: Layers },
-  { label: "Вместе", href: "/watch", Icon: Users },
   { label: "Жанры", href: "/genres", Icon: LayoutGrid },
 ];
 
@@ -51,13 +50,8 @@ export function Navbar() {
   const [favCount, setFavCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  // Навигация зависит от источника:
-  //  • «Спорт» (прямой эфир kino.pub) — только на kino.pub.
-  //  • «Вместе» (совместный просмотр в НАШЕМ плеере) — только на HDRezka/kino.pub;
-  //    на zenithjs это чужой iframe, синхронизировать нельзя → прячем.
-  // Инициализируем как zenithjs (бесплатный — дефолт для всех) чтобы SSR/первый
-  // рендер сразу были free-разметкой (FREE, без Вместе/Спорт/Андроид) и не было
-  // мелькания премиум-навигации до того, как эффект прочитает источник.
+  // Источник нужен навбару для прогрева соединения к воркеру kino.pub.
+  // Инициализируем как zenithjs (дефолт), чтобы SSR и первый рендер совпадали.
   const [source, setSourceState] = useState<KinoSource>("zenithjs");
   useEffect(() => {
     const check = () => {
@@ -73,14 +67,11 @@ export function Navbar() {
     return () => { window.removeEventListener("storage", check); window.removeEventListener("kino-source-changed", check); };
   }, []);
   const { isPro, loading: subLoading } = useSubscription();
-  const navLinks = (() => {
-    // Тариф определяем по isPro, НЕ по источнику: free теперь на alloha (не
-    // zenithjs), поэтому source больше не отличает free от Pro.
-    let links = !isPro ? NAV_LINKS.filter((l) => l.href !== "/watch") : NAV_LINKS;
-    // Спорт удалён (2026-08): каналы шли с kino.pub, подписка на источник уходит.
-    // Вкладка «Про» убрана 17.09.2026: Про у всех бесплатно, покупать нечего.
-    return links;
-  })();
+  // Спорт удалён (2026-08): каналы шли с kino.pub, подписка на источник уходит.
+  // Вкладка «Про» убрана 17.09.2026: Про у всех бесплатно, покупать нечего.
+  // «Вместе» убрано 19.09.2026: за сутки ни одного захода в комнату, только
+  // предзагрузки ссылки — решение Егора убрать совсем.
+  const navLinks = NAV_LINKS;
   const searchPanelRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);

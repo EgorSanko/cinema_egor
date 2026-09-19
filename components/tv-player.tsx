@@ -7,7 +7,6 @@ import {
   ChevronLeft, ChevronRight, Maximize, SkipForward, Heart, Plus,
 } from "lucide-react";
 import { getImageUrl } from "@/lib/tmdb";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Hls from "hls.js";
@@ -33,7 +32,7 @@ const AD_SEQUENCE = [
 ];
 import { savePosition, getPosition, addToHistory, saveLastEpisode, getLastEpisode, saveLastTranslator, getLastTranslator, recordTranslatorTry } from "@/lib/storage";
 import { watchHeartbeat } from "@/lib/metrika";
-import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, allohaAdEmbed, allohaHasTitle, onAllohaTime, onAllohaState, askAllohaState, playAlloha, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
+import { getSource, setSource, resolveKinopub, resolveZenithEmbed, resolveIframeEmbed, isIframeSource, resolveAllohaHls, resolveCdnHub, pickAllohaStream, playerLabel, allohaAdEmbed, allohaHasTitle, onAllohaTime, onAllohaState, askAllohaState, playAlloha, onKodikTime, onKodikDuration, onKodikEpisode, ALLOHA_AD_FOR_FREE, ALLOHA_UP, HDREZKA_UP, type AllohaHls } from "@/lib/kinopub";
 import { pickDefaultQuality, setQualityPref } from "@/lib/quality";
 import { hlsProxyUrl } from "@/lib/quality-probe";
 import { warmStream } from "@/lib/stream-warm";
@@ -462,13 +461,41 @@ export function TVPlayer({ show }: TVPlayerProps) {
     let секунда = 0;
     let сезон = selectedSeason;
     let серия = selectedEpisode;
-    const отписка = alloha ? onAllohaTime((t) => { секунда = t; }) : null;
+    // Окно Kodik (Плеер 5) шлёт время, длительность и текущую серию само.
+    const kodik = typeof streamData?.collapsEmbed === "string" && streamData.collapsEmbed.includes("kodikplayer");
+
+    // Серию человек может сменить ВНУТРИ чужого окна — у Alloha и Kodik свои
+    // селекторы серий. Тогда наш экран продолжал считать, что идёт прежняя
+    // серия: «продолжить просмотр» вело не туда, а в списке подсвечивалась
+    // не та строка. Теперь принимаем смену от окна и переносим её к себе.
+    // Перезагрузки окна это не вызывает: пере-резолв embed работает только
+    // при закрытом плеере.
+    const сменаСерии = (s: number, e: number) => {
+      if (!s || !e || (s === сезон && e === серия)) return;
+      // Досчитываем прежнюю серию, иначе её прогресс потерялся бы.
+      if (секунда > 10) {
+        savePosition(show.id, "tv", Math.min(секунда, durSec - 1), durSec, сезон, серия);
+      }
+      сезон = s; серия = e; секунда = 0;
+      saveLastEpisode(show.id, s, e);
+      setSelectedSeason(s);
+      setSelectedEpisode(e);
+    };
+
+    const отписка = alloha ? onAllohaTime((t) => { секунда = t; })
+      : kodik ? onKodikTime((t) => { секунда = t; }) : null;
     const отпискаСост = alloha ? onAllohaState((с) => {
       if (с.duration) durSec = с.duration;
-      if (с.season && с.episode && (с.season !== сезон || с.episode !== серия)) {
-        сезон = с.season; серия = с.episode; секунда = 0;
-      }
+      if (с.season && с.episode) сменаСерии(с.season, с.episode);
     }) : null;
+    const отпискаKodik = kodik ? onKodikEpisode((v) => {
+      if (v.season && v.episode) сменаСерии(v.season, v.episode);
+    }) : null;
+    const отпискаKodikДлит = kodik ? onKodikDuration((d) => { durSec = d; }) : null;
+    // У Alloha состояние приходит только в ответ на запрос. Раз в 20 секунд
+    // (как раньше) смену серии было видно с большой задержкой — спрашиваем
+    // каждые 5, это всего одно сообщение окну.
+    const опрос = alloha ? setInterval(askAllohaState, 5000) : null;
     const write = () => {
       if (alloha) askAllohaState();
       const elapsed = alloha
@@ -489,7 +516,12 @@ export function TVPlayer({ show }: TVPlayerProps) {
       });
     };
     const iv = setInterval(write, 20000);
-    return () => { clearInterval(iv); write(); отписка?.(); отпискаСост?.(); };
+    return () => {
+      clearInterval(iv);
+      if (опрос) clearInterval(опрос);
+      write();
+      отписка?.(); отпискаСост?.(); отпискаKodik?.(); отпискаKodikДлит?.();
+    };
   }, [showPlayer, streamData?.collapsEmbed, streamData?.allohaAd, show, selectedSeason, selectedEpisode, episodes, episodeRestored]);
 
   // Окно Alloha показали или сменилась серия — запускаем его.
@@ -1490,10 +1522,11 @@ export function TVPlayer({ show }: TVPlayerProps) {
                     <SkipForward size={15} /> {"Следующая серия"}
                   </button>
 
-                  {/* Скачивание и «Вместе» — обе через HDRezka. Пока HDRezka
-                      лежит (HDREZKA_UP=false) — прячем. */}
+                  {/* Скачивание идёт через HDRezka: пока она лежит
+                      (HDREZKA_UP=false) — прячем. Кнопка «Вместе» удалена
+                      19.09.2026 вместе со всем совместным просмотром. */}
                   {isPro && HDREZKA_UP && (
-                    <div className="grid grid-cols-2 gap-2 w-full sm:contents">
+                    <div className="w-full sm:contents">
                       <MovieDownloadButton
                         type="tv"
                         show={{
@@ -1507,13 +1540,6 @@ export function TVPlayer({ show }: TVPlayerProps) {
                         initialSeason={selectedSeason}
                         initialEpisode={selectedEpisode}
                       />
-                      <Link
-                        href={"/watch/create?q=" + encodeURIComponent(show.name) + "&id=" + show.id + "&type=tv&year=" + (show.first_air_date ? new Date(show.first_air_date).getFullYear() : "") + "&poster=" + (show.poster_path || "") + "&season=" + selectedSeason + "&episode=" + selectedEpisode}
-                        className="inline-flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto h-11 sm:h-10 px-3.5 rounded-xl sm:rounded-full bg-purple-500/12 ring-1 ring-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors text-[12.5px] font-semibold"
-                        title="Смотреть вместе"
-                      >
-                        <Users size={14} /> {"Вместе"}
-                      </Link>
                     </div>
                   )}
                 </div>
