@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X, Clock } from "lucide-react";
+import Link from "next/link";
 
 /**
  * Поле поиска на самой странице /search.
@@ -22,6 +23,15 @@ export function SearchBox({ начальный = "" }: { начальный?: st
   const [текст, setТекст] = useState(начальный);
   const [история, setИстория] = useState<string[]>([]);
   const полеРеф = useRef<HTMLInputElement>(null);
+  // Переход на страницу результатов — серверный, и на медленной связи он
+  // занимает секунды. Без признака «принято» человек жмёт «искать» ещё раз
+  // и думает, что всё висит. isPending горит ровно пока идёт этот переход.
+  const [идётПоиск, начатьПереход] = useTransition();
+  // Живые подсказки прямо под полем. Без них на телефоне единственный способ
+  // что-то найти — напечатать, нажать «искать» и ждать переход на серверную
+  // страницу. Теперь варианты видны по ходу набора, а нужный открывается
+  // сразу, минуя страницу результатов.
+  const [подсказки, setПодсказки] = useState<any[]>([]);
 
   useEffect(() => {
     try { setИстория(JSON.parse(localStorage.getItem(КЛЮЧ_ИСТОРИИ) || "[]")); } catch {}
@@ -29,6 +39,22 @@ export function SearchBox({ начальный = "" }: { начальный?: st
     // С готовым запросом не перехватываем фокус: он пришёл смотреть результаты.
     if (!начальный) setTimeout(() => полеРеф.current?.focus(), 60);
   }, [начальный]);
+
+  // Спрашиваем подсказки через четверть секунды после последней буквы и
+  // отменяем прошлый запрос: пока человек печатает, промежуточные ответы уже
+  // не нужны и только занимают канал.
+  useEffect(() => {
+    const q = текст.trim();
+    if (q.length < 2) { setПодсказки([]); return; }
+    const стоп = new AbortController();
+    const таймер = setTimeout(() => {
+      fetch(`/api/suggest?q=${encodeURIComponent(q)}`, { signal: стоп.signal })
+        .then((r) => r.json())
+        .then((d) => setПодсказки(Array.isArray(d?.results) ? d.results.slice(0, 6) : []))
+        .catch(() => {});
+    }, 250);
+    return () => { clearTimeout(таймер); стоп.abort(); };
+  }, [текст]);
 
   const запомнить = (q: string) => {
     try {
@@ -43,7 +69,7 @@ export function SearchBox({ начальный = "" }: { начальный?: st
     const запрос = q.trim();
     if (!запрос) return;
     запомнить(запрос);
-    router.push(`/search?q=${encodeURIComponent(запрос)}`);
+    начатьПереход(() => router.push(`/search?q=${encodeURIComponent(запрос)}`));
   };
 
   return (
@@ -64,7 +90,12 @@ export function SearchBox({ начальный = "" }: { начальный?: st
           aria-label="Поиск"
           className="w-full h-12 pl-11 pr-11 rounded-full bg-white/[0.05] border border-white/[0.10] text-foreground placeholder:text-muted-foreground/70 text-[15px] outline-none focus:border-primary/50 focus:bg-white/[0.07] transition-colors"
         />
-        {текст && (
+        {идётПоиск ? (
+          <span
+            aria-label="Идёт поиск"
+            className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin"
+          />
+        ) : текст ? (
           <button
             type="button"
             onClick={() => { setТекст(""); полеРеф.current?.focus(); }}
@@ -73,8 +104,41 @@ export function SearchBox({ начальный = "" }: { начальный?: st
           >
             <X size={16} />
           </button>
-        )}
+        ) : null}
       </form>
+
+      {подсказки.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] overflow-hidden">
+          {подсказки.map((п: any) => {
+            const имя = п.title || п.name || "";
+            const год = (п.release_date || п.first_air_date || "").slice(0, 4);
+            return (
+              <Link
+                key={п.media_type + п.id}
+                href={`/${п.media_type === "tv" ? "tv" : "movie"}/${п.id}`}
+                className="flex items-center gap-3 px-3 py-2 hover:bg-white/[0.05] transition-colors"
+              >
+                {п.poster_path ? (
+                  <img
+                    src={`/tmdb-img/w92${п.poster_path}`}
+                    alt=""
+                    loading="lazy"
+                    className="w-8 h-12 rounded object-cover flex-shrink-0 bg-white/[0.06]"
+                  />
+                ) : (
+                  <span className="w-8 h-12 rounded bg-white/[0.06] flex-shrink-0" />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] text-foreground/90 truncate">{имя}</span>
+                  <span className="block text-[12px] text-muted-foreground">
+                    {год}{год && " · "}{п.media_type === "tv" ? "сериал" : "фильм"}
+                  </span>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
 
       {!начальный && история.length > 0 && (
         <div className="mt-5">

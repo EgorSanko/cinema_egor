@@ -104,8 +104,11 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
   const [movieResults, tvResults, peopleResults, hdHits] = query
     ? await Promise.all([
-        searchMoviesPaged(query, 5),
-        searchTVPaged(query, 3),
+        // Страниц TMDB берём меньше, чем раньше (было 5 и 3): каждая — свой
+        // запрос, а хватает и этого — сопоставлять всё равно не с чем, когда
+        // HDRezka молчит. Холодный поиск от этого заметно короче.
+        searchMoviesPaged(query, 3),
+        searchTVPaged(query, 2),
         searchPeople(query),
         getHdrezkaHits(query),
       ])

@@ -1,7 +1,6 @@
 "use client";
 
 import type React from "react";
-import { fetchMoviesBySearchAction, fetchTVBySearchAction } from "@/app/actions";
 import { useDebounce } from "@/hooks/use-debounce";
 import { getImageUrl } from "@/lib/tmdb";
 import {
@@ -43,6 +42,9 @@ export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  // Признак «подсказки уже едут»: на медленной связи без него поле выглядит
+  // мёртвым и кажется, что поиск не работает.
+  const [идутПодсказки, setИдутПодсказки] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -113,20 +115,25 @@ export function Navbar() {
     try { localStorage.setItem("kino_tariff", t); } catch {}
   }, [isPro, subLoading, user?.email]);
 
+  // Подсказки берём ОДНИМ обычным запросом (/api/suggest) вместо двух
+  // серверных действий: ответ на GET кэшируется, повторный набор того же
+  // слова отвечает мгновенно. Прошлый запрос отменяем — пока человек печатает,
+  // ответы на промежуточные куски уже не нужны и только занимают канал
+  // (на телефоне из-за них подсказки и «выдавались долго»).
   useEffect(() => {
-    const fetchSuggestions = async () => {
-      if (debouncedSearch.trim().length > 1) {
-        const [movies, tvShows] = await Promise.all([
-          fetchMoviesBySearchAction(debouncedSearch, 1),
-          fetchTVBySearchAction(debouncedSearch, 1),
-        ]);
-        const movieResults = movies.slice(0, 4).map((m: any) => ({ ...m, media_type: "movie" }));
-        const tvResults = tvShows.slice(0, 3).map((t: any) => ({ ...t, media_type: "tv" }));
-        setSuggestions([...movieResults, ...tvResults]);
+    const q = debouncedSearch.trim();
+    if (q.length < 2) { setSuggestions([]); setShowSuggestions(false); setИдутПодсказки(false); return; }
+    const стоп = new AbortController();
+    setИдутПодсказки(true);
+    fetch(`/api/suggest?q=${encodeURIComponent(q)}`, { signal: стоп.signal })
+      .then((r) => r.json())
+      .then((d) => {
+        setSuggestions(Array.isArray(d?.results) ? d.results : []);
         setShowSuggestions(true);
-      } else { setSuggestions([]); setShowSuggestions(false); }
-    };
-    fetchSuggestions();
+        setИдутПодсказки(false);
+      })
+      .catch(() => { if (!стоп.signal.aborted) setИдутПодсказки(false); });
+    return () => стоп.abort();
   }, [debouncedSearch]);
 
   useEffect(() => {
@@ -374,7 +381,14 @@ export function Navbar() {
                           onChange={(e) => setSearchQuery(e.target.value)}
                           className="w-full h-10 pl-9 pr-12 bg-foreground/[0.04] border border-white/[0.08] rounded-full text-[13px] text-foreground placeholder:text-foreground/40 focus:outline-none focus:border-foreground/30"
                         />
-                        <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[12px] font-mono text-foreground/40 bg-foreground/[0.04] border border-white/[0.08] rounded">ESC</kbd>
+                        {идутПодсказки ? (
+                          <span
+                            aria-label="Ищем"
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-primary/30 border-t-primary animate-spin"
+                          />
+                        ) : (
+                          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[12px] font-mono text-foreground/40 bg-foreground/[0.04] border border-white/[0.08] rounded">ESC</kbd>
+                        )}
                       </div>
                     </form>
                     {searchQuery.trim().length <= 1 && searchHistory.length > 0 && (

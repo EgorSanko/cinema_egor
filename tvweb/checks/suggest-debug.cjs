@@ -1,0 +1,20 @@
+const { chromium, devices } = require("playwright");
+(async () => {
+  const b = await chromium.launch({ channel: "msedge" });
+  const ctx = await b.newContext({ ...devices["iPhone 13"] });
+  const p = await ctx.newPage();
+  const ошибки = [];
+  p.on("pageerror", (e) => ошибки.push("pageerror: " + String(e).slice(0, 140)));
+  p.on("console", (m) => { if (m.type() === "error") ошибки.push("console: " + m.text().slice(0, 140)); });
+  p.on("request", (r) => { if (r.url().includes("suggest")) console.log("запрос: " + r.url().slice(0, 80)); });
+  await p.goto("https://sapkeflykino.ru/search", { waitUntil: "load", timeout: 120000 });
+  await p.waitForTimeout(6000);
+  const поле = p.locator('input[aria-label="Поиск"]');
+  await поле.click();
+  await поле.type("оппенг", { delay: 90 });
+  await p.waitForTimeout(6000);
+  console.log("значение поля: " + (await поле.inputValue()));
+  console.log("ошибки: " + (ошибки.slice(0, 4).join(" | ") || "нет"));
+  console.log("есть ли блок подсказок: " + (await p.evaluate(() => document.body.innerText.includes("· фильм") || document.body.innerText.includes("· сериал"))));
+  await b.close();
+})();
