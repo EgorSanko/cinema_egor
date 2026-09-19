@@ -17,6 +17,8 @@ import Link from "next/link";
  * расходиться в зависимости от того, откуда искали.
  */
 const КЛЮЧ_ИСТОРИИ = "kino_search_history";
+// Черновик набора. Живёт секунды: только чтобы пережить оживление страницы.
+const КЛЮЧ_ЧЕРНОВИКА = "kino_search_draft";
 
 export function SearchBox({ начальный = "" }: { начальный?: string }) {
   const router = useRouter();
@@ -38,6 +40,24 @@ export function SearchBox({ начальный = "" }: { начальный?: st
     // Пустой запрос — человек пришёл именно искать, ставим курсор сразу.
     // С готовым запросом не перехватываем фокус: он пришёл смотреть результаты.
     if (!начальный) setTimeout(() => полеРеф.current?.focus(), 60);
+    // ПОДХВАТЫВАЕМ УЖЕ НАБРАННОЕ.
+    //
+    // Разметка приходит на телефоне за пару секунд, а React оживляет её позже.
+    // Нетерпеливый человек печатает в это окно — и набранное пропадало: поле
+    // было управляемым, а при оживлении страницы React ставил в него своё
+    // (пустое) состояние. Со стороны это и выглядело как «ищешь, а оно висит
+    // и ничего не выдаёт»: по замеру на телефоне слово «веном», напечатанное
+    // через полсекунды после появления поля, исчезало целиком.
+    //
+    // Поэтому поле неуправляемое, набранное дублируется в черновик, а здесь
+    // мы возвращаем его в поле — даже если компонент успел пересоздаться.
+    let черновик = "";
+    try { черновик = sessionStorage.getItem(КЛЮЧ_ЧЕРНОВИКА) || ""; } catch {}
+    const успел = полеРеф.current?.value || черновик;
+    if (успел && !начальный) {
+      if (полеРеф.current) полеРеф.current.value = успел;
+      setТекст(успел);
+    }
   }, [начальный]);
 
   // Спрашиваем подсказки через четверть секунды после последней буквы и
@@ -69,20 +89,25 @@ export function SearchBox({ начальный = "" }: { начальный?: st
     const запрос = q.trim();
     if (!запрос) return;
     запомнить(запрос);
+    try { sessionStorage.removeItem(КЛЮЧ_ЧЕРНОВИКА); } catch {}
     начатьПереход(() => router.push(`/search?q=${encodeURIComponent(запрос)}`));
   };
 
   return (
     <div className="mb-8">
       <form
-        onSubmit={(e) => { e.preventDefault(); искать(текст); }}
+        onSubmit={(e) => { e.preventDefault(); искать(полеРеф.current?.value || текст); }}
         className="relative"
       >
         <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <input
+          id="kino-search-input"
           ref={полеРеф}
-          value={текст}
-          onChange={(e) => setТекст(e.target.value)}
+          defaultValue={начальный}
+          onChange={(e) => {
+            setТекст(e.target.value);
+            try { sessionStorage.setItem(КЛЮЧ_ЧЕРНОВИКА, e.target.value); } catch {}
+          }}
           type="search"
           inputMode="search"
           enterKeyHint="search"
@@ -98,7 +123,12 @@ export function SearchBox({ начальный = "" }: { начальный?: st
         ) : текст ? (
           <button
             type="button"
-            onClick={() => { setТекст(""); полеРеф.current?.focus(); }}
+            onClick={() => {
+              setТекст("");
+              try { sessionStorage.removeItem(КЛЮЧ_ЧЕРНОВИКА); } catch {}
+              if (полеРеф.current) полеРеф.current.value = "";   // поле неуправляемое
+              полеРеф.current?.focus();
+            }}
             aria-label="Очистить"
             className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"
           >
@@ -106,6 +136,23 @@ export function SearchBox({ начальный = "" }: { начальный?: st
           </button>
         ) : null}
       </form>
+      {/*
+        Сохранение набранного ДО оживления страницы.
+
+        React-обработчик появляется только после гидратации, а на телефоне это
+        секунды. Всё, что человек напечатал раньше, до сих пор пропадало: он
+        видел пустое поле и думал, что поиск висит. Этот кусок выполняется
+        сразу при разборе разметки — обычным слушателем, без React, — и
+        складывает набранное в черновик, который эффект выше возвращает в поле.
+      */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html:
+            "(function(){try{var i=document.getElementById('kino-search-input');if(!i)return;" +
+            "i.addEventListener('input',function(){try{sessionStorage.setItem('" + КЛЮЧ_ЧЕРНОВИКА + "',i.value);}catch(e){}});" +
+            "}catch(e){}})();",
+        }}
+      />
 
       {подсказки.length > 0 && (
         <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] overflow-hidden">
@@ -151,7 +198,11 @@ export function SearchBox({ начальный = "" }: { начальный?: st
               <button
                 key={з}
                 type="button"
-                onClick={() => { setТекст(з); искать(з); }}
+                onClick={() => {
+                  setТекст(з);
+                  if (полеРеф.current) полеРеф.current.value = з;
+                  искать(з);
+                }}
                 className="px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-foreground/80 text-[13px] hover:border-white/20 hover:text-foreground transition-colors"
               >
                 {з}
