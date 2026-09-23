@@ -134,6 +134,7 @@ async def hls_manifest(u: str):
         r = await hdrezka_http.DEFAULT_CLIENT.get(url, headers=_HLS_HEADERS, follow_redirects=True)
         base = str(r.url)
         out = []
+        _n = 0  # порядковый номер куска
         for line in r.text.splitlines():
             s = line.strip()
             if not s:
@@ -149,6 +150,226 @@ async def hls_manifest(u: str):
     except Exception as e:
         return Response("err: " + str(e), status_code=502)
 
+# ==== Дозвон при обрыве раздачи ====
+# okcdn (узлы VK/ОК) закрывает соединение примерно на 1.09 ГБ отданных байт —
+# независимо от того, насколько велик сам файл. Мы качали фильм ОДНИМ запросом,
+# поэтому на 1080p кино вставало ровно на восьмой минуте: столько времени
+# занимает этот гигабайт. Байты при этом целы и не забанены — достаточно
+# переспросить остаток через Range и продолжить лить в тот же ответ. Для плеера
+# это по-прежнему один непрерывный поток, он обрыва не замечает.
+_ДОЗВОНОВ = 12
+
+
+def _разобрать_range(rng):
+    """Клиентский Range -> (начало, конец или None). Кривой -> (0, None)."""
+    m = __import__("re").match(r"bytes=(\d*)-(\d*)", (rng or "").strip())
+    if not m:
+        return 0, None
+    начало = int(m.group(1)) if m.group(1) else 0
+    конец = int(m.group(2)) if m.group(2) else None
+    return начало, конец
+
+
+async def _норм_range(url, hdr, rng):
+    """«bytes=-N» (последние N байт) -> обычный «bytes=начало-конец».
+
+    Браузер, открывая большой mp4, запрашивает ХВОСТ файла. Раздача okcdn эту
+    форму не понимает и отдаёт НАЧАЛО, да ещё с заголовком «это байты 0-N».
+    Браузер получает не то, что просил, сбрасывает и запрашивает снова — по
+    кругу. Так Плеер 3 не играл вообще (файл 4 ГБ, хвост читается всегда), а
+    Плеер 2 — через раз. Здесь переводим запрос в обычный диапазон: сначала
+    узнаём размер файла пробным «bytes=0-0», потом считаем начало сами.
+    """
+    m = __import__("re").match(r"^bytes=-(\d+)$", (rng or "").strip())
+    if not m:
+        return rng
+    n = int(m.group(1))
+    try:
+        проба = dict(hdr)
+        проба["Range"] = "bytes=0-0"
+        r0 = await hdrezka_http.DEFAULT_CLIENT.get(url, headers=проба, follow_redirects=True, timeout=15)
+        cr = r0.headers.get("content-range", "")
+        всего = int(cr.split("/")[-1]) if "/" in cr else int(r0.headers.get("content-length") or 0)
+        if всего <= 0 or n <= 0:
+            return rng
+        начало = max(0, всего - n)
+        return "bytes=%d-%d" % (начало, всего - 1)
+    except Exception:
+        return rng
+
+
+# ==== Отдача кусками (23.09.2026) ====
+# Раздача okcdn по-разному отдаёт длинный и короткий запрос. Длинный поток
+# («файл с начала и до конца» — именно так браузер открывает видео) она
+# притормаживает: 23.09 замерено 2.6 МБ/с, а в момент жалобы Егора — около
+# 0.1 МБ/с, и фильм в 1080p не успевал грузиться: «вечная загрузка» на
+# Плеерах 2 и 3. Кусок в 10 МБ при этом приходит за 0.15 с — в 20–30 раз
+# быстрее, и одинаково на всех звеньях цепочки (5.42 локально, 81 → 5.42,
+# публичный адрес). Поэтому у источника берём фильм кусками по _КУСОК, а
+# браузеру отдаём одним непрерывным ответом — для плеера ничего не меняется.
+_КУСОК = 8 * 1024 * 1024
+_ПОВТОРОВ_КУСКА = 4
+
+
+async def _запросить_кусок(url, hdr, с, по):
+    h = dict(hdr)
+    h["Range"] = "bytes=%d-%d" % (с, по)
+    req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=h)
+    return await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
+
+
+async def _лить_кусками(url, hdr, r, начало, конец, метка):
+    """Тело ответа [начало..конец]; у источника — кусками по _КУСОК.
+
+    r — уже открытый ответ источника на первый кусок. Кусок оборвался — просим
+    недостающее с того же байта; источник отказал — несколько повторов с паузой.
+    """
+    поз = начало
+    неудач = 0
+    while True:
+        граница = min(поз + _КУСОК - 1, конец)
+        получено = 0
+        try:
+            async for б in r.aiter_bytes():
+                остаток = граница - (поз + получено) + 1
+                if остаток <= 0:
+                    break
+                if len(б) > остаток:
+                    б = б[:остаток]
+                получено += len(б)
+                yield б
+        except Exception:
+            pass
+        finally:
+            try:
+                await r.aclose()
+            except Exception:
+                pass
+        поз += получено
+        if поз > конец:
+            return
+        неудач = 0 if получено else неудач + 1
+        r = None
+        while r is None:
+            if неудач > _ПОВТОРОВ_КУСКА:
+                print("[%s] кусок с байта %d не даётся, сдаёмся" % (метка, поз), flush=True)
+                return
+            try:
+                кандидат = await _запросить_кусок(url, hdr, поз, min(поз + _КУСОК - 1, конец))
+            except Exception as e:
+                print("[%s] кусок с байта %d: %s" % (метка, поз, str(e)[:60]), flush=True)
+                неудач += 1
+                await __import__("asyncio").sleep(0.4)
+                continue
+            if кандидат.status_code != 206:
+                print("[%s] кусок с байта %d: ответ %d" % (метка, поз, кандидат.status_code), flush=True)
+                try:
+                    await кандидат.aclose()
+                except Exception:
+                    pass
+                неудач += 1
+                await __import__("asyncio").sleep(0.4)
+                continue
+            r = кандидат
+
+
+async def _отдать_кусками(url, hdr, rng, метка):
+    """Ответ прокси на запрос видео с кусочной подкачкой у источника.
+
+    None — если источник ответил не как обычно (нет 206 с размером файла);
+    тогда вызывающий идёт прежним путём, одним запросом.
+    """
+    начало, конец = _разобрать_range(rng)
+    if конец is not None and конец < начало:
+        return None
+    первый_по = начало + _КУСОК - 1
+    if конец is not None:
+        первый_по = min(первый_по, конец)
+    r = await _запросить_кусок(url, hdr, начало, первый_по)
+    cr = r.headers.get("content-range", "")
+    if r.status_code != 206 or "/" not in cr or cr.endswith("/*"):
+        try:
+            await r.aclose()
+        except Exception:
+            pass
+        return None
+    всего = int(cr.rsplit("/", 1)[1])
+    итог_по = всего - 1 if конец is None else min(конец, всего - 1)
+    if начало > итог_по:
+        try:
+            await r.aclose()
+        except Exception:
+            pass
+        return None
+    ct = r.headers.get("content-type", "video/mp4")
+    out = {"Cache-Control": "no-store", "Accept-Ranges": "bytes",
+           "Content-Length": str(итог_по - начало + 1)}
+    if rng:
+        out["Content-Range"] = "bytes %d-%d/%d" % (начало, итог_по, всего)
+        код = 206
+    else:
+        код = 200
+    поток = _лить_кусками(url, hdr, r, начало, итог_по, метка)
+    return StreamingResponse(поток, status_code=код, media_type=ct, headers=out)
+
+
+async def _лить_подряд(url, hdr, r, начало, конец, метка):
+    """Тело ответа с переподключением на месте обрыва."""
+    отдано = 0
+    пропуск = 0
+    попытка = 0
+    while True:
+        оборвалось = False
+        try:
+            async for кусок in r.aiter_bytes():
+                if пропуск:
+                    if len(кусок) <= пропуск:
+                        пропуск -= len(кусок)
+                        continue
+                    кусок = кусок[пропуск:]
+                    пропуск = 0
+                отдано += len(кусок)
+                yield кусок
+        except Exception:
+            оборвалось = True
+        finally:
+            try:
+                await r.aclose()
+            except Exception:
+                pass
+        if not оборвалось:
+            return
+        if конец is not None and начало + отдано > конец:
+            return
+        попытка += 1
+        if попытка > _ДОЗВОНОВ:
+            print("[%s] обрыв на %d байт, дозвоны кончились" % (метка, отдано), flush=True)
+            return
+        с = начало + отдано
+        h2 = dict(hdr)
+        h2["Range"] = "bytes=%d-%s" % (с, конец if конец is not None else "")
+        try:
+            req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=h2)
+            r = await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
+        except Exception as e:
+            print("[%s] дозвон #%d не вышел: %s" % (метка, попытка, str(e)[:60]), flush=True)
+            return
+        if r.status_code == 206:
+            print("[%s] дозвон #%d с байта %d" % (метка, попытка, с), flush=True)
+            continue
+        if r.status_code == 200:
+            # Источник не понял Range и шлёт файл сначала — промотаем лишнее.
+            пропуск = с
+            print("[%s] дозвон #%d без Range, мотаем %d" % (метка, попытка, с), flush=True)
+            continue
+        print("[%s] дозвон #%d отказ %d" % (метка, попытка, r.status_code), flush=True)
+        try:
+            await r.aclose()
+        except Exception:
+            pass
+        return
+
+
 @app.get("/api/hls/seg")
 async def hls_seg(u: str, request: HTTPRequest):
     try:
@@ -162,6 +383,7 @@ async def hls_seg(u: str, request: HTTPRequest):
         # iPhone froze. Honour the upstream 206 + range headers in the reply.
         rng = request.headers.get("range")
         if rng:
+            rng = await _норм_range(url, headers, rng)
             headers["Range"] = rng
         req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=headers)
         r = await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
@@ -170,13 +392,9 @@ async def hls_seg(u: str, request: HTTPRequest):
         for h in ("content-range", "content-length"):
             if h in r.headers:
                 out_headers[h.title()] = r.headers[h]
-        async def gen():
-            try:
-                async for chunk in r.aiter_bytes():
-                    yield chunk
-            finally:
-                await r.aclose()
-        return StreamingResponse(gen(), status_code=r.status_code, media_type=ct, headers=out_headers)
+        начало, конец = _разобрать_range(rng)
+        поток = _лить_подряд(url, headers, r, начало, конец, "hls")
+        return StreamingResponse(поток, status_code=r.status_code, media_type=ct, headers=out_headers)
     except Exception as e:
         return Response("err: " + str(e), status_code=502)
 
@@ -1304,6 +1522,731 @@ async def related(url: str):
     return resp
 
 
+
+# ---- Alloha (VK Video cloud, 4K) резолвер: проксирует балансер с РФ-IP ----
+@app.get("/api/alloha")
+async def alloha_players(request: HTTPRequest):
+    params = dict(request.query_params)
+    q = {}
+    imdb = params.get("imdb")
+    kp = params.get("kinopoisk") or params.get("kp")
+    if imdb:
+        q["imdb"] = imdb
+    elif kp:
+        q["kinopoisk"] = kp
+    else:
+        return Response('{"error":"need imdb or kinopoisk"}', status_code=400, media_type="application/json")
+    try:
+        r = await hdrezka_http.DEFAULT_CLIENT.get(
+            "https://fbphdplay.top/api/players", params=q,
+            headers={"Referer": "https://fbdomen.top/"}, timeout=15)
+        return Response(r.content, status_code=r.status_code, media_type="application/json",
+                        headers={"Cache-Control": "public, max-age=300", "Access-Control-Allow-Origin": "*"})
+    except Exception as e:
+        return Response('{"error":"%s"}' % str(e)[:80], status_code=502, media_type="application/json")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
+
+# ═══ Alloha (VK Video) НАТИВНЫЙ резолвер + HLS-прокси ═══════════════════════
+# Резолвит Alloha в прямой VK m3u8 (все озвучки/качества) через обход подписи
+# borth (node), и проксирует VK-поток с подписанными заголовками (браузер юзера
+# кроссдоменно их слать не может). Фронт для source=alloha играет это в нашем
+# ArtPlayer вместо чужого iframe.
+import asyncio as _aio_al
+import json as _json_al
+import sys as _sys_al
+if "/root/movie" not in _sys_al.path:
+    _sys_al.path.insert(0, "/root/movie")
+import alloha_resolver as _alr
+
+_ALLOHA_VK_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accepts-Controls": _alr.WV,
+    "Authorizations": _alr.BEARER,
+    "Origin": "https://theatre.stravers.live",
+    "Referer": "https://theatre.stravers.live/",
+    "Accept": "*/*",
+}
+
+
+@app.get("/api/alloha-hls")
+async def alloha_hls(imdb: str, type: str = "movie", season: int = None, episode: int = None):
+    try:
+        res = await _aio_al.to_thread(_alr.resolve, imdb, type, season, episode)
+    except Exception as e:
+        return Response('{"error":"' + str(e)[:100].replace('"', "'") + '"}',
+                        media_type="application/json")
+    if not res:
+        return Response('{"error":"not_found"}', media_type="application/json")
+    # Оборачиваем каждый VK m3u8 в наш прокси (он подставит подписанные заголовки).
+    for _ti, tr in enumerate(res.get("translations", [])):
+        q = tr.get("quality") or {}
+        for k in list(q.keys()):
+            # «Паспорт» дорожки: по нему прокси сможет выпросить у Alloha свежую
+            # подпись, когда старая протухнет. Подпись VK живёт считаные минуты,
+            # а серия идёт сорок — без этого плеер встаёт на середине.
+            ctx = _enc_u("|".join([imdb, type, str(season or ""), str(episode or ""), k, str(_ti)]))
+            q[k] = _PROXY_BASE + "/api/alloha.m3u8?u=" + _enc_u(q[k]) + "&c=" + ctx
+    return Response(_json_al.dumps(res, ensure_ascii=False),
+                    media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+# Ключ — в окружении сервиса (drop-in kino-api.service.d/secret.conf на
+# 5.42.123.75), не в коде: код лежит в репозитории, где стоит блокировка секретов.
+_ALLOHA_RAW_SECRET = _os.environ.get("ALLOHA_RAW_SECRET", "")
+
+@app.get("/api/alloha-raw")
+async def alloha_raw(imdb: str, type: str = "movie", season: int = None, episode: int = None, secret: str = ""):
+    # Сырые VK m3u8 + подписанные заголовки для NL-воркера (скачка в mp4 для ТГ).
+    # Секрет-гейт: без него не отдаём (иначе утечёт WV/BEARER). Пустой ключ в
+    # окружении — закрыто для всех, иначе пустой secret= совпал бы с ним.
+    if not _ALLOHA_RAW_SECRET or secret != _ALLOHA_RAW_SECRET:
+        return Response('{"error":"forbidden"}', status_code=403, media_type="application/json")
+    try:
+        res = await _aio_al.to_thread(_alr.resolve, imdb, type, season, episode)
+    except Exception as e:
+        return Response('{"error":"' + str(e)[:100].replace('"', "'") + '"}', media_type="application/json")
+    if not res:
+        return Response('{"error":"not_found"}', media_type="application/json")
+    out = {
+        "skipTime": res.get("skipTime"),
+        "translations": res.get("translations", []),
+        "wv": _alr.WV, "bearer": _alr.BEARER,
+        "origin": "https://theatre.stravers.live", "referer": "https://theatre.stravers.live/",
+    }
+    return Response(_json_al.dumps(out, ensure_ascii=False), media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+from urllib.parse import urlparse as _urlparse_вк, parse_qs as _parse_qs_вк
+
+# ── Обход узлов VK, которые забанили именно наш сервер ────────────────────
+#
+# VK банит пару «наш адрес × узел раздачи»: 12.09 узел r506 отдавал «Начало»
+# сайт-серверу и домашнему ПК, а этому серверу — 403 (X-VD: client_blocked).
+# Значит раздача жива, закрыт наш выход. При отказе идём за тем же файлом через
+# сайт-сервер: там поднят сервис /vkrelay2, который пускает только этот сервер
+# и только на домены раздачи. Адрес едет в base64 — раньше обход был локацией
+# nginx, и она ломала длинные подписанные ссылки (404 вместо 200).
+#
+# Если и там 403 — метку снимаем: узел закрыл оба наших адреса, и плеер должен
+# уйти на следующий источник, а не биться в стену.
+_VK_РЕЛЕЙ = _os.environ.get("VK_RELAY_BASE", "https://sapkeflykino.ru/vkrelay2/r")
+_vk_обход = {}
+_ОБХОД_МИНУТ = 30
+
+
+def _узел_вк(url: str) -> str:
+    try:
+        return _urlparse_вк(url).netloc
+    except Exception:
+        return ""
+
+
+def _обход_нужен(url: str) -> bool:
+    return _time.time() < _vk_обход.get(_узел_вк(url), 0)
+
+
+def _адрес_для_запроса(url: str) -> str:
+    if url.startswith(_VK_РЕЛЕЙ) or not _обход_нужен(url):
+        return url
+    return _VK_РЕЛЕЙ + "?u=" + _enc_u(url)
+
+
+def _развернуть_релей(url: str) -> str:
+    """Вернуть обычный адрес VK из адреса обхода.
+
+    Иначе ломается разбор плейлиста: относительные ссылки внутри него считаются
+    от адреса, с которого он скачан. Если это адрес обхода, куски видео получают
+    его как «настоящий», прокси заворачивает их второй раз и всё падает в 404 —
+    ровно так 12.09 перестал играть «Офис».
+    """
+    if not url.startswith(_VK_РЕЛЕЙ):
+        return url
+    try:
+        return _dec_u(_parse_qs_вк(_urlparse_вк(url).query)["u"][0])
+    except Exception:
+        return url
+
+
+async def _vk_get(url: str, headers: dict):
+    """Запрос к VK с автоматическим обходом узла, забанившего наш сервер."""
+    адрес = _адрес_для_запроса(url)
+    r = await hdrezka_http.DEFAULT_CLIENT.get(адрес, headers=headers, follow_redirects=True)
+    if r.status_code == 403 and адрес == url:
+        узел = _узел_вк(url)
+        if узел:
+            _vk_обход[узел] = _time.time() + _ОБХОД_МИНУТ * 60
+            обходной = _адрес_для_запроса(url)
+            if обходной != url:
+                r2 = await hdrezka_http.DEFAULT_CLIENT.get(обходной, headers=headers, follow_redirects=True)
+                print("[alloha-обход] узел %s → %s | X-VD: %s"
+                      % (узел, r2.status_code, r2.headers.get("X-VD", "-")), flush=True)
+                if r2.status_code < 400:
+                    return r2
+                _vk_обход.pop(узел, None)
+                return r2
+    return r
+
+
+_alloha_свежие = {}          # паспорт -> (когда, [ссылки на сегменты])
+_alloha_протухшие = set()    # паспорта, чью сессию VK закрыл — обновить принудительно
+_alloha_замок = _asyncio.Lock()
+
+
+async def _alloha_свежий_плейлист(c: str):
+    """Перевыпустить ссылку на плейлист по паспорту дорожки и скачать его."""
+    if not c:
+        return None
+    try:
+        imdb, тип, сезон, серия, кач, тр = _dec_u(c).split("|")
+        res = await _aio_al.to_thread(_alr.resolve, imdb, тип,
+                                      int(сезон) if сезон else None, int(серия) if серия else None)
+        дорожки = (res or {}).get("translations") or []
+        д = дорожки[int(тр)] if int(тр) < len(дорожки) else (дорожки[0] if дорожки else None)
+        ссылка = ((д or {}).get("quality") or {}).get(кач)
+        if not ссылка:
+            return None
+        r = await _vk_get(ссылка, _ALLOHA_VK_HEADERS)
+        return r if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+async def _alloha_обновить(c: str, i: int):
+    """Свежая ссылка на сегмент №i — прозрачно для плеера.
+
+    Держим результат в кэше: один поход к источнику на всю серию, а не на
+    каждый кусок. Иначе перевыпуск сам превращается в шторм запросов.
+    """
+    if not c or i < 0:
+        return None
+    # СБРОСИТЬ_КЭШ_ПРИ_ОТКАЗЕ: когда сессию закрыли, держать её в кэше две
+    # минуты — значит две минуты отдавать зрителю мёртвые ссылки. Поэтому
+    # вызывающий при отказе помечает паспорт, и мы идём за новой сессией.
+    async with _alloha_замок:
+        кэш = _alloha_свежие.get(c)
+        if c in _alloha_протухшие:
+            _alloha_протухшие.discard(c)
+            кэш = None
+        if not кэш or _time.time() - кэш[0] > 120:
+            r = await _alloha_свежий_плейлист(c)
+            if r is None:
+                return None
+            try:
+                база = _развернуть_релей(str(r.url))
+                строки = [l.strip() for l in r.text.splitlines() if l.strip() and not l.startswith("#")]
+                # У Alloha мастер-плейлист ведёт на плейлист качества — спускаемся.
+                if строки and ".m3u8" in строки[0]:
+                    вложенный = _resolve(база, строки[0])
+                    r2 = await _vk_get(вложенный, _ALLOHA_VK_HEADERS)
+                    if r2.status_code != 200:
+                        return None
+                    база = _развернуть_релей(str(r2.url))
+                    строки = [l.strip() for l in r2.text.splitlines() if l.strip() and not l.startswith("#")]
+                сегменты = [_resolve(база, l) for l in строки if ".m3u8" not in l]
+                if not сегменты:
+                    return None
+                _alloha_свежие[c] = (_time.time(), сегменты)
+            except Exception:
+                return None
+        сег = _alloha_свежие[c][1]
+        return сег[i] if i < len(сег) else None
+
+
+def _alloha_rewrite_uri(line: str, base: str) -> str:
+    def _r(m):
+        abs_ = _resolve(base, m.group(1))
+        ep = "/api/alloha.m3u8?u=" if ".m3u8" in m.group(1) else "/api/alloha/seg?u="
+        return 'URI="' + _PROXY_BASE + ep + _enc_u(abs_) + '"'
+    return _re_hls.sub(r'URI="([^"]+)"', _r, line)
+
+
+@app.api_route("/api/alloha.m3u8", methods=["GET", "HEAD"])
+async def alloha_manifest(u: str, c: str = ""):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    try:
+        r = await _vk_get(url, _ALLOHA_VK_HEADERS)
+        if r.status_code != 200:
+            # Код ответа надо проверять ОБЯЗАТЕЛЬНО. Без этого страница «403
+            # Forbidden» от VK разбиралась как плейлист, её строки превращались
+            # в ссылки на «куски видео», плеер получал 200 и уходил в бесконечные
+            # повторы — так 12.09 мы и выбили себе блокировку у VK.
+            return Response("upstream " + str(r.status_code), status_code=503,
+                            headers={"Retry-After": "5", "Cache-Control": "no-store"})
+        base = _развернуть_релей(str(r.url))
+        out = []
+        _n = 0  # порядковый номер куска — по нему ищем замену
+        for line in r.text.splitlines():
+            s = line.strip()
+            if not s:
+                out.append(line)
+            elif s.startswith("#"):
+                out.append(_alloha_rewrite_uri(s, base) if 'URI="' in s else s)
+            else:
+                abs_ = _resolve(base, s)
+                вложенный = ".m3u8" in s
+                ep = "/api/alloha.m3u8?u=" if вложенный else "/api/alloha/seg?u="
+                хвост = ("&c=" + c) if c else ""
+                if c and not вложенный:
+                    хвост += "&i=" + str(_n)      # номер куска — по нему найдём замену
+                if not вложенный:
+                    _n += 1
+                out.append(_PROXY_BASE + ep + _enc_u(abs_) + хвост)
+        return Response("\n".join(out) + "\n", media_type="application/vnd.apple.mpegurl",
+                        headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        return Response("err: " + str(e), status_code=502)
+
+
+@app.api_route("/api/alloha/seg", methods=["GET", "HEAD"])
+async def alloha_seg(u: str, request: HTTPRequest, c: str = "", i: int = -1):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    headers = dict(_ALLOHA_VK_HEADERS)
+    rng = request.headers.get("range")
+    if rng:
+        headers["Range"] = rng
+    # VK-эдж иногда обрывает передачу сегмента на середине (peer closed без полного
+    # тела) → hls.js получал битый фрагмент и вставал (напр. на 1:47). Тянем сегмент
+    # ПОЛНОСТЬЮ (буферизуем) с ретраями и отдаём только целый. Если все попытки
+    # обрываются — 502, hls.js повторит фрагмент сам (лучше короткой паузы, чем стоп).
+    last = ""
+    перевыпусков = 0
+    for _attempt in range(6):
+        try:
+            r = await _vk_get(url, headers)
+            if r.status_code == 403:
+                print("[alloha-seg] 403 от %s | X-VD: %s | перевыпусков: %d | попытка %d"
+                      % (_узел_вк(url), r.headers.get("X-VD", "-"), перевыпусков, _attempt),
+                      flush=True)
+                # Сессию закрыли (session_blocked) или подпись протухла. Их
+                # собственный плеер в этом случае просто переполучает поток
+                # целиком (reloadManifest) и играет дальше — делаем так же.
+                # Одной попытки мало: замер показал обрыв на 5.7 минуте именно
+                # потому, что вторая попытка уже не делалась.
+                if c and перевыпусков < 3:
+                    перевыпусков += 1
+                    _alloha_протухшие.add(c)      # кэш этой дорожки недействителен
+                    свежая = await _alloha_обновить(c, i)
+                    print("[alloha-seg] перевыпуск #%d: %s" % (перевыпусков, "новая ссылка" if свежая else "НЕ УДАЛСЯ"), flush=True)
+                    if свежая:
+                        url = свежая
+                        await _asyncio.sleep(0.4 * перевыпусков)   # без шторма
+                        continue
+                # Для плеера 503 — «повтори позже», а 403 — «сдавайся». Нам нужно
+                # первое: узел может отпустить через минуту.
+                print("[alloha-seg] СДАЛИСЬ → 503 зрителю (узел %s, сегмент %d)"
+                      % (_узел_вк(url), i), flush=True)
+                return Response("upstream 403", status_code=503,
+                                headers={"Retry-After": "5", "Cache-Control": "no-store"})
+            body = r.content  # полный буфер; при обрыве .get() бросит исключение выше
+            cl = r.headers.get("content-length")
+            if cl and cl.isdigit() and len(body) != int(cl):
+                last = f"short {len(body)}/{cl}"
+                continue
+            out_headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
+            for h in ("content-range", "content-length"):
+                if h in r.headers:
+                    out_headers[h.title()] = r.headers[h]
+            ct = r.headers.get("content-type", "video/mp2t")
+            return Response(body, status_code=r.status_code, media_type=ct, headers=out_headers)
+        except Exception as e:
+            last = str(e)[:90]
+            continue
+    return Response("seg fail: " + last, status_code=502)
+
+
+
+
+
+# ══ Filmix источник (реверс 2026-07-21). ⚠️ URL Filmix ПРИВЯЗАНЫ К IP резолвера
+# (браузер юзера с другого IP → 429/403), поэтому видео ПРОКСИРУЕМ через наш
+# бэкенд: резолв и проксирование с одного IP (LeadSeek). Как VK у Alloha. ══
+import filmix_resolver as _fx
+
+_FILMIX_HDR = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Referer": "https://filmix.gg/",
+}
+
+
+@app.get("/api/filmix")
+async def filmix_api(title: str = "", year: str = "", type: str = "movie",
+                     imdb: str = "", kp: str = "", otitle: str = "",
+                     season: int = 0, episode: int = 0):
+    def _work():
+        post = _fx.find_post(title, year, otitle or None)
+        if not post:
+            return {"error": "not_found"}
+        pid, url = post
+        trs = _fx.resolve(pid, url, season, episode)
+        # Оборачиваем каждый URL в наш прокси (IP-lock: браузер юзера напрямую не сыграет).
+        for tr in trs:
+            q = tr.get("quality") or {}
+            for k in list(q.keys()):
+                q[k] = _PROXY_BASE + "/api/filmix/proxy?u=" + _enc_u(q[k])
+        return {"translations": trs, "post_id": pid, "source": "filmix"}
+    try:
+        res = await _aio_al.to_thread(_work)
+    except Exception as e:
+        return Response('{"error":"' + str(e)[:120].replace('"', "'") + '"}',
+                        media_type="application/json")
+    return Response(_json_al.dumps(res, ensure_ascii=False),
+                    media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/filmix/proxy")
+async def filmix_proxy(u: str, request: HTTPRequest):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    try:
+        headers = dict(_FILMIX_HDR)
+        rng = request.headers.get("range")
+        if rng:
+            rng = await _норм_range(url, headers, rng)
+            headers["Range"] = rng
+        req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=headers)
+        r = await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
+        ct = r.headers.get("content-type", "video/mp4")
+        out_headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
+        for h in ("content-range", "content-length"):
+            if h in r.headers:
+                out_headers[h.title()] = r.headers[h]
+
+        начало, конец = _разобрать_range(rng)
+        поток = _лить_подряд(url, headers, r, начало, конец, "filmix")
+        return StreamingResponse(поток, status_code=r.status_code, media_type=ct, headers=out_headers)
+    except Exception as e:
+        return Response("filmix proxy err: " + str(e)[:80], status_code=502)
+
+
+# ══ VkMovie источник (порт Lampac OnlineRUS/VkMovie). Прямые mp4 до 4K с VK
+# (RU-хостинг, RKN не блочит, не банят). ТОЛЬКО ФИЛЬМЫ. URL подписан на IP
+# резолвера (=LeadSeek), прокси на том же IP -> 206. Форма как Filmix/Alloha. ══
+import vkmovie_resolver as _vk
+
+_VK_HDR = {
+    "User-Agent": "Mozilla/5.0",
+}
+
+
+@app.get("/api/vkmovie")
+async def vkmovie_api(title: str = "", year: str = "", type: str = "movie",
+                      otitle: str = "", imdb: str = "", kp: str = "",
+                      season: int = 0, episode: int = 0):
+    # VkMovie = только фильмы (VK-сериалы надёжно не мэпятся) -> для tv пусто.
+    if type == "tv" or season:
+        return Response('{"translations":[],"source":"vkmovie"}', media_type="application/json")
+
+    def _work():
+        trs = _vk.resolve(title, year, otitle or None)
+        for tr in trs:
+            q = tr.get("quality") or {}
+            for k in list(q.keys()):
+                q[k] = _PROXY_BASE + "/api/vkmovie/proxy?u=" + _enc_u(q[k])
+        return {"translations": trs, "source": "vkmovie"}
+
+    try:
+        res = await _aio_al.to_thread(_work)
+    except Exception as e:
+        return Response('{"error":"' + str(e)[:120].replace('"', "'") + '"}',
+                        media_type="application/json")
+    return Response(_json_al.dumps(res, ensure_ascii=False),
+                    media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/vkmovie/proxy")
+async def vkmovie_proxy(u: str, request: HTTPRequest):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    try:
+        headers = dict(_VK_HDR)
+        rng = request.headers.get("range")
+        if rng:
+            rng = await _норм_range(url, headers, rng)
+        # Основной путь — кусками (см. «Отдача кусками»): длинный поток раздача
+        # душит, короткие куски отдаёт на полной скорости.
+        try:
+            ответ = await _отдать_кусками(url, headers, rng, "vkmovie")
+        except Exception as e:
+            print("[vkmovie] кусками не вышло: %s" % str(e)[:60], flush=True)
+            ответ = None
+        if ответ is not None:
+            return ответ
+        # Запасной путь — прежний, одним запросом.
+        if rng:
+            headers["Range"] = rng
+        req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=headers)
+        r = await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
+        ct = r.headers.get("content-type", "video/mp4")
+        out_headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
+        for h in ("content-range", "content-length"):
+            if h in r.headers:
+                out_headers[h.title()] = r.headers[h]
+
+        начало, конец = _разобрать_range(rng)
+        поток = _лить_подряд(url, headers, r, начало, конец, "vkmovie")
+        return StreamingResponse(поток, status_code=r.status_code, media_type=ct, headers=out_headers)
+    except Exception as e:
+        return Response("vkmovie proxy err: " + str(e)[:80], status_code=502)
+
+
+# ==== CDNvideohub (Плеер 4) — фильмы И сериалы, okcdn/VK, ключ по imdb ====
+import cdnhub_resolver as _cdn
+
+
+@app.get("/api/cdnhub")
+async def cdnhub_api(imdb: str = "", type: str = "movie", season: int = 0, episode: int = 0,
+                     title: str = "", year: str = "", otitle: str = ""):
+    if not imdb:
+        return Response('{"translations":[],"source":"cdnhub"}', media_type="application/json")
+
+    def _work():
+        trs = _cdn.resolve(imdb, type, season, episode)
+        for tr in trs:
+            q = tr.get("quality") or {}
+            for k in list(q.keys()):
+                q[k] = _PROXY_BASE + "/api/cdnhub/proxy?u=" + _enc_u(q[k])
+        return {"translations": trs, "source": "cdnhub"}
+
+    try:
+        res = await _aio_al.to_thread(_work)
+    except Exception as e:
+        return Response('{"error":"' + str(e)[:120].replace('"', "'") + '"}',
+                        media_type="application/json")
+    return Response(_json_al.dumps(res, ensure_ascii=False),
+                    media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/cdnhub/proxy")
+async def cdnhub_proxy(u: str, request: HTTPRequest):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    try:
+        headers = dict(_VK_HDR)
+        rng = request.headers.get("range")
+        if rng:
+            rng = await _норм_range(url, headers, rng)
+        # Основной путь — кусками (см. «Отдача кусками»): длинный поток раздача
+        # душит, короткие куски отдаёт на полной скорости.
+        try:
+            ответ = await _отдать_кусками(url, headers, rng, "cdnhub")
+        except Exception as e:
+            print("[cdnhub] кусками не вышло: %s" % str(e)[:60], flush=True)
+            ответ = None
+        if ответ is not None:
+            return ответ
+        # Запасной путь — прежний, одним запросом.
+        if rng:
+            headers["Range"] = rng
+        req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=headers)
+        r = await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
+        ct = r.headers.get("content-type", "video/mp4")
+        out_headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
+        for h in ("content-range", "content-length"):
+            if h in r.headers:
+                out_headers[h.title()] = r.headers[h]
+
+        начало, конец = _разобрать_range(rng)
+        поток = _лить_подряд(url, headers, r, начало, конец, "cdnhub")
+        return StreamingResponse(поток, status_code=r.status_code, media_type=ct, headers=out_headers)
+    except Exception as e:
+        return Response("cdnhub proxy err: " + str(e)[:80], status_code=502)
+
+
+# ==== RutubeMovie (Плеер 5) — фильмы, прямой адаптивный HLS с Rutube (RU-хостинг) ====
+import rutube_resolver as _rt
+_RT_HDR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+
+@app.get("/api/rutube")
+async def rutube_api(title: str = "", year: str = "", type: str = "movie",
+                     otitle: str = "", imdb: str = "", season: int = 0, episode: int = 0):
+    # Rutube = только фильмы (сериалы надёжно не мэпятся) -> для tv пусто.
+    if type == "tv" or season:
+        return Response('{"translations":[],"source":"rutube"}', media_type="application/json")
+
+    def _work():
+        trs = _rt.resolve(title, year, otitle or None)
+        for tr in trs:
+            q = tr.get("quality") or {}
+            for k in list(q.keys()):
+                q[k] = _PROXY_BASE + "/api/rutube.m3u8?u=" + _enc_u(q[k])
+        return {"translations": trs, "source": "rutube"}
+
+    try:
+        res = await _aio_al.to_thread(_work)
+    except Exception as e:
+        return Response('{"error":"' + str(e)[:120].replace('"', "'") + '"}',
+                        media_type="application/json")
+    return Response(_json_al.dumps(res, ensure_ascii=False),
+                    media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+def _rutube_rewrite_uri(line, base):
+    def _r(m):
+        abs_ = _resolve(base, m.group(1))
+        ep = "/api/rutube.m3u8?u=" if ".m3u8" in m.group(1) else "/api/rutube/seg?u="
+        return 'URI="' + _PROXY_BASE + ep + _enc_u(abs_) + '"'
+    return _re_hls.sub(r'URI="([^"]+)"', _r, line)
+
+
+@app.get("/api/rutube.m3u8")
+async def rutube_manifest(u: str):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    try:
+        r = await hdrezka_http.DEFAULT_CLIENT.get(url, headers=_RT_HDR, follow_redirects=True)
+        base = str(r.url)
+        out = []
+        for line in r.text.splitlines():
+            s = line.strip()
+            if not s:
+                out.append(line)
+            elif s.startswith("#"):
+                out.append(_rutube_rewrite_uri(s, base) if 'URI="' in s else s)
+            else:
+                abs_ = _resolve(base, s)
+                ep = "/api/rutube.m3u8?u=" if ".m3u8" in s else "/api/rutube/seg?u="
+                out.append(_PROXY_BASE + ep + _enc_u(abs_))
+        return Response("\n".join(out) + "\n", media_type="application/vnd.apple.mpegurl",
+                        headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        return Response("err: " + str(e), status_code=502)
+
+
+@app.get("/api/rutube/seg")
+async def rutube_seg(u: str, request: HTTPRequest):
+    try:
+        url = _dec_u(u)
+    except Exception:
+        return Response("bad u", status_code=400)
+    try:
+        headers = dict(_RT_HDR)
+        rng = request.headers.get("range")
+        if rng:
+            rng = await _норм_range(url, headers, rng)
+            headers["Range"] = rng
+        req = hdrezka_http.DEFAULT_CLIENT.build_request("GET", url, headers=headers)
+        r = await hdrezka_http.DEFAULT_CLIENT.send(req, stream=True, follow_redirects=True)
+        ct = r.headers.get("content-type", "video/mp2t")
+        out_headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes"}
+        for h in ("content-range", "content-length"):
+            if h in r.headers:
+                out_headers[h.title()] = r.headers[h]
+
+        начало, конец = _разобрать_range(rng)
+        поток = _лить_подряд(url, headers, r, начало, конец, "rutube")
+        return StreamingResponse(поток, status_code=r.status_code, media_type=ct, headers=out_headers)
+    except Exception as e:
+        return Response("rutube seg err: " + str(e)[:80], status_code=502)
+
+
+# ==== Отзывы Кинопоиска (kinopoisk.dev → api.poiskkino.dev) ====
+# Токен прячем на бэкенде. ДИСКОВЫЙ КЭШ 30д — бесплатный лимит 200 запросов/сутки,
+# поэтому каждый фильм резолвим/тянем один раз и держим в /root/movie/kpcache/.
+import os as _kp_os
+import time as _kp_time
+# Ключ — в окружении сервиса (drop-in kino-api.service.d/secret.conf), не в коде.
+_KP_KEY = _kp_os.environ.get("KP_API_KEY", "")
+_KP_HOST = "https://api.poiskkino.dev"
+_KP_HDR = {"X-API-KEY": _KP_KEY, "accept": "application/json"}
+_KP_DIR = "/root/movie/kpcache"
+_KP_TTL = 30 * 24 * 3600
+try:
+    _kp_os.makedirs(_KP_DIR, exist_ok=True)
+except Exception:
+    pass
+
+
+def _kp_cache_path(tmdb, type):
+    return _kp_os.path.join(_KP_DIR, "%s_%s.json" % (type, tmdb))
+
+
+@app.get("/api/kpreviews")
+async def kp_reviews(tmdb: str = "", type: str = "movie", limit: int = 20):
+    if not tmdb:
+        return Response('{"error":"need tmdb"}', status_code=400, media_type="application/json")
+    cache = _kp_cache_path(tmdb, type)
+    # свежий кэш → отдаём
+    try:
+        if _kp_os.path.exists(cache) and (_kp_time.time() - _kp_os.path.getmtime(cache)) < _KP_TTL:
+            with open(cache, "r", encoding="utf-8") as f:
+                return Response(f.read(), media_type="application/json",
+                                headers={"Cache-Control": "public, max-age=86400", "X-Kp-Cache": "hit"})
+    except Exception:
+        pass
+    try:
+        # 1) tmdb -> kp id
+        r = await hdrezka_http.DEFAULT_CLIENT.get(
+            _KP_HOST + "/v1.4/movie",
+            params={"externalId.tmdb": tmdb, "selectFields": ["id", "name", "year", "rating", "poster"]},
+            headers=_KP_HDR, timeout=15)
+        docs = (r.json().get("docs") or []) if r.status_code == 200 else []
+        # берём документ с постером/названием (не пустышку)
+        doc = None
+        for d in docs:
+            if d.get("name") and (d.get("poster") or {}).get("url"):
+                doc = d
+                break
+        if not doc and docs:
+            doc = docs[0]
+        if not doc:
+            body = '{"kp":null,"total":0,"reviews":[]}'
+            try:
+                open(cache, "w", encoding="utf-8").write(body)
+            except Exception:
+                pass
+            return Response(body, media_type="application/json", headers={"X-Kp-Cache": "miss-empty"})
+        kp = doc.get("id")
+        # 2) отзывы
+        rv = await hdrezka_http.DEFAULT_CLIENT.get(
+            _KP_HOST + "/v1.4/review",
+            params={"movieId": kp, "limit": min(limit, 50), "page": 1,
+                    "sortField": "date", "sortType": "-1",
+                    "selectFields": ["type", "author", "title", "review", "date"]},
+            headers=_KP_HDR, timeout=15)
+        rj = rv.json() if rv.status_code == 200 else {}
+        reviews = []
+        for x in (rj.get("docs") or []):
+            reviews.append({
+                "type": x.get("type"),
+                "author": x.get("author"),
+                "title": x.get("title"),
+                "review": (x.get("review") or "")[:4000],
+                "date": x.get("date"),
+            })
+        out = {
+            "kp": kp,
+            "name": doc.get("name"),
+            "ratingKp": (doc.get("rating") or {}).get("kp"),
+            "total": rj.get("total") or len(reviews),
+            "reviews": reviews,
+        }
+        body = _json_al.dumps(out, ensure_ascii=False)
+        try:
+            open(cache, "w", encoding="utf-8").write(body)
+        except Exception:
+            pass
+        return Response(body, media_type="application/json",
+                        headers={"Cache-Control": "public, max-age=86400", "X-Kp-Cache": "miss"})
+    except Exception as e:
+        return Response('{"error":"' + str(e)[:120].replace('"', "'") + '","reviews":[]}',
+                        media_type="application/json")
